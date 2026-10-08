@@ -1,8 +1,8 @@
 # Architecture Consistency and Financial Accounting Remediation
 
 **Review date:** October 8, 2026
-**Status:** Targeted remediation completed. Owner authorized Phase 1 implementation on October 8, 2026; this report does not authorize production deployment or later phases.
-**Scope:** Reconciles the amended product design, PRODUCT_VISION, implementation plan, schema, APIs, state machines, settlement specification, security, operations, tests, traceability, and AGENTS. No application code was started.
+**Status:** Targeted remediation completed; Phase 1 and Phase 2 are implemented in their separately authorized scopes. This report does not authorize production deployment or Phase 3.
+**Scope:** Reconciles the amended product design, PRODUCT_VISION, implementation plan, schema, APIs, state machines, settlement specification, security, operations, tests, traceability, and AGENTS. At the time of the original remediation no feature code had started; Phase 1 and Phase 2 implementation evidence is recorded in their certification reports.
 
 **Follow-up:** The targeted state-machine corrections and pending owner choices are recorded in [OWNER_DECISIONS.md](OWNER_DECISIONS.md). Reviewer recommendations in the latest review have not been recorded as owner approvals.
 
@@ -65,4 +65,17 @@ These are choices, not assumed policy. Until approval, only the affected workflo
 
 ## Phase 1 readiness
 
-**Phase 1 implementation was authorized and completed; certification is pending owner review.** No production deployment or real-member onboarding is authorized. Phase 2 remains blocked until the owner reviews and approves Phase 1 certification. Minimum-count, withdrawal, cabin-verification and all financial disposition choices remain pending in [OWNER_DECISIONS.md](OWNER_DECISIONS.md). Phase 6 remains gated by the settlement optimizer and financial policy decisions.
+**Phase 1 was conditionally approved as PASS WITH RISK; Phase 2 was separately authorized and implemented.** Review [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md) before Phase 3. No production deployment or real-member onboarding is authorized. Minimum-count, withdrawal, cabin-verification and all financial disposition choices remain pending in [OWNER_DECISIONS.md](OWNER_DECISIONS.md). Phase 6 remains gated by the settlement optimizer and financial policy decisions.
+
+## Phase 2 implementation reconciliation
+
+The Phase 2 implementation and certification distinguish current behavior from the full-platform target:
+
+- `camping_trips.poll_status` uses only `draft/open/closed`. The configured minimum is a planning value, `minimum_basis` is NULL, and no trip-confirmation, trip-cancellation, cabin-reservation, contribution, or other financial operations are present in Phase 2.
+- A post-cutoff withdrawal creates a separate pending request and leaves the Coming RSVP projection unchanged. This does not decide the later confirmed-trip withdrawal policy.
+- Coming responses acknowledge an immutable effective rule bundle. Later rule publication creates a new bundle without rewriting a member's prior acknowledgment or requiring re-acknowledgment.
+- Open-poll rule bundles now refresh on authenticated calendar/Constitution reads and before a new Coming response, so effective and expiry boundaries are reflected. Identical content hashes reuse the current bundle; stale forms are rejected. Existing Coming responses remain tied to the old bundle. The poll deadline editor converts timestamps to the trip's captured timezone; SQL preserves that snapshot and deadline instant on edits even after the club default changes.
+- Poll open/close and calendar generation have no email side effect in Phase 2. The member calendar is the current notice surface; email and retry behavior remain in their later authorized phase.
+- `DATABASE_SCHEMA.md`, `API_CONTRACTS.md`, `STATE_MACHINES.md`, `STATE_PERSISTENCE_MATRIX.md`, and `SECURITY_ARCHITECTURE.md` identify as-built Phase 2 tables/functions/RLS separately from future target entities and workflows. `TEST_STRATEGY.md` and `REQUIREMENTS_TRACEABILITY.md` link executed evidence, including timed rule effective/expiry tests and timezone-safe deadline round-tripping. See [Phase 2 Certification](PHASE2_CERTIFICATION.md).
+
+Owner decision review found no pending choice that blocks the specifically authorized Phase 2 interest-poll and Constitution scope. OD-01/02 gate use of the minimum as a trip decision; OD-03/04 gate confirmed-trip withdrawal and cabin-verification logic; later financial, optimizer, lottery, and operations decisions remain gated in their respective phases. No pending option was selected by this implementation.

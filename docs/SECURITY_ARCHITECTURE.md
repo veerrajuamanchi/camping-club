@@ -1,6 +1,6 @@
 # Security Architecture — Private Camping Club Platform
 
-**Status:** Phase 1 controls implemented and locally tested; security requirements for later phases remain normative.
+**Status:** Phase 1 and Phase 2 controls implemented and locally tested. Hosted CORS, production secrets, hosted RLS, and Render deployment remain unverified.
 **Related:** [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md), [API_CONTRACTS.md](API_CONTRACTS.md), [TEST_STRATEGY.md](TEST_STRATEGY.md)
 
 ## 1. Security objectives
@@ -36,6 +36,25 @@
 
 ## 4. Table-level access matrix
 
+### Phase 2 implemented table-level grants and RLS
+
+| Table/entity | anon | Active member | Active admin | Service role / Cron |
+| --- | --- | --- | --- | --- |
+| `club_configuration` | No | SELECT singleton through active-member RLS | SELECT; mutations only through trusted action | Trusted SQL operations; monthly generation. |
+| `campsites` | No | SELECT active published fields through RLS | SELECT; mutations through `trip-api` only | Trusted campsite edits/generation. |
+| `private.campsite_admin_notes` | No schema/table grant | No direct access | No direct table grant; service call returns notes only after current admin check | Service-role-only; protected by admin check in `phase2_admin_get_campsite_notes`. |
+| `camping_trips` | No | SELECT calendar rows for active membership; own answer/aggregate roster are assembled through `trip-api` | Same plus response roster through `trip-api` | Trusted generation/configuration/close operations. |
+| `trip_poll_events` | No | No | SELECT via admin RLS | Trusted insert only; no client writes. |
+| `rule_definitions`, `rule_versions` | No | SELECT active definitions and version history | SELECT; publish through trusted action | Trusted immutable rule publication. |
+| `trip_rule_overrides` | No | SELECT current overrides for visible trips | SELECT; create/retire through trusted action | Trusted immutable override operation. |
+| `trip_rule_bundles`, `trip_rule_bundle_entries` | No | No direct Data API grant; current bundle served through `trip-api` after time-boundary refresh | No direct Data API grant; current bundle served through `trip-api` after refresh | Trusted bundle creation/refresh. |
+| `trip_rule_acknowledgments` | No | SELECT own rows only | SELECT for administration | Trusted insert only; append-only. |
+| `trip_rsvps` | No | SELECT own RSVP only | SELECT roster through trusted read | Trusted insert/update only. |
+| `trip_rsvp_events` | No | No direct grant/read | No direct SELECT grant; admin roster and event context via trusted read as needed | Trusted append-only insert. |
+| `trip_withdrawal_requests` | No | SELECT own pending request | SELECT through trusted admin calendar response | Trusted insert only; no Phase 2 decision/update/delete. |
+
+Every listed public table has RLS enabled. `anon` and `authenticated` receive no Phase 2 writes; all mutations are denied at the Data API even for admins. Active-member/admin checks are authoritative database lookups, not JWT role claims. `trip-api` filters member responses to own identity and aggregate Coming count; it does not expose another member's response or the non-Coming roster. Administrative names, response roster, withdrawal reasons and private campsite notes are returned only after active-admin validation. Database-level RLS tests and local Edge integration exercise member/admin/anonymous access. Hosted Supabase and Data API configuration were not exercised.
+
 Legend: No = no grant/read; Own = rows owned by the authenticated member; Trip = fields authorized for that trip; Party = payer/recipient/submitter/allocation participant; Admin-R = admin read subject to RLS; Function = mutation only through a trusted operation; System = background function only. Each entity in DATABASE_SCHEMA.md has an individual row below.
 
 | Table/entity | anon | Active member | Admin | System |
@@ -59,8 +78,8 @@ Legend: No = no grant/read; Own = rows owned by the authenticated member; Trip =
 | rule_definitions | Published fields only | Rules applicable to trips member may view | Admin-R; edits via Function | No |
 | rule_versions | Published fields only | Immutable versions applicable to trips member may view | Admin-R; new versions via Function | No |
 | trip_rule_overrides | No | Effective rule text for trip members | Admin-R; edits via Function | Snapshot writer |
-| trip_rule_bundles | Published effective rules only | Read bundle for eligible trip | Admin-R | Snapshot writer |
-| trip_rule_bundle_entries | Published effective rule references only | Read entries for eligible trip | Admin-R | Snapshot writer |
+| trip_rule_bundles | No | No direct grant; effective bundle returned through authorized `trip-api` reads | No direct grant; effective bundle returned through authorized `trip-api` reads | Snapshot writer/refresh only |
+| trip_rule_bundle_entries | No | No direct grant; entries used internally by trusted read | No direct grant; entries used internally by trusted read | Snapshot writer/refresh only |
 | trip_rule_acknowledgments | No | Own rows only | Admin-R; no direct update/delete | No |
 | trip_policy_snapshots | No | Applicable effective policy text | Admin-R | Snapshot writer |
 | trip_rsvps | No | Own response; authorized roster names only | Admin-R; late entry via Function | Deadline processor |
@@ -115,7 +134,8 @@ Every concrete table in DATABASE_SCHEMA.md must be mapped to this matrix before 
 - UPDATE policies constrain both old and new row ownership using USING and WITH CHECK.
 - Use auth.uid() predicates and index policy columns where appropriate; verify query plans for high-use RLS paths.
 - Views use security-invoker semantics where supported or reside in a non-exposed schema with no client grants.
-- Avoid SECURITY DEFINER. If a private helper is necessary to avoid policy recursion, verify auth.uid() internally, fully qualify objects, set a fixed search_path, avoid dynamic SQL, revoke PUBLIC execute and test both allow and deny paths.
+- Avoid SECURITY DEFINER. The Phase 2 exception is `public.phase2_admin_get_campsite_notes(uuid)`: it is not executable by `PUBLIC`, `anon`, `authenticated`, or client-facing Data API callers; only the service role can execute it. It checks the supplied actor against the current active-admin row, fully qualifies its objects, fixes `search_path`, uses no dynamic SQL, and returns only the admin notes projection. Its caller must be the authenticated `trip-api` handler after Auth and role validation. Keep this exception narrow and test both allowed admin and denied member paths.
+- `public.phase2_refresh_open_rule_bundles(uuid,uuid[])` is SECURITY INVOKER and executable only by `service_role`. The authenticated Edge handler supplies an actor ID only after verifying the active member from PostgreSQL. The operation accepts only existing open trip IDs, locks each trip through the bundle builder, and returns no rule content. Direct authenticated Data API EXECUTE is denied and tested. Do not expose the service RPC through a generic browser RPC proxy.
 - Every RPC has explicit EXECUTE grants; no default public execute on sensitive functions.
 - Financial/lifecycle tables deny direct client insert/update/delete. Admin transitions check current role and write audit/outbox records transactionally.
 - Every private table has no Data API exposure and no anon/authenticated grants.

@@ -1,6 +1,33 @@
 # State Machines — Private Camping Club Platform
 
-**Status:** Planning contract. Every transition below is enforced by a trusted operation and captured in an append-only event/audit record. The minimum-count basis, post-confirmation withdrawal effect, and booking-verification gate are unresolved owner decisions; affected transitions fail closed until approved.
+**Status:** The Phase 2 interest-poll, RSVP, and Constitution state machines below are implemented locally. All lifecycle, reservation, contribution, expense, settlement, and notification state machines that follow are future-phase planning contracts. Minimum-count basis, post-confirmation withdrawal effect, and cabin-verification gate remain unresolved owner decisions; affected transitions fail closed until approved.
+
+## 0. Phase 2 as-built state machines
+
+Phase 2 treats each calendar entry as a monthly interest poll. It deliberately has no `confirmed`, `cancelled`, `completed`, cabin reservation, contribution, or financial state. The configurable minimum is a planning value only, and `minimum_basis` is nullable and not writable through `trip-api`.
+
+### Poll state
+
+| Current `camping_trips.poll_status` | Authorized transition | Operation and event | Notification effect |
+| --- | --- | --- | --- |
+| No row for month | `draft` row generated for an unused month | Monthly Cron or admin `admin_generate_calendar`; `trip_poll_events.calendar_month_generated`; unique `month_key` and serialized configuration/rotation prevent duplicate month assignments | No email; appears in the signed-in calendar. |
+| `draft` | `open` | Admin configures dates, campsite, club timezone snapshot, deadline, poll fields and then `admin_set_poll_status`; `poll_opened` event, request key, version and reason | No email in Phase 2. |
+| `open` | `closed` | Admin close or five-minute `phase2_close_due_polls`; `poll_closed` event. Cron only closes polls whose configured deadline has passed. | No email in Phase 2. |
+| `closed` | `open` | Admin reopen with expected version/reason, and only when dates/timezone/current rule bundle are valid and the deadline is still in the future; `poll_reopened` event | No email in Phase 2. |
+
+The calendar generator assigns the next active campsite in configured round-robin order; an admin may override the selected campsite without changing the suggested site. Administrator date/site/configuration changes use expected versions and audit events. Duplicate keys replay the prior mutation; a changed payload under the same key conflicts. No poll transition automatically changes rotation history or makes a financial decision.
+
+### RSVP interest and withdrawal request
+
+| Current projection | Event / guard | Persisted result | Event / notification |
+| --- | --- | --- | --- |
+| No `trip_rsvps` row | Active member answers Not Coming | `response=not_coming`, version 1 | `trip_rsvp_events.submitted`; no rule acknowledgment; no email. |
+| No row or `not_coming` | Active member answers Coming with current displayed bundle ID/hash | `response=coming`; immutable exact-bundle acknowledgment is created in the same transaction and referenced by the RSVP | `submitted` or `changed`; no email. |
+| `coming` | Rule changes after signup | Existing `rule_acknowledgment_id` remains unchanged and points to the exact version accepted | New rule/bundle audit facts; no forced re-ack, no email. |
+| `coming` | Member requests withdrawal while poll is open and before deadline | Projection becomes `not_coming`; version increments | `changed`; no email. |
+| `coming` | Member requests withdrawal after poll closes or after deadline | `trip_withdrawal_requests` row is created; RSVP remains `coming` | `withdrawal_requested`; admin sees pending request in application; no email. This is not an effective post-confirmation withdrawal and has no admin approve/reject action. |
+
+Admin-added late interest uses `admin_record_interest`; a Coming response still requires the selected member's own exact current-bundle acknowledgment. Member reads expose only their own response/acknowledgment and aggregate Coming count; only admins receive response names. Poll closure and pending withdrawal are not trip confirmation/cancellation.
 **Related:** [Database Schema](DATABASE_SCHEMA.md), [API Contracts](API_CONTRACTS.md), [Owner Decision Record](OWNER_DECISIONS.md)
 
 ## 1. Trip lifecycle
@@ -42,8 +69,9 @@ Rules:
 2. At Coming signup, the member sees the complete applicable general + trip-specific rule text and structured values.
 3. The atomic signup operation verifies the bundle ID/hash shown, records an immutable acknowledgment (member, trip, bundle, hash, statement version, timestamp), then records Coming.
 4. Not coming does not require acknowledgment.
-5. A later rule edit creates a new bundle. Existing acknowledgments remain bound to the exact earlier bundle; no re-ack gate is applied. A notice may be sent, but it does not overwrite the acknowledgment.
-6. At trip confirmation, the system records the effective policy snapshot separately for operations/financial audit.
+5. While a poll is open, authenticated calendar and Constitution reads refresh the effective bundle using the current time. Before a member or admin records a new/changed-to-Coming response, the server refreshes again under the trip lock. If the rendered hash is unchanged, it reuses the current immutable bundle; if a rule has become effective or expired, it creates a new bundle version.
+6. A later rule edit or time boundary creates a new bundle. Existing acknowledgments remain bound to the exact earlier bundle; no re-ack gate is applied to an existing Coming response. A new Coming response using a stale bundle is rejected and must be refreshed. A notice may be sent, but it does not overwrite the acknowledgment.
+7. At trip confirmation, the system records the effective policy snapshot separately for operations/financial audit.
 
 ### RSVP transitions
 

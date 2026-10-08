@@ -1,6 +1,6 @@
 # Private Camping Club Platform — Implementation Plan
 
-**Status:** Phase 1 implementation authorized by owner on October 8, 2026; later phases remain gated on certification and separate approval.
+**Status:** Phase 1 is implemented and conditionally approved as PASS WITH RISK. Phase 2 was explicitly authorized October 8, 2026 and is implemented pending owner review of [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md). Phase 3 remains gated.
 **Authoritative product source:** [Approved platform design](superpowers/specs/2026-10-08-camping-club-platform-design.md)
 **Related standards:** [Technology Guardrails](../TECHNOLOGY_GUARDRAILS.md), [Product Vision](PRODUCT_VISION.md)
 
@@ -92,7 +92,7 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 **Objective:** Approve this plan, record which financial policy questions are resolved or deferred, and establish a reproducible development/review baseline.
 
 **Features and work**
-- Owner approved the plan and Phase 1 scope; financial decisions remain deferred to their named phase gates in the owner decision register.
+- Owner approved the plan and Phase 1/2 scopes in sequence; financial and cancellation decisions remain deferred to their named phase gates in the owner decision register.
 - Record owner choices in `docs/OWNER_DECISIONS.md`; reviewer recommendations remain pending until the owner explicitly selects them.
 - Reconcile the earlier amended received-$50 threshold with the later Coming-RSVP threshold and decide what happens to pre-cutoff receipts if the paid threshold is missed.
 - Decide whether post-confirmation withdrawal requires administrator approval and whether the optional cabin-verification gate / legacy `Closed — Pending Decision` state remains.
@@ -124,7 +124,7 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 **Exit criteria**
 - Plan and Phase 1 approval are recorded.
 - Unresolved decisions needed for later finance work remain explicitly pending and block only their dependent feature gates.
-- Phase 1 may proceed under its separate authorization; later phases require their own review and approval gates.
+- Phase 1 is complete; Phase 2 was separately authorized. Later phases require their own review and approval gates.
 
 **Risks and mitigations**
 - Risk: ambiguous cancellation or contribution rules become database behavior. Mitigation: block affected API/schema code paths until approved; store outcome as pending-resolution meanwhile.
@@ -132,7 +132,7 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 
 ### Phase 1 — Repository foundation, identity, profiles, and deployment skeleton
 
-**Authorization:** Explicit owner approval received October 8, 2026 for Phase 1 only. Do not begin Phase 2 until Phase 1 certification is reviewed and approved.
+**Authorization:** Explicit owner approval received October 8, 2026 for Phase 1 only. Phase 1 certification was later reviewed as PASS WITH RISK; Phase 2 has a separate authorization record below. See [PHASE1_CERTIFICATION.md](PHASE1_CERTIFICATION.md).
 
 **Implementation status:** Implemented in the isolated `codex/phase1-foundation` worktree. See [Phase 1 Certification](PHASE1_CERTIFICATION.md) for actual verification results and remaining risks.
 
@@ -190,32 +190,37 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 
 ### Phase 2 — Campsites, rolling calendar, trips, RSVP, and rule acknowledgment
 
+**Authorization:** Owner conditionally approved the Phase 1 PASS WITH RISK certification and explicitly authorized Phase 2 on October 8, 2026. Phase 1 branch `codex/phase1-foundation` is committed and backed up on GitHub as commit `57473a0`.
+
+**Implementation status:** Implemented on `codex/phase2-campsites-calendar`; local evidence and limits are in [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md). No production deployment or real-member onboarding occurred.
+
 **Objective:** Implement the core trip calendar and RSVP while capturing exactly which rules the participant reviewed.
 
 **Features**
-- Seven-site rotation, rolling 12-month schedule, audited overrides and no duplicate months.
+- Seven predefined active campsites, configurable ordered round-robin rotation, rolling 12-month calendar, audited date/site overrides and unique month keys.
 - Friday–Sunday defaults, club timezone, administrator date/deadline configuration.
-- Coming / Not coming poll and configurable trip minimum.
-- Minimum-count basis stored per trip only after owner decision. Opening registration is rejected while it is unset; no default count basis is assumed.
-- RSVP withdrawal and admin late entries for confirmed trips.
+- Coming / Not coming interest poll and configurable trip minimum. An interest-poll answer is not a minimum-qualified registration or a promise that a trip will proceed.
+- Minimum-count basis stays unset until owner decision. Phase 2 exposes interest polls only; it neither opens formal registration nor evaluates the threshold.
+- Post-confirmation withdrawal requests are recorded separately and remain non-effective while OD-03 is unresolved. Admin late additions to an interest poll require the member's existing exact-rule acknowledgment; the system does not forge one.
+- No automatic trip confirmation/cancellation and no cabin contribution obligation or collection in Phase 2. Club trip and cabin reservation lifecycle decisions remain disabled pending OD-01/02/04 and later-phase authorization.
 - Persist a post-confirmation withdrawal request separately; keep it pending until the owner selects immediate effect or administrator approval.
-- General rule catalog, trip-specific rules, overrides, effective rule-bundle versioning.
+- General rule catalog, trip-specific rules, linked per-trip overrides, expiry, immutable effective rule-bundle versioning.
 - Coming signup displays all applicable general and trip-specific rule text plus structured values; member must acknowledge before Coming is saved.
 - Acknowledgment stores member, trip, immutable rule-set ID/hash, timestamp, and disclosure version. Later rule edits do not invalidate or overwrite it; send informational notices according to notification policy.
 - The trip confirmation policy snapshot is distinct from the bundle each participant acknowledged.
 
 **Database changes**
-- Campsites, rotation configuration, trips/month keys, RSVP, rule catalog/version, trip-rule associations/overrides, effective rule snapshots, rule acknowledgments, trip history identity.
-- Unique trip month key; FK indexes; constraints on dates, threshold, status and acknowledged-version linkage.
-- `minimum_basis` enum (`coming_rsvp`, `received_contribution`) and explicit `cabin_payer_coverage_counts_toward_minimum` when basis is `received_contribution`; require all applicable policy choices before trip opens and lock them once registration begins.
+- Implemented: `club_configuration`, seven-site campsite catalog/private admin notes, month-keyed `camping_trips` with separate `poll_status`, append-only poll/RSVP events, rule definitions/versions, linked overrides, rendered bundles/entries, exact acknowledgments, RSVP projection, and pending withdrawal requests.
+- Implemented constraints/indexes cover unique months and rotation positions, dates/deadlines/time zones, capacity, exact bundle/hash linkage, concurrency versions, and immutable history.
+- `minimum_basis` is nullable and cannot be set by the Phase 2 API. `minimum_participants` is a configurable planning value only. Payer-coverage policy, trip status/confirmation/cancellation, cabin reservation, contributions and financial records are not implemented in this phase.
 
 **API/function changes**
-- Create/edit trip, generate rolling schedule idempotently, submit/update RSVP with required acknowledgment, withdraw, add late entry, apply rule revisions, snapshot effective rules.
-- Admin may not open registration until the unresolved basis policy has been explicitly set; scheduler blocks and alerts if a due trip has no basis.
+- Implemented `trip-api` actions cover calendar/Constitution reads, club settings, calendar generation/reorder, campsite edits, poll configuration/open/close, rule publication/override, member RSVP, admin-recorded interest and withdrawal request.
+- Polls can open independently of the minimum policy. The close job only closes an interest poll; it never confirms/cancels a trip or creates money obligations.
 - Use transaction/locking for month generation and RSVP/capacity changes.
 
 **Frontend changes**
-- Calendar, campsite rotation display, trip details, binary RSVP, rule bundle review/acknowledgment, RSVP history, admin schedule/rule editor.
+- Implemented member calendar, campsite rotation/admin editor, schedule/timezone/minimum planning controls, binary RSVP, current and previously accepted rule bundle display, exact acknowledgment, admin late entry, rule/override history, and pending withdrawal review.
 - Show rule revision ID/date and acknowledgment receipt in member trip view.
 
 **Security requirements**
@@ -226,12 +231,9 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 
 **Automated tests**
 - Round-robin and 12-month catch-up produce unique months and preserve canceled month position.
-- RSVP concurrency and update/withdraw transitions.
-- Coming rejected without acknowledgment; Not coming is permitted without acknowledgment.
-- Acknowledgment binds to exact effective rule set/hash and remains unchanged after a later revision.
-- Revisions produce informational change notices but do not change prior acknowledgment or require new acceptance.
-- Test both minimum-basis variants, missing-basis fail-closed handling, both withdrawal-policy variants after owner selection, and any retained booking-verification gate.
-- RLS: member sees permitted trip fields and own RSVP/ack; cannot update another member or admin-controlled fields.
+- Executed: Comes requires current bundle acknowledgment; Not Coming does not; exact prior accepted version/hash survives rule edits; withdrawal after poll close remains pending; idempotency replay/conflict and RLS peer isolation/direct-write denial pass locally.
+- Executed: calendar rotation/horizon/idempotency, administrator controls, timezone validation, poll open/close, expiring trip rules/overrides and no minimum basis/decision are tested with pgTAP and local Edge integration.
+- Deferred/gated: minimum-basis variants, confirmation/cancellation, contribution handling, cabin-verification gate, email poll notifications, and owner-selected withdrawal resolution.
 
 **Dependencies:** Phase 1.
 
@@ -240,7 +242,7 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 
 **Exit criteria**
 - Every Coming RSVP has a durable acknowledgment of the exact rules shown.
-- No trip opens or reaches cutoff without its explicitly selected minimum basis; basis cannot change after registration opens.
+- Implemented interest polls can open and close without a minimum basis and never trigger a trip confirmation/cancellation or payment action. No formal registration/minimum-decision operation exists in Phase 2.
 - Registration and trip lifecycle are separate; the legacy `Closed — Pending Decision` label is not used until the optional booking gate is decided.
 - Duplicate generation, racing RSVP changes and stale updates are safe.
 - Tests prove visitors cannot enumerate member participation.
@@ -555,8 +557,8 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 ## Proposed implementation sequence
 
 1. Establish the plan and preserve unresolved policy decisions in Phase 0; policy decisions remain gated at their relevant feature phases.
-2. Phase 1 foundation and access (owner-authorized and implemented; certification review is pending).
-3. Phase 2 trip, RSVP and signup rule acknowledgment.
+2. Phase 1 foundation and access (implemented; conditionally approved as PASS WITH RISK).
+3. Phase 2 campsites, rolling interest calendar, RSVP and Camping Constitution (implemented; certification review pending).
 4. Phase 3 cabin reservation, deadline lifecycle and email.
 5. Phase 4 trip preparation, responsibilities, transport and lottery.
 6. Phase 5 expenses, review, lock and availability import.
@@ -626,4 +628,4 @@ Do not parallelize phases that share database lifecycle/financial contracts. A l
 
 ## Phase 1 certification and next-phase recommendation
 
-**Phase 1 implementation is complete; the owner must review and approve its certification before Phase 2 begins.** The Phase 1 boundary does not implement trip lifecycle or financial policy. Phase 2/3 trip lifecycle work remains gated until the minimum basis, withdrawal behavior and cabin-verification-gate decisions are recorded. Cancellation/excess accounting and the exact solver cap remain gates for their later phases. See [OWNER_DECISIONS.md](OWNER_DECISIONS.md) for the authoritative pending decisions.
+**Phase 1 implementation and owner review are complete. Phase 2 implementation is complete and awaiting owner review of its certification.** No Phase 3 implementation has begun. Formal registration and trip lifecycle work remain gated by OD-01/02/03/04. Cancellation/excess accounting and the exact solver cap remain gates for their later phases. See [OWNER_DECISIONS.md](OWNER_DECISIONS.md) for the authoritative pending decisions.

@@ -1,6 +1,6 @@
 # Test Strategy — Private Camping Club Platform
 
-**Status:** Phase 1 automated verification executed locally; later-phase business and operational tests remain planned. See [Phase 1 Certification](PHASE1_CERTIFICATION.md) for evidence and limits.
+**Status:** Phase 1 regression and Phase 2 automated verification executed locally; Phase 3–8 business and operational tests remain planned. See [Phase 1 Certification](PHASE1_CERTIFICATION.md) and [Phase 2 Certification](PHASE2_CERTIFICATION.md) for evidence and limits.
 **Related:** [Requirements Traceability](REQUIREMENTS_TRACEABILITY.md), [Owner Decision Record](OWNER_DECISIONS.md), [Database Schema](DATABASE_SCHEMA.md), [Security Architecture](SECURITY_ARCHITECTURE.md), [Settlement Engine](SETTLEMENT_ENGINE_SPEC.md)
 
 ## 1. Test layers
@@ -29,6 +29,43 @@ Tool versions are pinned in lockfiles and rechecked against current Supabase sup
 | UI-01 | Invitation-only sign-in and profile form interaction | Vitest + local Chrome smoke | Pass: 8 component assertions and one desktop/mobile browser smoke; no horizontal overflow or page/console errors. |
 
 Executed commands: `npm run typecheck`, `npm test`, `npm run test:db`, `npm run test:integration`, `npm run build`, `npm run security:scan`. The integration script starts no hosted service and resets only local Supabase. A temporary, non-locked Playwright package was used for the browser smoke; browser automation is not a committed dependency.
+
+### Phase 2 executed test IDs
+
+| ID | Requirement / scenario | Layer | Executed result |
+| --- | --- | --- | --- |
+| CAL-01 | Seven seeded sites and repeatable round-robin assignment | TypeScript + pgTAP + Edge integration | Pass: seven configured sites/positions, valid rotation, and explicit next position verified. |
+| CAL-02 | Site reorder and per-trip override preserve suggested site and sequence | TypeScript + pgTAP + Edge integration | Pass: selected campsite can change without mutating suggestion; rotation reorder is admin-only/versioned. |
+| CAL-03 | Rolling 12-month calendar catches up without duplicate months | pgTAP + Edge integration | Pass: unique first-of-month key and repeat generation; local Cron registration exists. Hosted Cron not verified. |
+| CAL-04 | Admin configures date, campsite, poll fields, timezone and planning minimum | Component + Edge integration | Pass: stale versions reject; unset timezone prevents opening. Minimum remains planning-only. |
+| CAL-05 | Poll deadline closes only the interest poll | pgTAP + Edge integration | Pass: due poll changes to closed once; no confirmation, cancellation, contribution, or email side effect. |
+| CAL-06 | Existing deadline edits preserve the club-local date/time and the trip timezone snapshot | Vitest + pgTAP | Pass: a UTC instant is rendered with the trip snapshot even after the club default timezone changes; saving retains the snapshot and exact deadline instant. |
+| RULE-TS-01 | Effective Constitution bundle combines applicable general, unexpired override, and trip rules | Pure TypeScript + Edge integration | Pass: source ordering and current effective values are deterministic. |
+| RULE-TS-02 | An override based on a stale general rule version is ignored/rejected | Pure TypeScript + Edge integration | Pass: override cannot silently shadow a newer base version. |
+| RULE-TS-03 | Equivalent input rule sets serialize to the same bundle ordering/hash | Pure TypeScript | Pass: reordering equivalent source arrays produces deterministic output. |
+| DB-01 | Phase 2 Data API role/row boundary | pgTAP + Edge integration | Pass: anon/member direct writes denied; member sees own RSVP/request; unrelated response details and private campsite notes are not returned. |
+| DB-02 | Rule versions, bundles, acknowledgments, and events resist mutation/deletion | pgTAP | Pass: immutable history guards and append-only event rows reject updates/deletes. |
+| DB-03 | No minimum-basis policy or financial operation is writable | pgTAP + API integration | Pass: `minimum_basis` remains NULL; no trip confirmation/cancellation/contribution tables/actions are present. |
+| DB-04 | Rule effective dates, trip expiry, exact linked override | pgTAP + TypeScript + Edge integration | Pass: expired trip rule/override is excluded; override links the current general version and expires. |
+| DB-05 | Bundle/hash is current, locked, and tied to exact source versions | TypeScript + Edge integration | Pass: deterministic rendered content/hash; publication and poll opening serialize bundle refresh. |
+| DB-06 | Coming acknowledgment remains pinned after a later rule edit | pgTAP + integration + component | Pass: member RSVP pointer and original bundle/hash remain unchanged. |
+| DB-07 | Effective/expiry boundaries refresh open-poll rule bundles and stale Coming submissions are rejected | pgTAP | Pass: unchanged hash reuses the immutable version; timed rule effectiveness adds a new bundle, expiry removes it; member and admin Coming paths reject an acknowledgment to the superseded bundle; prior acknowledgments stay unchanged. |
+| DB-08 | Reconfiguring an existing poll after the club timezone default changes preserves its timezone snapshot and deadline instant | pgTAP | Pass: trusted SQL configuration uses the existing trip snapshot for date/time interpretation; only a trip without a snapshot takes the current club default. |
+| RSVP-01 | Coming requires and records the exact current rule acknowledgment | pgTAP + Edge + component | Pass: stale/missing bundle or hash is rejected; RSVP and immutable acknowledgment are atomic. |
+| RSVP-02 | Not Coming is allowed without rule acknowledgment | Edge + component | Pass: non-Coming answer stores no acknowledgment. |
+| RSVP-03 | Admin adds late interest for selected member | Edge + component | Pass: admin-only; Coming requires the member's acknowledgment; no confirmation/payment state. |
+| RSVP-04 | Member changes Coming to Not Coming before open poll deadline | Edge + component | Pass: version increments and append-only `changed` event is written once. |
+| RSVP-05 | After cutoff, withdrawal is a request and Coming remains unchanged | Edge + RLS + component | Pass: pending request visible to admin, no effective post-confirmation behavior inferred. |
+| RSVP-06 | Rules change after Coming signup | pgTAP + Edge + component | Pass: new rule bundle is versioned; original acknowledgment and RSVP pointer remain exact; no re-ack. |
+| API-01 | Phase 1 invitation regression; Phase 2 verified JWT and active-member/admin authorization | Integration | Pass: Phase 1 and Phase 2 synthetic Auth harnesses. |
+| API-02 | Member Coming/Not Coming and exact acknowledgment | Integration | Pass: Coming rejects missing/stale acknowledgment; Not Coming requires none; replay is safe. |
+| API-03 | Admin late interest entry | Integration + component | Pass: admin only; Coming requires the member's acknowledgment; remains interest, not confirmed attendance. |
+| API-04 | Open-poll change vs closed/deadline withdrawal request | Integration + component | Pass: pre-deadline change becomes Not Coming; later request leaves Coming unchanged and appears to admins. |
+| API-05 | Phase 2 mutation authorization, idempotency and concurrency/version controls | Integration + pgTAP | Pass: missing key rejects, duplicate replay returns stored result, changed request conflicts, stale versions fail. |
+| API-06 | Authenticated calendar/Constitution reads refresh open-poll bundles through a service-role-only operation | Edge integration + pgTAP | Pass: calendar and Constitution reads return the current bundle; direct authenticated execute/read is denied; trusted refresh uses hash idempotency and preserves immutable prior bundles. |
+| P2-UI-01–10 | Coming acknowledgment, Not Coming, role-separated controls, settings, timezone-safe deadline edit, campsite edit, late entry, rule override, retained old rule version, pending withdrawal | Vitest / Testing Library | Pass: ten trip-page interaction tests within 26 tests across 6 files. |
+
+Executed command: `npm run verify` — final results are recorded in [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md). The suite includes timezone-safe deadline editing, effective/expiry-boundary refresh, stale acknowledgment rejection, Phase 1 regression tests, Phase 1 and Phase 2 synthetic integration/security harnesses, Vite build, and frontend credential scan. No hosted system or production member data was used. Phase 2 has no email delivery or external deployment/browser smoke. Those remain explicit risks/gates.
 
 ## 2. Automated test inventory and acceptance criteria
 

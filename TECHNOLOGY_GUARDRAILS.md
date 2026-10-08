@@ -146,5 +146,5 @@ BLOCKED
 Explicitly identify any risks that could cause a missed cabin cancellation deadline, loss of financial records, or incorrect payment instructions.
 Do not certify the architecture as production-ready while any critical reliability or financial integrity risk remains unresolved.
 6. Current implementation boundary
-The architecture and implementation plan are owner-approved for Phase 1 implementation only. Phase 1 certification is pending owner review. Do not begin Phase 2, deploy to production, configure production secrets, or onboard real members until separately authorized. Preserve all pending decisions in `docs/OWNER_DECISIONS.md`; do not infer financial or cancellation policies from recommendations.
+The architecture and phased implementation plan are approved. Phase 1 was conditionally approved as PASS WITH RISK; Phase 2 implementation was explicitly authorized October 8, 2026 and is complete pending owner review of `docs/PHASE2_CERTIFICATION.md`. Do not begin Phase 3, deploy to production, configure production secrets, or onboard real members until separately authorized. Preserve all pending decisions in `docs/OWNER_DECISIONS.md`; do not infer financial or cancellation policies from recommendations.
 

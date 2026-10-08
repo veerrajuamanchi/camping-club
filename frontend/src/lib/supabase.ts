@@ -23,3 +23,19 @@ export async function invokeMemberApi<T>(action: string, input?: unknown, idempo
   if (data?.error) throw new Error("The request could not be completed.");
   return data?.data as T;
 }
+
+const tripMutationActions = new Set([
+  "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite",
+  "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
+  "submit_rsvp", "admin_record_interest", "request_withdrawal",
+]);
+
+export async function invokeTripApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {
+  if (!supabase) throw new Error(configurationError ?? "Supabase is unavailable.");
+  const headers = tripMutationActions.has(action)
+    ? { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() }
+    : undefined;
+  const { data, error } = await supabase.functions.invoke("trip-api", { body: { action, input }, headers });
+  if (error || data?.error) throw new Error("The request could not be completed.");
+  return data?.data as T;
+}

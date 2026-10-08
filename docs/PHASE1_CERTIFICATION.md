@@ -59,4 +59,4 @@ The exact test counts and current outputs are also recorded in [TEST_STRATEGY.md
 
 ## Phase 2 readiness
 
-**Do not begin Phase 2 until the owner reviews and explicitly approves this certification.** After that approval, Phase 2 work may proceed only with its affected trip-registration transitions failing closed until OD-01, OD-03 and OD-04 are resolved. Phase 3/6 financial disposition and optimizer gates remain governed by the owner decision register.
+**Owner reviewed and conditionally approved this certification as PASS WITH RISK, then authorized Phase 2 on October 8, 2026.** Phase 2 work proceeds with formal trip-registration and lifecycle transitions failing closed until OD-01, OD-03 and OD-04 are resolved. OD-02 is additionally required only if OD-01 selects received contributions. Phase 3/6 financial disposition and optimizer gates remain governed by the owner decision register.

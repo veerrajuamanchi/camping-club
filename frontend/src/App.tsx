@@ -6,6 +6,7 @@ import { AcceptInvitation } from "./features/auth/AcceptInvitation";
 import { SignInForm } from "./features/auth/SignInForm";
 import { AdminMembersPage } from "./features/admin/AdminMembersPage";
 import { MemberProfileForm, type MemberProfileInput } from "./features/members/MemberProfileForm";
+import { TripCalendarPage } from "./features/trips/TripCalendarPage";
 import { configurationError, invokeMemberApi, supabase } from "./lib/supabase";
 
 function SignInPage() {
@@ -36,14 +37,14 @@ function AppRoutes() {
 
   return <>
     <header className="site-header"><Link to="/" className="brand">Private Camping Club</Link><nav>
-      {membership.status === "active" && <><Link to="/profile">Profile</Link>{membership.role === "admin" && <Link to="/admin/members">Members</Link>}<button className="link-button" onClick={() => void signOut()}>Sign out</button></>}
+      {membership.status === "active" && <><Link to="/">Trips</Link><Link to="/profile">Profile</Link>{membership.role === "admin" && <Link to="/admin/members">Members</Link>}<button className="link-button" onClick={() => void signOut()}>Sign out</button></>}
     </nav></header>
     <main className="container"><Routes>
       <Route path="/signin" element={membership.status === "active" ? <Navigate to="/" replace /> : <SignInPage />} />
       <Route path="/accept-invitation" element={membership.status === "active" ? <Navigate to="/" replace /> : membership.status === "loading" ? <p role="status">Verifying invitation…</p> : membership.status === "signedOut" ? <p>Open the invitation link from your email to accept it.</p> : <AcceptInvitation onComplete={completeInvitation} />} />
       <Route path="/profile" element={<AccessBoundary state={membership} requiredRole="member">{profile && <MemberProfileForm mode="edit" initialDisplayName={profile.displayName} initialPhone={profile.phoneE164} initialMethod={profile.paymentMethod ?? "venmo"} onSave={saveProfile} />}</AccessBoundary>} />
       <Route path="/admin/members" element={<AccessBoundary state={membership} requiredRole="admin"><AdminMembersPage /></AccessBoundary>} />
-      <Route path="/" element={membership.status === "signedOut" ? <Navigate to="/signin" replace /> : <AccessBoundary state={membership} requiredRole="member"><section className="card"><p className="eyebrow">Member area</p><h1>Welcome, {profile?.displayName}</h1><p>The club trip calendar and planning tools will appear here as the approved phases are implemented.</p><Link to="/profile">Review your profile and payment preference</Link></section></AccessBoundary>} />
+      <Route path="/" element={membership.status === "signedOut" ? <Navigate to="/signin" replace /> : <AccessBoundary state={membership} requiredRole="member"><TripCalendarPage isAdmin={membership.status === "active" && membership.role === "admin"} /></AccessBoundary>} />
       <Route path="*" element={<Navigate to="/" replace state={{ from: location.pathname }} />} />
     </Routes></main>
   </>;

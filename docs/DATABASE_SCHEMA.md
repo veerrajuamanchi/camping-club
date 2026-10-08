@@ -1,6 +1,6 @@
 # Database Schema — Private Camping Club Platform
 
-**Status:** Phase 1 identity subset implemented in `supabase/migrations/20261008165655_phase1_member_identity.sql`; later-phase entities remain the reconciled planning baseline. Owner-gated policies remain unresolved.
+**Status:** Phase 1 identity and Phase 2 calendar/poll/Constitution schemas are implemented in migrations `20261008165655_phase1_member_identity.sql` and `20261008185225_phase2_calendar_polls_rules.sql`. Entities described after the as-built section remain future-phase planning baseline. Owner-gated policies remain unresolved.
 **Source:** [Approved design](superpowers/specs/2026-10-08-camping-club-platform-design.md)
 
 ## 1. Database design rules
@@ -26,6 +26,29 @@
 - Authorization source is member_profiles.member_role/account_status, not raw user metadata or a client-supplied role.
 
 ## 3. Entity catalog
+
+### Phase 2 as-built schema (current implementation)
+
+This section describes the deployed-to-local migration contract exactly. It does not imply a trip confirmation/cancellation or payment policy. All Phase 2 mutations pass through the authenticated `trip-api` Edge Function into service-role-only SQL operations; the browser receives no service credential.
+
+| Entity | Persisted facts, constraints and indexes |
+| --- | --- |
+| `club_configuration` | Singleton row; nullable `club_timezone` and `default_poll_close_time` until configured; `default_poll_lead_days` 1–120 (default 35); `default_minimum_participants` 1–100 (default 4, planning value only); `next_month_to_generate`, `next_rotation_position`, optimistic `version`, updater/time. |
+| `campsites` | Seven seeded rows: Del Monte, Wishon Cove, DeSabla, Almanor, Shasta, Britton, Pit River; `id`, unique `name`, nullable unique `rotation_position`, HTTPS availability URL, location/directions/reservation text, capacity/types, estimated rate in integer cents, availability status/source/verified time, active/version/actor/timestamps. Active sites require positive rotation position; inactive sites have none. Partial active-rotation index. Admin-only notes are isolated in `private.campsite_admin_notes`. |
+| `camping_trips` | One row per first-of-month `month_key` (unique); rotation position, suggested and selected campsite FKs, optional trip dates, timezone snapshot/deadline, `minimum_participants`, nullable `minimum_basis`, optional capacity, `poll_status` constrained to `draft/open/closed`, information, availability status, version/actors/timestamps. Date pair must be complete and ordered; an open poll requires dates, timezone, and deadline. Once set, the timezone snapshot governs later deadline edits even if the club default changes; the current default is used only before a trip gets a snapshot. Indexes: month, selected site/month, and open deadline partial index. No formal registration/trip lifecycle or cabin/payment columns exist. |
+| `trip_poll_events` | Append-only event keyed uniquely by `(trip_id, request_id, event_type)`; calendar generation, poll opened/closed/reopened, trip configured, campsite override, rotation reorder; actor, from/to poll state, reason, details, time. Indexed by trip and descending creation time. |
+| `rule_definitions` | Stable key, category, `general` or `trip` scope, optional trip FK, active state, creator/time. Check ties scope to null/non-null trip. Partial unique indexes protect general keys and per-trip keys. |
+| `rule_versions` | Immutable `definition_id`, sequence, human text, typed JSON object, effective/expiry timestamps, creator/time; unique definition/version, expiry after effective time. Structured JSON size is capped. Current versions are resolved by effective time. |
+| `trip_rule_overrides` | Trip + general-rule definition + exact base rule-version FK, immutable replacement text/structured values, positive sequence, required expiry, reason and creator/time; retired timestamp is the only allowed update. One current override per trip/base definition. |
+| `trip_rule_bundles` / `trip_rule_bundle_entries` | Immutable rendered JSON bundle and SHA-256 content hash, monotonically versioned per trip; `is_current` is the only guarded projection update. Entries identify exactly one rule version or override and source kind. Open polls refresh against current effective/expiry times on authenticated calendar/Constitution reads and before new Coming entries. Identical hashes reuse the current version; a changed hash creates a new immutable version. No authenticated Data API SELECT grant; trusted `trip-api` reads refresh and return the current bundle. Unique current bundle per trip and unique entry references. |
+| `trip_rule_acknowledgments` | Immutable member/trip/bundle FK, content hash, statement version, idempotency request UUID, acknowledgment timestamp; unique per member/trip/bundle/statement, indexed by member/trip/time. |
+| `trip_rsvps` | One projection row per trip/member; response `coming/not_coming`, optional acknowledgment FK constrained to the same trip/member, version and timestamps. Coming requires an acknowledgment. Indexed by trip/response and member/time. The acknowledgment reference remains the exact version that member accepted. |
+| `trip_rsvp_events` | Append-only `submitted/changed/withdrawal_requested/admin_interest_recorded` events with actor/member, before/after interest response, acknowledgment, request UUID, reason and time; unique member/request; indexed by trip/time. |
+| `trip_withdrawal_requests` | Separate pending request with trip/member, required reason, request UUID and time; unique member/request and trip/member; indexed by trip/time. A post-close request does not alter the Coming RSVP. |
+
+All public Phase 2 tables enable RLS. `anon` and `authenticated` have no write grants; authenticated users have SELECT grants filtered by active-member policies. Poll event visibility is admin-only. Members see their own RSVP, acknowledgment and withdrawal rows. Member reads of other participants are aggregated by `trip-api` to a Coming count; active display names and response roster are returned only to administrators. Private campsite notes have no client grant and are returned by one SECURITY DEFINER function that validates the current active admin in the database; EXECUTE is service-role-only. All other Phase 2 RPCs revoke PUBLIC/anon/authenticated EXECUTE and grant only to `service_role`.
+
+`pg_cron` runs calendar replenishment monthly and closes due interest polls every five minutes. Calendar generation is unique by `month_key` and safe to repeat. Poll close changes only `poll_status`; it does not evaluate minimum participation, confirm/cancel a trip, create contribution obligations, or send email. Local Cron behavior was tested; hosted Cron availability/monitoring was not.
 
 Columns below are normative design fields; implementation may add operational timestamps or generated columns without changing business semantics.
 

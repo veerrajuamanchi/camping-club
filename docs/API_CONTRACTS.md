@@ -1,6 +1,6 @@
 # API Contracts — Supabase Trusted Operations
 
-**Status:** Phase 1 contracts implemented; contracts for Phases 2–8 remain planned. The Phase 1 test harness exercises the implemented actions locally.
+**Status:** Phase 1 and Phase 2 contracts are implemented and locally tested. Contracts for Phases 3–8 remain planned. No hosted service or production deployment was exercised.
 **Sources:** [Approved design](superpowers/specs/2026-10-08-camping-club-platform-design.md), [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md), [STATE_MACHINES.md](STATE_MACHINES.md)
 
 ## 1. Contract conventions
@@ -52,6 +52,30 @@ The Data API grants active members only their own profile, contact and safe paym
 - Database profile and membership operations are transactional. Supabase Auth invitation email is an external side effect and cannot share the PostgreSQL transaction; a failed/ambiguous Auth delivery requires administrator recovery and must not be interpreted as profile activation.
 
 Phase 1 local acceptance tests cover the invite/bootstrap path, Auth/JWT verification, direct Data API access, field exposure, admin denial, last-admin protection, audit writes, CORS, and replay/conflict/expiry semantics. See [TEST_STRATEGY.md](TEST_STRATEGY.md) and [PHASE1_CERTIFICATION.md](PHASE1_CERTIFICATION.md).
+
+## 2.2 Implemented Phase 2 `trip-api` operations
+
+`supabase/functions/trip-api` has platform JWT verification enabled, independently resolves the bearer token with Auth `getUser`, requires confirmed email and an active `member_profiles` row, and reads the role from PostgreSQL. Admin role validation occurs before detailed request validation for admin-only actions. Browser mutations require a UUID `Idempotency-Key`; the frontend generates it per mutation. Edge code derives actor/member identity from the verified session and invokes narrow SQL functions using the server-only service role. No caller may set `minimum_basis` or invoke a trip-confirmation/cancellation/payment operation.
+
+| Action | Caller | Request / result boundary |
+| --- | --- | --- |
+| `get_calendar` | Active member | Before returning open-poll data, invokes service-role-only `phase2_refresh_open_rule_bundles` for the requested open trips. Returns the effective poll calendar, active campsite display fields, Coming count, and caller's own response and exact accepted rule bundle. Admin response additionally includes attendee response names, active member choices, private campsite notes, and pending withdrawal requests. Member views do not expose other member identities or Not Coming roster details. |
+| `get_constitution` | Active member; admin reads admin-only drafts/details | For a trip in an open poll, refreshes the effective rule bundle before returning it; then returns effective general + trip bundle, immutable versions, and current override editor data only for applicable scope. |
+| `admin_configure_club` | Active admin | Updates timezone, poll lead days/time, planning minimum and next rotation pointer with expected configuration version. Requires explicit timezone before opening polls; planning minimum is not evaluated. |
+| `admin_generate_calendar` | Active admin | Ensures unique month rows through the requested month; repeated request is idempotent. Monthly Cron uses the same generator. |
+| `admin_reorder_campsites` | Active admin | Reorders active-site round robin and next pointer; optimistic request key and reason are recorded. |
+| `admin_update_campsite` | Active admin | Edits public campsite fields and restricted admin notes; expected version prevents stale updates. |
+| `admin_configure_trip` | Active admin | Overrides campsite, dates, poll deadline/timezone snapshot, capacity, display information and planning minimum; expected version and reason required. An existing timezone snapshot remains stable across later edits and club-default changes; the current default is captured only when the trip has no snapshot yet. |
+| `admin_set_poll_status` | Active admin | Opens/closes or reopens an interest poll subject to poll configuration/version. Poll close never confirms/cancels a trip or creates obligations. Cron closes only due open polls. |
+| `admin_publish_rule` | Active admin | Adds immutable general or trip-specific rule version; trip-specific rules require expiry. General publication creates a new effective bundle without changing prior acknowledgments. |
+| `admin_set_rule_override` | Active admin | Adds expiring override tied to the exact current general rule version for one trip; old override is retired, never overwritten. |
+| `submit_rsvp` | Active member | Records Coming/Not Coming. For a new or changed-to-Coming response, the transaction refreshes the bundle using current rule effective/expiry times, then requires the submitted current bundle ID/hash and acknowledgment statement version. If the bundle changed after the member read it, the stale acknowledgment is rejected and the member must refresh. Existing Coming responses keep their exact previously accepted version without re-acknowledgment. |
+| `admin_record_interest` | Active admin | Records an administered late interest response for a selected active member; before a new/changed-to-Coming response, refreshes the current time-effective bundle and requires that member's acknowledgment of that exact bundle. This is interest only, not a confirmed attendee/payment entry. |
+| `request_withdrawal` | Active Coming member | While the poll is open and before cutoff, changes interest to Not Coming. Once closed/due, appends a pending request and leaves the Coming projection unchanged; no approval/rejection or effective post-confirmation withdrawal exists in Phase 2. |
+
+Open-poll bundle refresh is lock-serialized and content-hash idempotent: if the currently effective rendered rules have not changed, it returns the current immutable bundle without creating another version. Effective-time and expiry boundaries produce a new current bundle on the next authenticated read or new Coming operation. The current pointer changes; prior bundles and acknowledgments remain immutable.
+
+Phase 2 responses are `Cache-Control: no-store`; the trusted handler returns generic errors. Idempotency uses the Phase 1 shared HMAC-v1 record with principal + action + aggregate scope, canonical validated request digest, one winner under concurrent first use, replay of completed result inside the existing 30-day nonfinancial window, hash-mismatch conflict, and non-reexecution of a known expired key. Phase 1's unresolved HMAC key-rotation risk remains open. Calendar generation and poll closing are idempotent database operations, not dependent on site traffic. Phase 2 does not enqueue or send email; member notices are visible in the application and transactional-email delivery remains a later phase.
 
 ## 3. Mutating functions and restricted reads
 

@@ -1,10 +1,10 @@
 # Private Camping Club Platform
 
-The full private club coordination platform is governed by the approved design and phased implementation plan. Phase 1 establishes the repository, invitation-only identity, member profiles, protected payment preferences, initial RLS, and Render Static Site configuration. Trip, cancellation, contribution, and settlement features remain deferred to their approved phases; no unresolved owner policy has been selected.
+The full private club coordination platform is governed by the approved design and phased implementation plan. Phase 1 established the repository, invitation-only identity, member profiles, protected payment preferences, initial RLS, and Render Static Site configuration. Phase 2 adds the seven-site rolling calendar, interest polls/RSVP, and versioned Camping Constitution. Formal trip decisions, cancellation, contributions, and settlement remain deferred to their approved phases; no unresolved owner policy has been selected.
 
 ## Current authorization
 
-Phase 1 implementation is complete pending owner review of [the certification report](docs/PHASE1_CERTIFICATION.md). Do not start Phase 2, deploy to production, configure production secrets, or onboard real members until separately authorized.
+Phase 1 is reviewed as PASS WITH RISK. Phase 2 implementation is complete pending owner review of [its certification report](docs/PHASE2_CERTIFICATION.md). Do not start Phase 3, deploy to production, configure production secrets, or onboard real members until separately authorized.
 
 ## Technology
 
@@ -39,9 +39,12 @@ npm run typecheck
 npm test
 npm run test:db
 npm run test:integration
+npm run test:phase2-integration
 npm run build
 npm run security:scan
 ```
+
+`npm run verify` runs the complete current Phase 1 and Phase 2 verification chain, including local database and Edge Function integration checks.
 
 `test:integration` resets only the local Supabase database, creates synthetic Auth users, exercises invitation/bootstrap/profile/admin/RLS/idempotency boundaries, and removes its user fixtures. It requires the local Supabase stack to be running. It does not contact a hosted Supabase project or Render.
 
@@ -63,3 +66,4 @@ No production deployment has been performed. Configure Render/Supabase only afte
 - [Test strategy](docs/TEST_STRATEGY.md)
 - [Requirements traceability](docs/REQUIREMENTS_TRACEABILITY.md)
 - [Phase 1 certification](docs/PHASE1_CERTIFICATION.md)
+- [Phase 2 certification](docs/PHASE2_CERTIFICATION.md)

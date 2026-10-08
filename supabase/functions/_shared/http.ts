@@ -7,7 +7,7 @@ export function corsHeaders(origin: string | null): Record<string, string> {
   const accepted = origin && configured.includes(origin) ? origin : "null";
   return {
     "Access-Control-Allow-Origin": accepted,
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-bootstrap-token, x-request-id",
+    "Access-Control-Allow-Headers": "authorization, apikey, content-type, idempotency-key, x-bootstrap-token, x-request-id",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "600",
     "Vary": "Origin",

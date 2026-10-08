@@ -1,6 +1,6 @@
 Camping Club — Product Vision & Requirements
 Version: 2.0
-Status: Approved for incremental implementation planning
+Status: Approved product requirements; implementation is in phased delivery
 Deployment Target: Render
 Operating Model: Private, invitation-based, nonprofit camping coordination platform
 Primary Objective: Provide a free, low-maintenance application that manages camping activities from planning through financial settlement.
@@ -540,6 +540,8 @@ Reproducible settlement results.
 Comprehensive automated financial tests.
 Immutable finalized settlement snapshots.
 17. Incremental Implementation Plan
+The phase names and sequence in this original vision are historical summaries. Use `docs/IMPLEMENTATION_PLAN.md` for the current owner-approved implementation sequence and phase gates. Phase 1 is conditionally approved PASS WITH RISK; Phase 2 is implemented and awaiting certification review. Phase 2 provides interest polls and rules acknowledgment only; it does not make minimum-based trip decisions, collect contributions, confirm/cancel trips, or deliver poll email. Pending business choices remain in `docs/OWNER_DECISIONS.md`.
+
 Phase 1 — Foundation
 Authentication, member profiles, payment preferences, database schema, authorization, and deployment.
 Phase 2 — Campsites and Polls

@@ -418,5 +418,8 @@ enabled = true
 [functions.member-api]
 verify_jwt = true
 
+[functions.trip-api]
+verify_jwt = true
+
 [functions.bootstrap-admin]
 verify_jwt = false

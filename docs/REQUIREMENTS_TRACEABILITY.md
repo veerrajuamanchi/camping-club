@@ -1,7 +1,7 @@
 # Requirements Traceability Matrix
 
 **Source of truth:** [Approved design](superpowers/specs/2026-10-08-camping-club-platform-design.md). A conflict is not an owner decision; unresolved alternatives remain gated in the [Consistency Remediation Report](CONSISTENCY_REMEDIATION_REPORT.md) and [Owner Decision Record](OWNER_DECISIONS.md).
-**Purpose:** Every requirement has an implementation phase, test evidence and launch gate. Phase 1 rows below link to completed implementation and test evidence; later phases remain planned. “Test IDs” refer to [TEST_STRATEGY.md](TEST_STRATEGY.md). See [Phase 1 Certification](PHASE1_CERTIFICATION.md).
+**Purpose:** Every requirement has an implementation phase, test evidence and launch gate. Phase 1 and Phase 2 rows distinguish implemented local evidence from later hosted/phase work. “Test IDs” refer to [TEST_STRATEGY.md](TEST_STRATEGY.md). See [Phase 1 Certification](PHASE1_CERTIFICATION.md) and [Phase 2 Certification](PHASE2_CERTIFICATION.md).
 
 | ID | Requirement | Phase | Implementation and test evidence (future phases remain planned) |
 | --- | --- | --- | --- |
@@ -21,15 +21,16 @@
 | SEC-04 | Secret/service-role credentials never enter frontend | 1, 8 | Phase 1 `npm run security:scan` passes on production bundle; Render receives only public VITE variables. Hosted environment review remains future launch evidence. |
 | SEC-05 | User metadata/request JSON cannot authorize admin or cross-member actions | 1–8 | Phase 1 verifies Auth user server-side, reads role/status from PostgreSQL and denies member admin action; SEC-18/19. Future resource-specific checks remain planned. |
 | SEC-06 | Private receipt storage and three-month deletion | 5, 7 | SEC-10, EXP-06, OPS-08 |
-| TRIP-01 | Seven campsites and round-robin monthly rotation | 2 | TRIP-01 |
-| TRIP-02 | Rolling 12-month calendar, no duplicate month, catch-up | 2, 7 | TRIP-01 |
-| TRIP-03 | Friday–Sunday default; admin can edit dates/timezone | 2 | Cutoff/timezone integration tests |
-| TRIP-04 | Binary Coming / Not coming RSVP | 2 | TRIP-09 |
-| TRIP-05 | Default threshold four and structured trip override; count basis and payer-coverage treatment are owner-selected and unset until approval | 2, 3 | TRIP-03A/B/C, TRIP-04A/B/C |
-| TRIP-06 | Cutoff is earlier of 35 days pre-trip or contract deadline minus default 5-day buffer | 2, 3 | TRIP-02 |
-| TRIP-07 | Below-minimum at cutoff automatically cancels and emails members/admins; any money already received is unresolved | 3 | TRIP-04/05/14, CAB-09/13, OPS-03 |
-| TRIP-08 | Post-confirmation withdrawal request follows the owner-selected effectiveness rule; if effective attendance falls below minimum, prompt admin decision, never auto-cancel | 3 | TRIP-10 |
-| TRIP-09 | Admin late entries; cancelled trip reinstatement needs cabin verification | 2, 3 | TRIP-11/12 |
+| TRIP-01 | Seven campsites and round-robin monthly rotation | 2 | Implemented migration seeds seven sites; monthly generator preserves suggested/selected site and next-position cursor. Tests CAL-01/02 and DB-01. |
+| TRIP-02 | Rolling 12-month calendar, no duplicate month, catch-up | 2, 7 | Implemented `phase2_generate_calendar` + monthly Cron and admin catch-up; unique `month_key`, repeat-safe. Local tests CAL-01/03; hosted Cron/monitoring remains unverified (P2-R12). |
+| TRIP-03 | Friday–Sunday default; admin can edit dates/timezone | 2 | Dates and timezone/deadline are configurable per poll; timezone is required before open. Admin must enter actual dates; no assumed weekend dates. Tests CAL-04/05, P2-UI-04. Contractual cabin-buffer deadline remains Phase 3 because cabin booking data is absent. |
+| TRIP-03A | Editing a saved deadline preserves the trip timezone and deadline instant | 2 | `pollDeadlineAt` is formatted to the immutable per-trip timezone snapshot before populating date/time inputs; the trusted operation keeps that snapshot on later edits even if the club default changes. Tests CAL-06/P2-UI-10/DB-08. |
+| TRIP-04 | Binary Coming / Not coming RSVP | 2 | Implemented with optimistic versions and append-only `trip_rsvp_events`; members see own answer and aggregate Coming count. Tests RSVP-01/02/04, DB-01, P2-UI-01/02. |
+| TRIP-05 | Default threshold four and structured trip override; count basis and payer-coverage treatment are owner-selected and unset until approval | 2, 3 | Planning minimum (default 4) is configurable and stored, but is not evaluated; `minimum_basis` remains NULL and has no API write path. No confirmation/cancellation/contribution automation. OD-01/02 pending. Tests DB-03, CAL-04. |
+| TRIP-06 | Cutoff is earlier of 35 days pre-trip or contract deadline minus default 5-day buffer | 2, 3 | Phase 2 supports configurable poll deadline and lead-day default, but does not calculate the cabin-contract deadline formula because cabin booking state is not implemented. Formula remains gated for Phase 3. Tests CAL-05 cover configured poll deadline only. |
+| TRIP-07 | Below-minimum at cutoff automatically cancels and emails members/admins; any money already received is unresolved | 3 | Not implemented by design in Phase 2. OD-01/02/06/07 pending; polls only close at cutoff and create no trip decision or money fact. Phase 3 tests remain planned. |
+| TRIP-08 | Post-confirmation withdrawal request follows the owner-selected effectiveness rule; if effective attendance falls below minimum, prompt admin decision, never auto-cancel | 3 | Phase 2 stores a post-deadline request separately and leaves Coming unchanged; no confirmed-trip or effective-withdrawal function. OD-03 pending. Tests RSVP-05, API-04, P2-UI-07 cover interest-poll request only. |
+| TRIP-09 | Admin late entries; cancelled trip reinstatement needs cabin verification | 2, 3 | Phase 2 `admin_record_interest` is implemented for admin-managed poll responses; Coming requires exact member acknowledgment. No cancelled state/reinstatement exists. Tests RSVP-03, API-03. |
 | TRIP-10 | Actual attendee roster is recorded for expense allocation | 3, 5 | Attendance reconciliation tests |
 | TRIP-11 | Cancellation does not silently change rotation position | 2 | TRIP-01 |
 | CAB-01 | Separate club trip and cabin reservation states; track reference, contract date, request, confirmation, refund/credit | 3 | CAB-11 |
@@ -41,12 +42,13 @@
 | CAB-07 | For pre-confirmation cancellation or withdrawal, `coming_rsvp` has no $50 due before confirmation; under `received_contribution`, receipts may already exist and remain unresolved pending owner policy | 3 | CAB-09, CAB-13, TRIP-04A, TRIP-04B, TRIP-10, TRIP-14 |
 | CAB-08 | Club cancellation after confirmation has explicit refund/credit decision and no auto-forfeit/refund | 3, 6 | CAB-10; approved policy gate |
 | CAB-09 | Contribution receipts above actual cabin cost are not silently reallocated | 6 | CAB-08A/B, FIN-09; owner policy gate |
-| RULE-01 | General rules, trip-only rules, and linked trip overrides | 2 | Rule CRUD/version tests |
-| RULE-02 | Behavior uses typed structured values, not prose parsing | 2, 6 | Rule validation and policy engine tests |
-| RULE-03 | Trip rule operational expiry with immutable applicable policy snapshot retained 12 months | 2, 6, 7 | Snapshot hash and OPS-08 |
-| RULE-04 | Coming signup requires acknowledgment of complete applicable rule bundle | 2 | TRIP-06/07 |
-| RULE-05 | Acknowledgment records exact version/hash/time and remains unchanged after later rule edits; no re-ack | 2, 7 | TRIP-07/08 |
-| RULE-06 | Effective rule snapshot at trip confirmation may be distinct from prior signup acknowledgment | 2, 3 | TRIP-08 |
+| RULE-01 | General rules, trip-only rules, and linked trip overrides | 2 | Implemented immutable general/trip versions and expiring override linked to exact current general version; tests RULE-TS-01/02, DB-04/05, API-05, P2-UI-05. |
+| RULE-02 | Behavior uses typed structured values, not prose parsing | 2, 6 | Implemented validated JSON values stored separately from human-readable text; Phase 2 does not execute financial policies. Tests RULE-TS-01/03 and DB-04. |
+| RULE-03 | Trip rule operational expiry with immutable applicable policy snapshot retained 12 months | 2, 6, 7 | Expiry/effective-window resolution is refreshed for open polls on authenticated calendar/Constitution reads and before new Coming entries. Identical hashes reuse the current bundle; effective/expiry boundaries create a new immutable version. Prior accepted bundles remain immutable; cleanup/12-month retention worker is not implemented. Tests DB-07, API-06; retention remains future OPS-08. |
+| RULE-03A | A current Coming response does not require re-acknowledgment when rules later change or expire | 2, 7 | Current RSVP remains pinned to its exact accepted bundle; the new bundle is used only for a new/changed-to-Coming response. Existing test DB-06/RULE-05 remains valid. |
+| RULE-04 | Coming signup requires acknowledgment of complete applicable rule bundle | 2 | Implemented atomic exact-current bundle check + acknowledgment + RSVP. Tests RSVP-01/02, DB-06, API-02, P2-UI-01/02. |
+| RULE-05 | Acknowledgment records exact version/hash/time and remains unchanged after later rule edits; no re-ack | 2, 7 | Implemented append-only member/trip/bundle/hash/statement/time record; existing Coming RSVP retains old pointer after later publication. Tests RSVP-06, DB-06, P2-UI-06. |
+| RULE-06 | Effective rule snapshot at trip confirmation may be distinct from prior signup acknowledgment | 2, 3 | Confirmation-time snapshot is not implemented; signup acknowledgment is preserved. Phase 3 gate, no confirmation path. |
 | VEH-01 | Driver earns 76 cents/mile when carpool minimum 3 including driver | 4, 5, 6 | LOG-04, financial unit tests |
 | VEH-02 | $5 per participant car-wash contribution included in travel budget | 5, 6 | Expense/policy tests |
 | VEH-03 | Van guidance: 4 normally one; 5 one if fits otherwise exception; up to 8 aim for 2, 3 an exception | 4 | Transport validation tests |
@@ -112,6 +114,22 @@
 | Render deploy / hosted Supabase staging | NOT RUN; explicitly outside Phase 1 authorization | ARC-01/02; G1 PASS WITH RISK |
 
 Full command evidence, screenshots and limitations: [PHASE1_CERTIFICATION.md](PHASE1_CERTIFICATION.md).
+
+## Phase 2 executed evidence summary
+
+| Evidence | Result | Requirements covered |
+| --- | --- | --- |
+| `npm run typecheck` | PASS | Phase 1 and Phase 2 TypeScript contracts. |
+| `npm test` | PASS — 26 tests / 6 files | CAL-01–06, RULE-TS-01–03, RSVP-01–06, P2-UI-01–10; member/admin journeys, timezone-safe deadline editing, campsite management, late interest, exact rule version, poll settings, overrides, pending withdrawal. |
+| `npm run test:db` | PASS — 59 pgTAP assertions across Phase 1 and Phase 2 SQL tests | DB-01–08; calendar uniqueness/rotation, RLS and grants, poll configuration/close, immutable rules and acknowledgments, effective/expiry boundaries, stale-bundle rejection, and timezone snapshot preservation. |
+| `npm run test:integration` | PASS — Phase 1 local Auth/Edge/RLS/security regression | Existing SEC-14–19 and invitation/payment-identifier boundary evidence preserved. |
+| `npm run test:phase2-integration` | PASS — synthetic local member/admin and Edge Function integration | API-01–06, RSVP-01–06; authorization, idempotency, refreshed calendar/Constitution reads, direct Data API bundle denial, admin site/rule actions, exact acknowledgment, poll close and withdrawal request. |
+| `npm run build` | PASS — Vite production bundle generated | ARC-01, Phase 2 UI compile/bundle. |
+| `npm run security:scan` | PASS — no privileged credentials/payment identifiers found in frontend bundle | SEC-03/04. |
+| Render or hosted Supabase deploy | NOT RUN; not authorized | No production deployment or real-member onboarding. |
+| Hosted Cron/email/backup/recovery | NOT RUN | Remains operational risk P2-R01/P2-R04/P2-R12. |
+
+The final local command sequence was `npm run verify`, which executes the commands above in order. See [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md) for environment, limitations, risk disposition and owner gates.
 
 ## 2. Evidence ownership
 
