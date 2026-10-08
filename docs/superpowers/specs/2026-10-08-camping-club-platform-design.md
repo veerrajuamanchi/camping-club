@@ -78,8 +78,8 @@ Each trip has a reservation record with reservation reference, provider/contact,
 - After each trip, an administrator records the actual attendee roster. Expense allocations can only reference actual attendees.
 - Cancelling a trip does not advance or silently reset the rotation; the scheduled month retains its position by default.
 - If attendance drops below the minimum after confirmation, the trip stays confirmed until an administrator explicitly decides to proceed or cancel. The decision, reason, member notifications, and any cabin action are recorded.
-- A Coming RSVP creates a cabin commitment of at least $50 per participant. Whether a deposit must be paid before it counts toward the minimum, and whether it is refundable when someone withdraws, is a required product decision before implementation.
-- Members can withdraw their RSVP. A withdrawal before the cutoff releases unclaimed responsibility slots and updates the projected minimum; a withdrawal after confirmation alerts the administrator and never silently cancels the trip. Record who changed the RSVP and when. Any remaining cabin contribution, refund, or cost allocation follows the deposit policy that must be decided before implementation.
+- Each Coming member owes a minimum $50 cabin commitment contribution. Only members whose $50 payment is recorded as received count toward the minimum at the registration cutoff. The contribution is non-refundable if the member withdraws.
+- Members can withdraw their RSVP. A withdrawal before the cutoff releases unclaimed responsibility slots and updates the projected minimum; a withdrawal after confirmation alerts the administrator and never silently cancels the trip. Record who changed the RSVP and when. The member's non-refundable contribution remains credited to the trip's cabin cost; any additional cancellation-related cost is reviewed and allocated by an administrator under the trip rules.
 
 ### Assumptions to verify in written review
 
@@ -165,7 +165,8 @@ When a member responds Coming, the trip signup collects:
 - If an error is found after payments have begun, do not delete or rewrite the finalized version or its transfers. Create a numbered adjustment version that references the prior version, preserves every sent/received payment, calculates remaining obligations or credits, and explains the correction. Confirmed receipts remain attached to the version in which they occurred.
 - Close only when all transfers are confirmed or the administrator explicitly resolves outstanding transfers with a reason. Keep a minimal immutable ledger of settlement versions, member obligations, payment states/timestamps, adjustments, and resolution notes for 12 months after closure.
 - Payment instructions include trip, payer, recipient, exact amount, recipient's preferred method and identifier, reference, deadline if configured, and the required warning to reconfirm details directly before sending.
-- The payer may mark a transfer sent. The recipient or an administrator may record it received. Statuses are Pending, Marked Sent, Confirmed Received, and Disputed. Email delivery never implies payment.
+- The payer may mark a transfer sent. The recipient or an administrator may record it received. Statuses are Pending, Marked Sent, Confirmed Received, and Disputed. Apply the same external-payment acknowledgment flow to cabin commitment contributions. Email delivery never implies payment.
+- Track each received cabin contribution as an advance against the cabin booking cost and apply it once in the settlement calculation. A withdrawn member's non-refundable contribution remains credited against that trip cost; never count it again as an expense or charge the contributor twice.
 - The app never initiates transfers.
 
 ## 10. WhatsApp and media
@@ -233,4 +234,4 @@ These defaults make the design implementable; revise any of them during written 
 9. A trip-specific exception to mileage or vehicle-count policy requires an administrator reason.
 10. Attendance below the minimum after confirmation requires an administrator decision; the trip is not silently cancelled.
 11. Minimal settlement ledger and applicable policy snapshot retention is 12 months after closure; receipts and sensitive payment instructions/identifiers are deleted after three months.
-12. The $50 cabin commitment's payment timing, whether it gates the minimum, and withdrawal/refund treatment must be decided before implementation.
+12. A member counts toward the registration minimum only after the $50 cabin contribution is recorded as received. The contribution is non-refundable after withdrawal and is credited once against the trip's cabin cost.
