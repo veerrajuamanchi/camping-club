@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { invokeMemberApi, supabase, type ApiMember } from "../lib/supabase";
+import { invokeMemberApi, MemberApiError, supabase, type ApiMember } from "../lib/supabase";
 import type { MembershipState } from "../features/auth/AccessBoundary";
 
 type AuthValue = {
   session: Session | null;
   membership: MembershipState;
   profile: ApiMember | null;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<MembershipState>;
   signOut: () => Promise<void>;
 };
 const AuthContext = createContext<AuthValue | null>(null);
@@ -17,18 +17,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [membership, setMembership] = useState<MembershipState>({ status: "loading" });
   const [profile, setProfile] = useState<ApiMember | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!supabase) { setSession(null); setMembership({ status: "signedOut" }); return; }
+  const refresh = useCallback(async (): Promise<MembershipState> => {
+    if (!supabase) { setSession(null); setMembership({ status: "signedOut" }); return { status: "signedOut" }; }
     const { data: { session: current } } = await supabase.auth.getSession();
     setSession(current);
-    if (!current) { setMembership({ status: "signedOut" }); setProfile(null); return; }
+    if (!current) { const state = { status: "signedOut" } as const; setMembership(state); setProfile(null); return state; }
     try {
       const result = await invokeMemberApi<{ member: ApiMember }>("me");
       setProfile(result.member);
-      setMembership({ status: "active", role: result.member.role, displayName: result.member.displayName });
-    } catch {
+      const state = { status: "active", role: result.member.role, displayName: result.member.displayName } as const;
+      setMembership(state);
+      return state;
+    } catch (error) {
       setProfile(null);
-      setMembership({ status: "inactive" });
+      const state = error instanceof MemberApiError && error.code === "invitation_profile_required"
+        ? { status: "profileRequired" } as const
+        : { status: "inactive" } as const;
+      setMembership(state);
+      return state;
     }
   }, []);
 

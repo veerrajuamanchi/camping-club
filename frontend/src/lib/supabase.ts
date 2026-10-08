@@ -14,13 +14,31 @@ export type ApiMember = {
   paymentMethod: "zelle" | "venmo" | "paypal" | "apple_cash" | null;
 };
 
+export class MemberApiError extends Error {
+  constructor(readonly code?: string) {
+    super("The request could not be completed.");
+    this.name = "MemberApiError";
+  }
+}
+
+export async function responseErrorCode(response?: Response): Promise<string | undefined> {
+  if (!response) return undefined;
+  try {
+    const payload = await response.clone().json();
+    if (typeof payload?.error === "string") return payload.error;
+    return typeof payload?.error?.code === "string" ? payload.error.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function invokeMemberApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {
   if (!supabase) throw new Error(configurationError ?? "Supabase is unavailable.");
   const body = { action, input };
   const headers = !["me", "list_members"].includes(action) ? { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() } : undefined;
-  const { data, error } = await supabase.functions.invoke("member-api", { body, headers });
-  if (error) throw new Error("The request could not be completed.");
-  if (data?.error) throw new Error("The request could not be completed.");
+  const { data, error, response } = await supabase.functions.invoke("member-api", { body, headers });
+  if (error) throw new MemberApiError(await responseErrorCode(response));
+  if (data?.error) throw new MemberApiError(typeof data.error.code === "string" ? data.error.code : undefined);
   return data?.data as T;
 }
 

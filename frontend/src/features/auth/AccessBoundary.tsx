@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 export type MembershipState =
   | { status: "loading" }
   | { status: "signedOut" }
+  | { status: "profileRequired" }
   | { status: "inactive" }
   | { status: "active"; role: "member" | "admin"; displayName: string };
 
@@ -17,6 +18,7 @@ export function AccessBoundary({
 }) {
   if (state.status === "loading") return <p role="status">Checking club access…</p>;
   if (state.status === "signedOut") return <p>Sign in to continue.</p>;
+  if (state.status === "profileRequired") return <p>Complete your invited profile to continue.</p>;
   if (state.status === "inactive") return <p>Club access is inactive. Contact an administrator.</p>;
   if (requiredRole === "admin" && state.role !== "admin") return <p>Administrator access is required.</p>;
   return <>{children}</>;
