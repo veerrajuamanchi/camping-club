@@ -1,9 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { resolveServiceApiKey } from "../_shared/service-key.mjs";
 import { canonicalJson, emailDigest, keyedDigest, protectPaymentIdentifier, requestDigest, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, emailSchema, isOriginAllowed, json, profileSchema, readBody } from "../_shared/http.ts";
 
-const service = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
+const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 const inviteSchema = z.object({ email: emailSchema });
 const membershipSchema = z.object({ memberId: z.string().uuid(), memberRole: z.enum(["member", "admin"]), accountStatus: z.enum(["active", "inactive", "suspended"]), reason: z.string().trim().min(1).max(500) });
 const requestSchema = z.object({

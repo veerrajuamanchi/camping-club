@@ -1,9 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
+import { resolveServiceApiKey } from "../_shared/service-key.mjs";
 import { emailDigest, constantTimeEqual, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, emailSchema, isOriginAllowed, json, readBody } from "../_shared/http.ts";
 import { z } from "zod";
 
-const service = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
+const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 
 Deno.serve(async (request) => {
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();

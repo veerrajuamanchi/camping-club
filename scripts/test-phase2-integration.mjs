@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { terminateProcessTree } from "./terminate-process.mjs";
 
 const reset = spawnSync("npx", ["supabase", "db", "reset", "--local"], { encoding: "utf8" });
 if (reset.status !== 0) throw new Error("Start local Supabase before running Phase 2 integration tests.");
@@ -17,7 +18,7 @@ const envPath = join(temporaryDirectory, "functions.env");
 const secret = () => randomBytes(32).toString("base64");
 await writeFile(envPath, [
   `SUPABASE_URL=${api}`,
-  `SUPABASE_SERVICE_ROLE_KEY=${serviceKey}`,
+  `SUPABASE_SECRET_KEYS={"default":"${serviceKey}"}`,
   `INVITATION_HMAC_KEY=${secret()}`,
   `IDEMPOTENCY_HMAC_KEY=${secret()}`,
   "IDEMPOTENCY_HMAC_KEY_VERSION=v1",
@@ -29,7 +30,7 @@ await writeFile(envPath, [
   "ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173",
 ].join("\n"), { mode: 0o600 });
 
-const server = spawn("npx", ["supabase", "functions", "serve", "--env-file", envPath], { stdio: ["ignore", "pipe", "pipe"] });
+const server = spawn("npx", ["supabase", "functions", "serve", "--env-file", envPath], { stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
 const logParts = [];
 server.stdout.on("data", (part) => logParts.push(part));
 server.stderr.on("data", (part) => logParts.push(part));
@@ -95,9 +96,9 @@ try {
     const response = await fetch(`${api}/functions/v1/trip-api`, { method: "POST", headers: { apikey: publishableKey, "Content-Type": "application/json" }, body: JSON.stringify({ action: "get_calendar" }) });
     return response.status === 401;
   }, "Trip API did not start.");
-  const preflight = await fetch(`${api}/functions/v1/trip-api`, { method: "OPTIONS", headers: { Origin: "http://localhost:5173", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization, apikey, content-type, idempotency-key" } });
+  const preflight = await fetch(`${api}/functions/v1/trip-api`, { method: "OPTIONS", headers: { Origin: "http://localhost:5173", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization, apikey, content-type, idempotency-key, x-client-info" } });
   const allowedHeaders = preflight.headers.get("access-control-allow-headers")?.toLowerCase() ?? "";
-  check(preflight.ok && allowedHeaders.includes("idempotency-key"), `Trip API CORS preflight failed (status ${preflight.status}, headers ${allowedHeaders}).`);
+  check(preflight.ok && allowedHeaders.includes("idempotency-key") && allowedHeaders.includes("x-client-info"), `Trip API CORS preflight failed (status ${preflight.status}, headers ${allowedHeaders}).`);
   const blockedOrigin = await fetch(`${api}/functions/v1/trip-api`, { method: "POST", headers: { Origin: "https://unapproved.example", apikey: publishableKey, "Content-Type": "application/json" }, body: JSON.stringify({ action: "get_calendar" }) });
   check(blockedOrigin.status === 405, "Trip API accepted an unapproved browser origin.");
   const suffix = randomUUID();
@@ -288,13 +289,7 @@ try {
     }
     await authAdmin("DELETE", `users/${fixture.authId}`).catch(() => {});
   }
-  server.kill("SIGTERM");
-  await new Promise((resolve) => {
-    if (server.exitCode !== null) { resolve(); return; }
-    const timer = setTimeout(resolve, 3000);
-    timer.unref();
-    server.once("exit", () => { clearTimeout(timer); resolve(); });
-  });
+  await terminateProcessTree(server);
   const cleanupReset = spawnSync("npx", ["supabase", "db", "reset", "--local"], { encoding: "utf8", stdio: "ignore" });
   if (cleanupReset.status !== 0 && process.exitCode === undefined) {
     console.error("Local synthetic fixtures could not be cleared after the integration run.");

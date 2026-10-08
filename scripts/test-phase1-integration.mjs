@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { terminateProcessTree } from "./terminate-process.mjs";
 
 const resetRun = spawnSync("npx", ["supabase", "db", "reset", "--local"], { encoding: "utf8" });
 if (resetRun.status !== 0) throw new Error("Start the local Supabase stack first; integration tests reset its local database.");
@@ -19,7 +20,7 @@ const envValue = (length = 32) => randomBytes(length).toString("base64");
 const bootstrapToken = envValue();
 await writeFile(envPath, [
   `SUPABASE_URL=${api}`,
-  `SUPABASE_SERVICE_ROLE_KEY=${serviceKey}`,
+  `SUPABASE_SECRET_KEYS={"default":"${serviceKey}"}`,
   `INVITATION_HMAC_KEY=${envValue()}`,
   `IDEMPOTENCY_HMAC_KEY=${envValue()}`,
   "IDEMPOTENCY_HMAC_KEY_VERSION=v1",
@@ -31,7 +32,7 @@ await writeFile(envPath, [
   "ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173",
 ].join("\n"), { mode: 0o600 });
 
-const server = spawn("npx", ["supabase", "functions", "serve", "--env-file", envPath], { stdio: ["ignore", "pipe", "pipe"] });
+const server = spawn("npx", ["supabase", "functions", "serve", "--env-file", envPath], { stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
 const serverLogChunks = [];
 server.stdout.on("data", (chunk) => serverLogChunks.push(chunk));
 server.stderr.on("data", (chunk) => serverLogChunks.push(chunk));
@@ -94,6 +95,18 @@ try {
     const response = await fetch(`${api}/functions/v1/member-api`, { method: "POST", headers: { apikey: publicKey, "Content-Type": "application/json" }, body: JSON.stringify({ action: "me" }) });
     return response.status === 401;
   }, "Edge Functions did not become ready.");
+
+  const memberPreflight = await fetch(`${api}/functions/v1/member-api`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://localhost:5173",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "authorization, apikey, content-type, x-client-info",
+    },
+  });
+  const memberAllowedHeaders = memberPreflight.headers.get("access-control-allow-headers")?.toLowerCase() ?? "";
+  check(memberPreflight.ok && memberAllowedHeaders.includes("x-client-info"),
+    `Member API CORS preflight did not allow x-client-info (status ${memberPreflight.status}, headers ${memberAllowedHeaders}).`);
 
   const deniedBootstrap = await fetch(`${api}/functions/v1/bootstrap-admin`, { method: "POST", headers: { apikey: publicKey, "Content-Type": "application/json", "x-bootstrap-token": "wrong" }, body: JSON.stringify({ email: `no-bootstrap-${suffix}@example.test` }) });
   check(deniedBootstrap.status === 401, `Bootstrap endpoint did not reject the invalid token as expected (${deniedBootstrap.status}; ${await deniedBootstrap.text()}).`);
@@ -220,7 +233,6 @@ try {
     await authAdmin("DELETE", `users/${fixture.id}`).catch(() => {});
   }
   if (inviteUserId) await authAdmin("DELETE", `users/${inviteUserId}`).catch(() => {});
-  server.kill("SIGTERM");
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  await terminateProcessTree(server);
   await rm(tempDir, { recursive: true, force: true });
 }
