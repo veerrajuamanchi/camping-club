@@ -1,9 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { resolveServiceApiKey } from "../_shared/service-key.mjs";
 import { canonicalJson, keyedDigest, requestDigest, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, isOriginAllowed, json, readBody } from "../_shared/http.ts";
 
-const service = createClient(requiredEnv("SUPABASE_URL"), requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false, autoRefreshToken: false } });
+const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 const uuid = z.string().uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/);

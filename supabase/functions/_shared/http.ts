@@ -1,17 +1,11 @@
 import { z } from "zod";
+import { corsHeaders as buildCorsHeaders } from "./cors.mjs";
 
 const defaultOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
 
 export function corsHeaders(origin: string | null): Record<string, string> {
   const configured = Deno.env.get("ALLOWED_ORIGINS")?.split(",").map((item) => item.trim()).filter(Boolean) ?? defaultOrigins;
-  const accepted = origin && configured.includes(origin) ? origin : "null";
-  return {
-    "Access-Control-Allow-Origin": accepted,
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type, idempotency-key, x-bootstrap-token, x-request-id",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Max-Age": "600",
-    "Vary": "Origin",
-  };
+  return buildCorsHeaders(origin, configured);
 }
 
 export function json(request: Request, status: number, body: unknown): Response {

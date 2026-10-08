@@ -10,7 +10,7 @@
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "typecheck": "npm --prefix frontend run typecheck",
-    "test": "npm --prefix frontend test",
+    "test": "node --test supabase/functions/_shared/cors.test.mjs supabase/functions/_shared/service-key.test.mjs scripts/terminate-process.test.mjs && npm --prefix frontend test",
     "test:db": "node scripts/test-db.mjs",
     "test:integration": "node scripts/test-phase1-integration.mjs",
     "test:phase2-integration": "node scripts/test-phase2-integration.mjs",
