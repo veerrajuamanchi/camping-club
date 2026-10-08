@@ -1,6 +1,6 @@
 Camping Club — Product Vision & Requirements
 Version: 2.0
-Status: Approved for incremental implementation planning
+Status: Approved product requirements; implementation is in phased delivery
 Deployment Target: Render
 Operating Model: Private, invitation-based, nonprofit camping coordination platform
 Primary Objective: Provide a free, low-maintenance application that manages camping activities from planning through financial settlement.
@@ -191,17 +191,17 @@ Estimated cabin cost.
 Additional trip information.
 Current signup count.
 Poll status.
-7.1 Poll Statuses
+7.1 Legacy Poll Status Vocabulary — Reconciliation Required
 Draft
 Open
-Closed — Pending Decision
 Confirmed
 Cancelled
 Completed
+The earlier `Closed — Pending Decision` poll label is not present in the later trip lifecycle. The canonical model tracks registration status separately from trip status; owner must decide whether a post-deadline pending-decision state is required for the optional cabin-booking verification gate.
 7.2 Minimum Participation
 Default minimum: 4 registered participants.
 The administrator may configure a different minimum for a particular trip.
-Only active, confirmed registrations count toward the minimum.
+The minimum-count basis is unresolved across approved design revisions. Earlier amended text counts only active Coming members with a recorded $50 cabin contribution receipt; later planning text counts active Coming RSVPs and collects $50 after confirmation. Neither is approved for implementation. If the received-contribution basis is chosen, the owner must also decide whether the attending cabin payer's non-posting booking-coverage marker counts in place of a cash receipt. The owner must select all applicable choices before trips can be opened.
 7.3 Registration Deadline
 Default registration deadline: 35 calendar days before the trip's configured reservation start date.
 The application should support a separate contractual cancellation deadline and configurable safety buffer.
@@ -209,12 +209,12 @@ If the cabin cancellation deadline is 30 days before the reservation start, the 
 The application must use the configured local timezone consistently and show the exact closing date and time.
 7.4 Automatic Decision
 At the poll deadline:
-When participants meet or exceed the minimum:
+When participants meet or exceed the owner-approved minimum basis:
 Close registration.
-Mark the trip as confirmed, subject to any configured administrator booking-verification gate.
+Mark the trip as confirmed, subject to any configured administrator booking-verification gate. This optional gate conflicts with the later design's automatic trip confirmation once the selected participation minimum is met; decide whether to retain it before implementation.
 Notify registered participants.
 Notify the administrator to verify or complete the cabin reservation.
-When participants fall below the minimum:
+When participants fall below the owner-approved minimum basis:
 Close registration.
 Mark the trip as cancelled.
 Notify registered participants.
@@ -223,7 +223,7 @@ Cancellation of the camping event must never be represented as proof that the ex
 The administrator must record the actual cabin cancellation confirmation separately.
 7.5 Member Withdrawal
 Members may withdraw before the registration deadline.
-Withdrawals after confirmation require administrator approval.
+Withdrawals after confirmation require administrator approval in this vision. The later design allows a member to withdraw and alerts the administrator without defining an approval step. This conflict remains unresolved; do not implement either behavior until the owner decides.
 Late withdrawal does not automatically cancel a confirmed trip.
 Any financial responsibility for late withdrawal must follow the Camping Constitution.
 8. Notifications
@@ -266,7 +266,7 @@ Dispute resolution.
 Member conduct.
 Administrator responsibilities.
 Initial default rule:
-A camping trip requires a minimum of four confirmed participants to proceed.
+A camping trip requires a minimum of four participants under the selected minimum-count basis. The basis remains unresolved as stated in Section 7.2.
 All additional rules remain configurable and may be supplied later.
 The Constitution must support version history, publication dates, and administrator editing.
 Members should be able to review the rules applicable to a particular camping trip, even if the Constitution is revised later.
@@ -540,6 +540,8 @@ Reproducible settlement results.
 Comprehensive automated financial tests.
 Immutable finalized settlement snapshots.
 17. Incremental Implementation Plan
+The phase names and sequence in this original vision are historical summaries. Use `docs/IMPLEMENTATION_PLAN.md` for the current owner-approved implementation sequence and phase gates. Phase 1 is conditionally approved PASS WITH RISK; Phase 2 is implemented and awaiting certification review. Phase 2 provides interest polls and rules acknowledgment only; it does not make minimum-based trip decisions, collect contributions, confirm/cancel trips, or deliver poll email. Pending business choices remain in `docs/OWNER_DECISIONS.md`.
+
 Phase 1 — Foundation
 Authentication, member profiles, payment preferences, database schema, authorization, and deployment.
 Phase 2 — Campsites and Polls
@@ -649,8 +651,5 @@ Cost to be determined
 
 My recommendation: Approve the Render Static Site + React + Supabase architecture as the baseline, but require the agent to certify the scheduling and database reliability before production launch. Your local Mac should only be needed for optional campsite availability collection, never for essential cancellation notifications.
 The most important document is AGENTS.md, because it tells the coding agent to follow the approved architecture every time it works on the repository—not just during the initial design phase.
-
-
-
 
 
