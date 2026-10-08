@@ -145,10 +145,6 @@ PASS WITH RISK
 BLOCKED
 Explicitly identify any risks that could cause a missed cabin cancellation deadline, loss of financial records, or incorrect payment instructions.
 Do not certify the architecture as production-ready while any critical reliability or financial integrity risk remains unresolved.
-6. Initial Assignment
-Create the architecture governance documents and proposed deployment design.
-Do not begin application feature development yet.
-Present the selected technologies, architectural decisions, operational risks, estimated costs, and implementation sequence for review.
-Once approved, implement incrementally using the architecture as the governing baseline.
-
+6. Current implementation boundary
+The architecture and implementation plan are owner-approved for Phase 1 implementation only. Phase 1 certification is pending owner review. Do not begin Phase 2, deploy to production, configure production secrets, or onboard real members until separately authorized. Preserve all pending decisions in `docs/OWNER_DECISIONS.md`; do not infer financial or cancellation policies from recommendations.
 
