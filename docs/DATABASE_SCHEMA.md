@@ -1,6 +1,6 @@
 # Database Schema — Private Camping Club Platform
 
-**Status:** Phase 1 identity and Phase 2 calendar/poll/Constitution schemas are implemented in migrations `20261008165655_phase1_member_identity.sql`, `20261008185225_phase2_calendar_polls_rules.sql`, and `20261009005148_phase2_cabin_booking_status_and_general_rules.sql`. Entities described after the as-built section remain future-phase planning baseline. Owner-gated policies remain unresolved. The latest booking-status/general-rule migration is authored but awaiting local replay because Docker Desktop could not start during verification.
+**Status:** Reconciled planning baseline; owner-gated policies remain unresolved. No migrations or feature code are included here.
 **Source:** [Approved design](superpowers/specs/2026-10-08-camping-club-platform-design.md)
 
 ## 1. Database design rules
@@ -27,42 +27,19 @@
 
 ## 3. Entity catalog
 
-### Phase 2 as-built schema (current implementation)
-
-This section describes the deployed-to-local migration contract exactly. It does not imply a trip confirmation/cancellation or payment policy. All Phase 2 mutations pass through the authenticated `trip-api` Edge Function into service-role-only SQL operations; the browser receives no service credential.
-
-| Entity | Persisted facts, constraints and indexes |
-| --- | --- |
-| `club_configuration` | Singleton row; nullable `club_timezone` and `default_poll_close_time` until configured; `default_poll_lead_days` 1–120 (default 35); `default_minimum_participants` 1–100 (default 4, planning value only); `next_month_to_generate`, `next_rotation_position`, optimistic `version`, updater/time. |
-| `campsites` | Seven seeded rows: Del Monte, Wishon Cove, DeSabla, Almanor, Shasta, Britton, Pit River; `id`, unique `name`, nullable unique `rotation_position`, HTTPS availability URL, location/directions/reservation text, capacity/types, estimated rate in integer cents, availability status/source/verified time, active/version/actor/timestamps. Active sites require positive rotation position; inactive sites have none. Partial active-rotation index. Admin-only notes are isolated in `private.campsite_admin_notes`. |
-| `camping_trips` | One row per first-of-month `month_key` (unique); rotation position, suggested and selected campsite FKs, optional trip dates, timezone snapshot/deadline, `minimum_participants`, nullable `minimum_basis`, optional capacity, `poll_status` constrained to `draft/open/closed`, information, legacy `cabin_availability_status`, current nullable `cabin_booking_status` constrained to `booked/no_vacancy/sites_available`, version/actors/timestamps. Migration maps only unambiguous old values (`available` → `sites_available`; `unavailable` → `no_vacancy`); `limited`, `unknown` and `manual_confirmation` remain NULL for explicit admin review. Old value is retained for migration history. Date pair must be complete and ordered; an open poll requires dates, timezone, and deadline. Once set, the timezone snapshot governs later deadline edits even if the club default changes; the current default is used only before a trip gets a snapshot. Indexes: month, selected site/month, and open deadline partial index. No formal registration/trip lifecycle or payment collection columns exist. |
-| `trip_poll_events` | Append-only event keyed uniquely by `(trip_id, request_id, event_type)`; calendar generation, poll opened/closed/reopened, trip configured, campsite override, rotation reorder; actor, from/to poll state, reason, details, time. Trip configuration details include the selected Cabin Booking Status. Indexed by trip and descending creation time. |
-| `rule_definitions` | Stable key, category, `general` or `trip` scope, optional trip FK, active state, creator/time. Check ties scope to null/non-null trip. Partial unique indexes protect general keys and per-trip keys. The new seed migration creates 15 general rules/guidelines alongside the existing interest-poll disclosure; see [Default Camping Constitution](DEFAULT_CAMPING_CONSTITUTION.md). The `$50` contribution text leaves due timing tied to the unresolved owner-approved participation policy and does not create collection behavior. |
-| `rule_versions` | Immutable `definition_id`, sequence, human text, typed JSON object, effective/expiry timestamps, creator/time; unique definition/version, expiry after effective time. Structured JSON size is capped. Current versions are resolved by effective time. |
-| `trip_rule_overrides` | Trip + general-rule definition + exact base rule-version FK, immutable replacement text/structured values, positive sequence, required expiry, reason and creator/time; retired timestamp is the only allowed update. One current override per trip/base definition. |
-| `trip_rule_bundles` / `trip_rule_bundle_entries` | Immutable rendered JSON bundle and SHA-256 content hash, monotonically versioned per trip; `is_current` is the only guarded projection update. Entries identify exactly one rule version or override and source kind. Open polls refresh against current effective/expiry times on authenticated calendar/Constitution reads and before new Coming entries. Identical hashes reuse the current version; a changed hash creates a new immutable version. No authenticated Data API SELECT grant; trusted `trip-api` reads refresh and return the current bundle. Unique current bundle per trip and unique entry references. |
-| `trip_rule_acknowledgments` | Immutable member/trip/bundle FK, content hash, statement version, idempotency request UUID, acknowledgment timestamp; unique per member/trip/bundle/statement, indexed by member/trip/time. |
-| `trip_rsvps` | One projection row per trip/member; response `coming/not_coming`, optional acknowledgment FK constrained to the same trip/member, version and timestamps. Coming requires an acknowledgment. Indexed by trip/response and member/time. The acknowledgment reference remains the exact version that member accepted. |
-| `trip_rsvp_events` | Append-only `submitted/changed/withdrawal_requested/admin_interest_recorded` events with actor/member, before/after interest response, acknowledgment, request UUID, reason and time; unique member/request; indexed by trip/time. |
-| `trip_withdrawal_requests` | Separate pending request with trip/member, required reason, request UUID and time; unique member/request and trip/member; indexed by trip/time. A post-close request does not alter the Coming RSVP. |
-
-All public Phase 2 tables enable RLS. `anon` and `authenticated` have no write grants; authenticated users have SELECT grants filtered by active-member policies. Poll event visibility is admin-only. Members see their own RSVP, acknowledgment and withdrawal rows. Member reads of other participants are aggregated by `trip-api` to a Coming count; active display names and response roster are returned only to administrators. Private campsite notes have no client grant and are returned by one SECURITY DEFINER function that validates the current active admin in the database; EXECUTE is service-role-only. All other Phase 2 RPCs revoke PUBLIC/anon/authenticated EXECUTE and grant only to `service_role`.
-
-`pg_cron` runs calendar replenishment monthly and closes due interest polls every five minutes. Calendar generation is unique by `month_key` and safe to repeat. Poll close changes only `poll_status`; it does not evaluate minimum participation, confirm/cancel a trip, create contribution obligations, or send email. Local Cron behavior was tested; hosted Cron availability/monitoring was not.
-
 Columns below are normative design fields; implementation may add operational timestamps or generated columns without changing business semantics.
 
 ### Membership and payment preference
 
 | Entity | Key columns and rules |
 | --- | --- |
-| member_profiles | Implemented: member_id UUID PK (stable club identity), auth_user_id unique nullable FK auth.users ON DELETE SET NULL, display_name (1–80 chars), member_role(member/admin), account_status(active/inactive/suspended), created_at, updated_at, deactivated_at. Role/status changes only through trusted operation. Members can directly update only their own display_name. Historical finance/attendance references use member_id, not auth_user_id. |
-| member_private_contacts | Implemented: member_id PK/FK member_profiles, phone_e164 with E.164 format check, updated_at. Active member can read/insert/update only own row; admin retrieval is server-side only. |
-| member_payment_methods | Implemented: id PK, member_id FK, method(zelle/venmo/paypal/apple_cash), preferred, accepted_for_receiving, active, verified_format_at, created_at, updated_at. Contains no payment identifier. At most one preferred active method per member. Active owner can read/manage safe method metadata only. |
+| member_profiles | member_id UUID PK (stable club identity), auth_user_id unique nullable FK auth.users ON DELETE SET NULL, display_name, member_role(member/admin), account_status(active/inactive/suspended), created_at, updated_at, deactivated_at. Check role/status domains. Role/status changes are trusted-operation only. Historical finance/attendance references use member_id, not auth_user_id. |
+| member_private_contacts | member_id PK/FK member_profiles, phone_e164, updated_at. Self/admin access only. |
+| member_payment_methods | id PK, member_id FK, method(zelle/venmo/paypal/apple_cash), preferred, accepted_for_receiving, active, verified_format_at, updated_at. Contains no payment identifier. At most one preferred active method per member. |
 | member_payment_capabilities | member_id FK, method, enabled, updated_at. Optional sender-supported methods used only if owner approves compatibility optimization; default is no compatibility inference. |
-| private.admin_invitation_events | Implemented: id PK, normalized-email HMAC (raw email is not stored), invited_by, auth_invite_id, requested_role, is_bootstrap, status, created_at, accepted_at, expires_at. No anon/authenticated grant or Data API exposure; invitation metadata is not authorization proof. Pending same-email invitation is unique. |
-| private.member_payment_identifiers | Implemented: payment_method_id PK/FK, identifier_ciphertext, 12-byte nonce, encryption_key_version, fingerprint_hmac, created_at, updated_at, delete_after, deleted_at. AES-256-GCM encrypted in the Edge Function before storage; encryption and separate fingerprint keys exist only as Edge Function secrets. No anon/authenticated schema/table grants and no Data API exposure. Plaintext is not logged or stored in PostgreSQL. |
-| private.idempotency_records | Implemented: id PK, principal_scope, operation_key, aggregate_type, aggregate_id, key_hmac, hmac_key_version, canonical_request_hash, result_entity_id, result_code, status(processing/completed), lease_expires_at, replay_expires_at, tombstone_expires_at, created_at. Unique(principal_scope,operation_key,aggregate_type,aggregate_id,hmac_key_version,key_hmac); raw key and sensitive response body are never stored. Phase 1 safe result replay expires at 30 days; known expired keys reject and never execute again. Tombstone cleanup is not enabled. |
+| private.admin_invitation_events | id PK, invited_email_hash, invited_by, auth_invite_id, status, created_at, accepted_at, expires_at. Internal, non-exposed, and without anon/authenticated grants; never use as authorization proof. |
+| private.member_payment_identifiers | payment_method_id PK/FK, identifier_ciphertext, nonce, encryption_key_version, fingerprint_hmac, created_at, updated_at, delete_after, deleted_at. AES-256-GCM encrypted in the Edge Function before storage; encryption and separate fingerprint keys exist only as Supabase Edge Function secrets. No anon/authenticated schema/table grants, no Data API exposure, no plaintext logs/backups beyond encrypted ciphertext. |
+| private.idempotency_records | id PK, principal_scope, operation_key, aggregate_type, aggregate_id, key_hmac, hmac_key_version, canonical_request_hash, result_entity_id, result_code, replay_expires_at, tombstone_expires_at, created_at. Unique(principal_scope,operation_key,aggregate_type,aggregate_id,key_hmac); no raw key or sensitive response body. Nonfinancial response details expire after 30 days; tombstones persist to aggregate deletion. Financial/lifecycle results persist through aggregate retention (minimum 12 months after financial close). Expired replay always rejects and never executes again. |
 
 ### Campsites, availability, rotation, and trips
 
@@ -102,7 +79,7 @@ Columns below are normative design fields; implementation may add operational ti
 | trip_coffee_preferences | trip_id FK, member_id FK, morning(saturday/sunday), choice(coffee/tea/neither/no_preference), updated_at. PK(trip_id,member_id,morning). |
 | trip_responsibility_definitions | id PK, trip_id nullable FK for reusable club task, label, time_block(friday_night/saturday_morning/saturday_night/sunday_morning/trip_wide), workload_weight positive, active, created_by. |
 | trip_responsibility_slots | id PK, trip_id FK, responsibility_definition_id FK, slot_number >= 1, capacity >= 1, created_by, created_at. Unique(trip_id,responsibility_definition_id,slot_number). |
-| responsibility_assignments | id PK, trip_id FK, member_id FK, time_block, responsibility_definition_id FK nullable, status_projection(claimed/needs_assignment/admin_assigned/released), assigned_by nullable, claim_order, created_at, updated_at. Unique(trip_id,member_id,time_block) for required blocks. Status is rebuildable from append-only `audit_events`; claim atomically locks/checks capacity. |
+| responsibility_assignments | id PK, trip_id FK, member_id FK, time_block, responsibility_definition_id FK nullable, status_projection(claimed/needs_assignment/admin_assigned/released), assigned_by nullable, claim_order, created_at, updated_at. Unique(trip_id,member_id,time_block) for required blocks. Status is rebuildable from append-only `private.audit_events`; claim atomically locks/checks capacity. |
 | trip_vehicles | id PK, trip_id FK, label, vehicle_type, driver_id FK, workload_weight > 0, mileage, cents_per_mile, carpool_minimum, eligible, exception_reason, created_by. Mileage >= 0; driver workload credit and reimbursement rate/eligibility come from the trip policy snapshot. |
 | trip_vehicle_riders | id PK, trip_id FK, vehicle_id FK, member_id FK, position, assigned_at. Unique(vehicle_id,member_id) and unique(trip_id,member_id); composite FK ensures vehicle belongs to trip. |
 | floor_lottery_draws | id PK, trip_id FK, draw_no, requested_count, eligible_roster_snapshot, eligible_roster_hash, selected_member_ids, created_by, reason nullable for first draw, algorithm_version, random_source_version, seed_commitment, encrypted_seed_reference nullable, created_at. Unique(trip_id,draw_no); rerun requires reason. Server computes eligibility from locked trip data and stores complete input/output audit record. Seed material is encrypted/private and deleted with operational lottery detail. |
@@ -151,12 +128,12 @@ Columns below are normative design fields; implementation may add operational ti
 | Entity | Key columns and rules |
 | --- | --- |
 | notification_receipts | id PK, recipient_member_id FK, trip_id nullable FK, notification_type, aggregate_id, status_projection(queued/accepted/delivered/bounced/failed), created_at, last_attempt_at, read_at nullable. Projection from private outbox/attempt facts. Member sees only own safe delivery status/summary. |
-| audit_events | Implemented: id PK, actor_id nullable, actor_kind(member/admin/system), entity_type, entity_id, action, reason, before_hash, after_hash, request_id, created_at. Append-only; sensitive values omitted; `(actor_id, request_id)` is unique to deduplicate retry audits. |
+| private.audit_events | id PK, actor_id nullable, actor_kind(member/admin/system), entity_type, entity_id, action, reason, before_hash, after_hash, request_id, created_at. Append-only; sensitive values omitted and table is non-exposed. |
 | private.notification_outbox | id PK, recipient_address protected, recipient_member_id nullable FK, template_key, safe_payload, idempotency_key unique, status_projection, not_before, attempts, created_at, last_error_redacted. Projection of immutable attempts; no client grant. |
 | private.notification_attempts | id PK, outbox_id FK, provider_message_id, result, http_status, response_redacted, attempted_at. No raw email provider secrets. |
 | private.scheduled_job_runs | id PK, job_key, scheduled_for, started_at, completed_at, status, processed_count, error_summary, idempotency_key unique. No client grant. |
 | private.operations_alerts | id PK, alert_type, severity, entity_id, detected_at, acknowledged_by, acknowledged_at, resolution_note, resolved_at. No client grant. |
-| application_settings | Implemented: stable_key PK, typed_value jsonb, is_public, changed_by, changed_at, description. Public reads are row-filtered by `is_public`; writes are reserved for trusted operations. |
+| application_settings | stable_key PK, typed_value jsonb, changed_by, changed_at, description. Admin writes only; values include club timezone and public-content visibility. |
 
 ## 4. Relationships
 
@@ -193,7 +170,6 @@ Use explicit RESTRICT/NO ACTION on financial and audit FKs; CASCADE is reserved 
 Primary/unique indexes are implicit. Add the following indexes after each phase's query patterns are measured:
 
 - Every FK column not leading a composite index: campsite/trip, trip/member, rule/version, expense/member, settlement/member, transfer payer/recipient, payment event, outbox recipient, audit actor/entity.
-- Phase 1 implemented: `member_profiles(member_role)` partial for active administrators and `member_profiles(account_status)`; `member_payment_methods(member_id,active)` plus unique partial one-preferred-active index; unique pending invite email HMAC and unique pending/accepted bootstrap reservation; audit entity/actor chronology and unique `(actor_id,request_id)`; idempotency unique `(principal_scope,operation_key,aggregate_type,aggregate_id,hmac_key_version,key_hmac)` plus tombstone cleanup eligibility.
 - camping_trips(month_key unique), (trip_status, registration_cutoff_at), (starts_at), (campsite_id, starts_at).
 - trip_rsvps(trip_id,response), (member_id,updated_at DESC); unique(trip_id,member_id).
 - trip_rule_bundles(trip_id,bundle_version DESC); acknowledgments(member_id,trip_id,acknowledged_at DESC).
@@ -203,9 +179,9 @@ Primary/unique indexes are implicit. Add the following indexes after each phase'
 - settlement_runs(trip_id,version_no DESC); settlement_run_events(run_id,created_at); settlement_balances(run_id,member_id); settlement_ledger_entries(run_id,source_kind); settlement_transfers(run_id,payer_member_id), (run_id,recipient_member_id); payment events(transfer_id,created_at); settlement_transfer_state_projections(state_projection); settlement_cabin_contribution_applications(run_id,contribution_id), plus unique source application index.
 - responsibility_assignments(trip_id,time_block,status); lottery draws(trip_id,draw_no).
 - campsite_availability_snapshots(campsite_id,observed_for_start DESC); availability_imports(status,created_at DESC).
-- audit_events(entity_type,entity_id,created_at DESC), (actor_id,created_at DESC).
+- private.audit_events(entity_type,entity_id,created_at DESC), (actor_id,created_at DESC).
 - private.scheduled_job_runs(job_key,scheduled_for DESC); private.operations_alerts(resolved_at,detected_at) partial where unresolved.
-- private.idempotency_records(aggregate_type,aggregate_id,operation_key,hmac_key_version,key_hmac) unique; index tombstone_expires_at for eligible cleanup. Never delete financial/lifecycle tombstones before aggregate deletion.
+- private.idempotency_records(aggregate_type,aggregate_id,operation_key,key_hmac) unique; index tombstone_expires_at for eligible cleanup. Never delete financial/lifecycle tombstones before aggregate deletion.
 - Use partial indexes for current/active rows where this matches real query filters. Avoid JSONB GIN until a measured query needs it. Run EXPLAIN on member-calendar, due-deadline, admin-expense, settlement detail, outbox poll, and RLS predicates.
 
 ## 7. Table-level RLS/grant policy summary
@@ -214,9 +190,9 @@ Detailed testable policies are in SECURITY_ARCHITECTURE.md. This table is bindin
 
 | Table family | anon | Active member | Admin | System |
 | --- | --- | --- | --- | --- |
-| member_profiles | No | Select own; update own display name only | Read/update via trusted operations; no direct admin table grant | Auth/bootstrap/member operation |
-| member_private_contacts | No | Select/insert/update own while active | Read/update through trusted operation only | No general access |
-| member_payment_methods | No | Select/insert/update own safe method metadata while active | Read/manage through trusted operation only | Payment instruction operation may resolve minimum required recipient row |
+| member_profiles | No | Select own; update display fields own only | Read/update via trusted operations | Auth bootstrap only |
+| member_private_contacts | No | Select/update own | Read/update via trusted admin operation | No general access |
+| member_payment_methods | No | Select/update own methods | Read/manage through trusted operation | Payment instruction operation may resolve minimum required recipient row |
 | campsites and published availability | Published read only | Read published | Full admin write via function | Import process |
 | trips and public trip descriptions | No private roster | Read active-trip fields | Full via function | Deadline processor only |
 | trip_rsvps | No | Read own, write own eligible response via function; limited confirmed roster names only | Read/manage via function | Deadline processor |
@@ -230,7 +206,7 @@ Detailed testable policies are in SECURITY_ARCHITECTURE.md. This table is bindin
 | settlement_balances | No | Own row only | Read all | Finalization only |
 | settlement_transfers/events and settlement_cabin_contribution_applications | No | Payer/recipient only; own contribution applications only | Read/resolve via function | Finalization/outbox/retention only |
 | trip_history_summaries and trip_history_attendees | No | Read allowed attendee/name history | Read/manage | Retention operation |
-| audit_events | No | No | Read/write through trusted operation; no direct table grant | Append only |
+| private.audit_events | No | No | No direct table read or write; sanitized authorized operation only | Append-only trusted operation |
 | notification_receipts | No | Own safe status only | Read/manage retry via function | Worker writes |
 | private.* tables | No | No | Sanitized admin function/view only | Service/job only |
 | application_settings | No | Read explicitly public settings only | Admin writes via function | Job reads necessary settings |

@@ -1,6 +1,6 @@
 # API Contracts — Supabase Trusted Operations
 
-**Status:** Phase 1 and Phase 2 contracts are implemented. Earlier contracts were locally tested; the latest booking-status Edge changes are pending local Supabase integration because Docker Desktop could not start. Contracts for Phases 3–8 remain planned. No hosted service or production deployment was exercised.
+**Status:** Planning contract; implementation must verify current Supabase Edge Function APIs before coding.
 **Sources:** [Approved design](superpowers/specs/2026-10-08-camping-club-platform-design.md), [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md), [STATE_MACHINES.md](STATE_MACHINES.md)
 
 ## 1. Contract conventions
@@ -26,57 +26,6 @@
 | Scheduler | Supabase Cron/service-to-service | Named secret, least privilege, no browser CORS access; idempotent and catch-up-safe. |
 | Public | Anonymous visitor | Only public constitution/introduction reads; no mutations. |
 
-## 2.1 Implemented Phase 1 operations
-
-`supabase/functions/member-api` is configured with platform JWT verification enabled. The handler also calls Supabase Auth `getUser` for the bearer token, requires a verified email, then reads the current `member_profiles` row from PostgreSQL. It never reads role claims from auth metadata or trusts a member ID/role supplied in the request body. `supabase/functions/bootstrap-admin` has platform JWT verification disabled only because the first administrator has no user JWT; it requires a constant-time checked `x-bootstrap-token`, checks that no active administrator exists, and the database permits one successful bootstrap activation.
-
-User request JSON is `{ "action": "...", "input": { ... } }`. Mutating actions require a UUID `Idempotency-Key` HTTP header. An optional `x-request-id` is a correlation ID only. Success responses are `{ "data": { ... }, "request_id": "..." }`; errors are `{ "error": { "code": "...", "message": "..." }, "request_id": "..." }`. Errors are generic and do not include SQL/provider details. Responses set `Cache-Control: no-store`; CORS is restricted to configured origins.
-
-| Action | Caller | Data and authority |
-| --- | --- | --- |
-| `me` | Verified signed-in active member | Returns own profile summary, phone and preferred method label. No payment identifier, email address or member directory. |
-| `complete_profile` | Verified invited Auth user without a club profile | Requires a matching unexpired HMAC invitation event. Creates profile/contact/method and encrypted identifier in one DB transaction. Ordinary invite grants `member`; the one reserved bootstrap invite grants the first `admin`. |
-| `update_profile` | Active member | Updates own display name, phone, preferred method and identifier through one trusted SQL transaction. Identifier is encrypted before it reaches PostgreSQL; only the safe method metadata is available through the Data API. |
-| `invite_member` | Active admin | Invites a verified-email Auth identity, stores an HMAC of normalized email (not the raw address) and writes an audit event. The invitation email is delivered by Supabase Auth. |
-| `list_members` | Active admin | Returns member ID, display name, role, status and creation time. Omits email, phone, and payment identifier. Read-only; no idempotency key. |
-| `update_membership` | Active admin | Changes role/status through a trusted database operation; requires a reason, preserves history, prevents removal of the last active admin, and writes an audit event. |
-| `bootstrap-admin` | One-time bootstrap secret holder | Invites the first admin only when no active admin exists and the database bootstrap reservation is unused. Successful profile activation consumes the reservation. Remove/rotate the bootstrap token after activation. |
-
-The Data API grants active members only their own profile, contact and safe payment-method metadata. Members cannot update role/status or read another member's rows. `private.member_payment_identifiers`, invitation events, idempotency records and bootstrap state are not in the exposed Data API schema and have no anon/authenticated schema/table grants. No Phase 1 function decrypts or returns a stored identifier.
-
-### Phase 1 idempotency and replay behavior
-
-- Each mutation uses the authenticated principal + operation + UUID idempotency key as its scope. The raw key is never stored; PostgreSQL stores an HMAC and SHA-256 hash of canonical, schema-validated input, plus the result reference and HMAC key version.
-- The first request creates a two-minute processing lease. A concurrent duplicate returns HTTP 409 `request_in_progress_retry_same_key`; retrying the same key after completion returns the stored safe result. Same key with changed validated input returns HTTP 409. No endpoint retries a changed body under an old key.
-- The replay window is 30 days. A known key after the replay window returns HTTP 409 and is never executed again. The key tombstone is retained; Phase 1 uses HMAC version `v1`. Do not rotate that secret until multi-version lookup/retention handling is implemented and reviewed.
-- Database profile and membership operations are transactional. Supabase Auth invitation email is an external side effect and cannot share the PostgreSQL transaction; a failed/ambiguous Auth delivery requires administrator recovery and must not be interpreted as profile activation.
-
-Phase 1 local acceptance tests cover the invite/bootstrap path, Auth/JWT verification, direct Data API access, field exposure, admin denial, last-admin protection, audit writes, CORS, and replay/conflict/expiry semantics. See [TEST_STRATEGY.md](TEST_STRATEGY.md) and [PHASE1_CERTIFICATION.md](PHASE1_CERTIFICATION.md).
-
-## 2.2 Implemented Phase 2 `trip-api` operations
-
-`supabase/functions/trip-api` has platform JWT verification enabled, independently resolves the bearer token with Auth `getUser`, requires confirmed email and an active `member_profiles` row, and reads the role from PostgreSQL. Admin role validation occurs before detailed request validation for admin-only actions. Browser mutations require a UUID `Idempotency-Key`; the frontend generates it per mutation. Edge code derives actor/member identity from the verified session and invokes narrow SQL functions using the server-only service role. No caller may set `minimum_basis` or invoke a trip-confirmation/cancellation/payment operation.
-
-| Action | Caller | Request / result boundary |
-| --- | --- | --- |
-| `get_calendar` | Active member | Before returning open-poll data, invokes service-role-only `phase2_refresh_open_rule_bundles` for the requested open trips. Returns the effective poll calendar, active campsite display fields, Coming count, and caller's own response and exact accepted rule bundle. Admin response additionally includes attendee response names, active member choices, private campsite notes, and pending withdrawal requests. Member views do not expose other member identities or Not Coming roster details. |
-| `get_constitution` | Active member; admin reads admin-only drafts/details | For a trip in an open poll, refreshes the effective rule bundle before returning it; then returns effective general + trip bundle, immutable versions, and current override editor data only for applicable scope. |
-| `admin_configure_club` | Active admin | Updates timezone, poll lead days/time, planning minimum and next rotation pointer with expected configuration version. Requires explicit timezone before opening polls; planning minimum is not evaluated. |
-| `admin_generate_calendar` | Active admin | Ensures unique month rows through the requested month; repeated request is idempotent. Monthly Cron uses the same generator. |
-| `admin_reorder_campsites` | Active admin | Reorders active-site round robin and next pointer; optimistic request key and reason are recorded. |
-| `admin_update_campsite` | Active admin | Edits public campsite fields and restricted admin notes; expected version prevents stale updates. |
-| `admin_configure_trip` | Active admin | Overrides campsite, dates, poll deadline/timezone snapshot, capacity, display information, planning minimum, and `cabinBookingStatus` (`booked`, `no_vacancy`, or `sites_available`); expected version and reason required. Booking status is distinct from campsite availability research. An existing timezone snapshot remains stable across later edits and club-default changes; the current default is captured only when the trip has no snapshot yet. |
-| `admin_set_poll_status` | Active admin | Opens/closes or reopens an interest poll subject to poll configuration/version. Poll close never confirms/cancels a trip or creates obligations. Cron closes only due open polls. |
-| `admin_publish_rule` | Active admin | Adds immutable general or trip-specific rule version; trip-specific rules require expiry. General publication creates a new effective bundle without changing prior acknowledgments. |
-| `admin_set_rule_override` | Active admin | Adds expiring override tied to the exact current general rule version for one trip; old override is retired, never overwritten. |
-| `submit_rsvp` | Active member | Records Coming/Not Coming. For a new or changed-to-Coming response, the transaction refreshes the bundle using current rule effective/expiry times, then requires the submitted current bundle ID/hash and acknowledgment statement version. If the bundle changed after the member read it, the stale acknowledgment is rejected and the member must refresh. Existing Coming responses keep their exact previously accepted version without re-acknowledgment. |
-| `admin_record_interest` | Active admin | Records an administered late interest response for a selected active member; before a new/changed-to-Coming response, refreshes the current time-effective bundle and requires that member's acknowledgment of that exact bundle. This is interest only, not a confirmed attendee/payment entry. |
-| `request_withdrawal` | Active Coming member | While the poll is open and before cutoff, changes interest to Not Coming. Once closed/due, appends a pending request and leaves the Coming projection unchanged; no approval/rejection or effective post-confirmation withdrawal exists in Phase 2. |
-
-Open-poll bundle refresh is lock-serialized and content-hash idempotent: if the currently effective rendered rules have not changed, it returns the current immutable bundle without creating another version. Effective-time and expiry boundaries produce a new current bundle on the next authenticated read or new Coming operation. The current pointer changes; prior bundles and acknowledgments remain immutable.
-
-Phase 2 responses are `Cache-Control: no-store`; the trusted handler returns generic errors. Idempotency uses the Phase 1 shared HMAC-v1 record with principal + action + aggregate scope, canonical validated request digest, one winner under concurrent first use, replay of completed result inside the existing 30-day nonfinancial window, hash-mismatch conflict, and non-reexecution of a known expired key. Phase 1's unresolved HMAC key-rotation risk remains open. Calendar generation and poll closing are idempotent database operations, not dependent on site traffic. Phase 2 does not enqueue or send email; member notices are visible in the application and transactional-email delivery remains a later phase.
-
 ## 3. Mutating functions and restricted reads
 
 ### 3.1 Membership and payment preference
@@ -87,8 +36,7 @@ Phase 2 responses are `Cache-Control: no-store`; the trusted handler returns gen
 | member-complete-profile | New invited member | display_name, phone, payment_method, payment_identifier, format_attestation, idempotency_key | profile summary and masked method; identifier encrypted before private-schema storage; validates format but does not claim external-account ownership verification. |
 | member-update-profile | Active member | allowed display fields and expected_version | updated profile version; cannot update role/status or another member. |
 | member-update-payment-method | Owner | method, identifier, preferred, accepted_for_receiving, expected_version, idempotency_key | safe method summary only; identifier encrypted into private storage and never returned by Data API or this mutation response. |
-| member-read-own-payment-identifier | Owner | payment_method_id | Decrypts/returns only the caller's own identifier; every disclosure is audited, rate-limited, and omitted from logs. |
-| get-payment-instructions | Exact transfer payer or assigned cabin contributor; admin exception audited | transfer_id or contribution_id, selected_method | Returns the minimum necessary recipient identifier only if caller is a current obligated payer for that exact trip/transfer. Recipient self-read is allowed. Uses no direct Data API read, emits identifier-disclosure audit event, rate limits, `Cache-Control: no-store`, and never logs/cache-stores the plaintext. Unrelated active members and admins without a documented support action receive 404/403. |
+| get-payment-instructions | Exact current obligated payer for the transfer or assigned cabin contribution | transfer_id or contribution_id, selected_method | Returns the minimum necessary recipient identifier only for that specific current obligation. No general owner self-read or admin exception. Uses no direct Data API read, emits identifier-disclosure audit event, rate limits, `Cache-Control: no-store`, and never logs/cache-stores the plaintext. Unrelated members receive 404/403. |
 | admin-set-member-status | Admin | member_id, new_status, reason, request_id | status and audit event; deactivation revokes app access but preserves history. |
 | admin-set-member-role | Admin | member_id, member/admin, reason, request_id | role change and audit event; no client direct write. |
 

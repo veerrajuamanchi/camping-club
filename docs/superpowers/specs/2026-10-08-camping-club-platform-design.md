@@ -1,7 +1,7 @@
 # Private Camping Club Platform — Design
 
 **Date:** 2026-10-08
-**Status:** Authoritative approved product design. Phase 1 is conditionally approved PASS WITH RISK and Phase 2 was separately authorized; minimum-count basis remains an owner decision before formal trip lifecycle implementation.
+**Status:** Conditionally approved for implementation planning; minimum-count basis requires owner decision before trip lifecycle implementation.
 **Scope:** Full private camping coordination platform
 
 ## 1. Purpose
@@ -198,8 +198,6 @@ When a member responds Coming, the trip signup collects:
 
 ## 13. Deployment, validation, and rollout
 
-Implementation sequencing and phase gates are maintained in [docs/IMPLEMENTATION_PLAN.md](../../IMPLEMENTATION_PLAN.md), which controls the current order of work. Phase 2 implements monthly interest polls and rule acknowledgment only; it does not evaluate the minimum, confirm/cancel a trip, collect money, or deliver transactional poll email.
-
 - Render serves the Vite build as a Static Site. Supabase holds durable application state; no production data is written to Render's filesystem.
 - Keep schema migrations, Edge Functions, and scheduled-job definitions in source control. Use local Supabase for development and separate production configuration.
 - Maintain separate development and production Supabase configurations, with no production credentials or member data in previews. Validate pull-request builds/deployments using Render previews where available or an equivalent isolated preview, and verify production configuration before release.
@@ -208,7 +206,7 @@ Implementation sequencing and phase gates are maintained in [docs/IMPLEMENTATION
 - Proposed recovery objectives for the private pilot are RPO of 24 hours and RTO of one business day. Produce a nightly off-site logical database export, keep it access-restricted and encrypted, and rehearse restore at least quarterly. Reassess these targets before launch based on actual operations.
 - Validate the complete member and administrator journeys before launch.
 - Implement in phases: foundation and access; campsites and trip/RSVP flow; rules and signup preferences; transportation/responsibilities/lodging; expenses; settlement and acknowledgments; notifications; production readiness.
-- Implementation follows the separately approved phased plan. Phase 1 and Phase 2 were explicitly authorized; no later phase is authorized by those decisions. Pending financial and cancellation policies remain gated.
+- No implementation begins until the user approves this written spec and a separate implementation plan is prepared.
 
 ### Free private pilot and pre-launch gate
 

@@ -18,10 +18,10 @@ If sources conflict, follow the latest owner-approved design and decisions. Stop
 
 ## 2. Approval boundary
 
-- The owner explicitly authorized Phase 1, conditionally approved its PASS WITH RISK certification, and authorized Phase 2 on October 8, 2026. Current authorization covers campsites, rolling calendar, polls/RSVP, rule acknowledgments, and Camping Constitution only.
-- Do not implement a minimum-count basis, contribution collection, automatic trip confirmation/cancellation, an effective post-confirmation withdrawal policy, or the cabin-verification gate while the corresponding entries in `docs/OWNER_DECISIONS.md` remain pending.
-- Do not deploy to production, onboard real members, configure production secrets, or begin Phase 3 without separate authorization.
-- Work only in the approved phase. Do not begin later feature phases early.
+- The owner approved architecture review and implementation planning. This does not authorize application coding.
+- Do not create feature code, migrations, deploy services, configure production secrets, or make app behavior changes until the owner explicitly approves the implementation plan.
+- Documentation updates requested as part of planning are allowed.
+- After plan approval, work only in the approved phase. Do not begin later feature phases early.
 - A recommendation in an artifact is not an owner decision. `docs/OWNER_DECISIONS.md` is the canonical register of unresolved business, financial, algorithm and operational choices; never turn its recommendation column into policy without dated explicit owner approval.
 
 ## 3. Approved architecture
@@ -42,8 +42,8 @@ The target is the full private camping coordination platform, never a polls-only
 
 - Binary RSVP: Coming / Not coming. Default threshold four; per-trip structured override. The minimum-count basis is unresolved: earlier amended design counts active Coming members only after a $50 receipt; later revision counts active Coming RSVPs and requests $50 after confirmation. Do not choose or encode either policy until the owner explicitly decides. Under the received basis, whether the payer's non-posting booking coverage counts is also unresolved.
 - Registration cutoff is the earlier of 35 days before trip or contractual cabin cancellation deadline minus configured buffer (default five days).
-- Below-minimum automatic confirmation/cancellation and related notifications remain disabled until the minimum basis is owner-approved; Phase 2 poll responses are interest signals only. Reinstatement requires admin action and fresh cabin availability verification in a later phase.
-- Post-confirmation attendance below minimum requires explicit admin proceed/cancel decision; Phase 2 does not implement this transition.
+- At cutoff, below-minimum under the owner-approved basis automatically cancels and sends notices. Reinstatement requires admin action and fresh cabin availability verification. A received-contribution basis also requires an owner-approved disposition for contributions received before an insufficient-participation cancellation.
+- Post-confirmation attendance below minimum requires explicit admin proceed/cancel decision.
 - Coming signup must acknowledge the exact immutable rule bundle shown (general rules + trip rules/overrides). Store version/hash/time. Later edits do not require re-ack; preserve old acknowledgment and send informational notice as planned.
 - Each attendee owes $50 to the administrator-assigned cabin payer under the selected minimum basis; request timing differs by basis. Late confirmed additions owe it. It remains due after post-confirmation withdrawal and is non-refundable for a member withdrawal. Credit it exactly once to cabin accounting. Do not request a self-payment from an attending cabin payer.
 - Under `coming_rsvp`, a pre-confirmation below-minimum cancellation creates no $50 obligation, though any premature/extra receipt remains unresolved. Under `received_contribution`, obligations/receipts may exist before that cancellation and must stay unresolved pending owner-approved disposition. Do not invent a refund/forfeiture policy for club-initiated post-confirmation cancellation; block close until approved policy and audited admin disposition.

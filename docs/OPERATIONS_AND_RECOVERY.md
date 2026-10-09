@@ -23,6 +23,18 @@
 - Render environment contains only the Supabase project URL and publishable key. No database password, service-role/secret key, SMTP key or payment identifier.
 - Keep Supabase migrations, Edge Function source, Cron definitions, frontend lockfile and Render Blueprint/configuration in version control.
 
+### Phase 2 poll-save certification procedure
+
+1. Identify the target Supabase project from the deployment record and have an operator explicitly classify it as isolated development/staging. A linked project reference by itself does not establish the environment. If classification is unavailable, stop before any test write or synthetic account creation.
+2. Confirm the Render URL/release, Supabase project URL, migration status, and deployed Edge Function versions belong to that same environment. Never use production member data or credentials for synthetic tests.
+3. Create synthetic administrator/member accounts and a uniquely tagged November trip fixture in staging. Run `PH2-POLL-01` through `PH2-POLL-10` from [TEST_STRATEGY.md](TEST_STRATEGY.md), including a server-side database readback separate from UI success, reload, and calendar display.
+4. For failure injection, use a staging-only backend rejection/failure mechanism. Verify the failed transaction left no trip or related partial rows. Do not simulate failure only by changing the browser response if the test claims database atomicity.
+5. Verify the club setting is the IANA name `America/Los_Angeles`. Exercise a trip date across a DST boundary without fixed-offset calculations. Before applying a timezone update, display affected existing deadlines and require an administrator confirmation; persist an audit event with actor, before/after setting, affected trip identifiers, and resulting deadline snapshot/hash.
+6. Verify the hosted API using the test administrator's authorized session. Inspect grants and RLS separately from schema exposure. Confirm ordinary-member direct API denial and inspect built browser assets for privileged credentials. Redact tokens and identifiers from logs/evidence.
+7. Save sanitized screenshots for successful save, post-reload form/calendar, and failed-save state. Record the staging project classification, Render release, migration/function versions, command output, database verification query result, test run ID, and operator in [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md).
+
+The certification status remains blocked if the app source, isolated project, authorized staging credentials, deployment metadata, or independent database readback is unavailable. A no-key health response is only unauthenticated reachability evidence; it does not certify the hosted API, schema, RLS, or persistence.
+
 ### Deployment sequence
 
 1. Build with the locked Node toolchain and run lint, types, frontend tests, database tests and function contract tests in CI.

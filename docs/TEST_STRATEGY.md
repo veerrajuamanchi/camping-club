@@ -1,6 +1,6 @@
 # Test Strategy — Private Camping Club Platform
 
-**Status:** Phase 1 and Phase 2 unit, component, pgTAP, and synthetic local integration checks pass in GitHub Actions. Docker Desktop is unavailable on the owner's current Mac, so the full local suite runs in CI. A limited authenticated read-only smoke also passed on the owner-authorized Render deployment. Phase 3–8 business and operational tests remain planned. See [Phase 1 Certification](PHASE1_CERTIFICATION.md) and [Phase 2 Certification](PHASE2_CERTIFICATION.md) for evidence and limits.
+**Status:** Required verification plan. GitHub `main` contains Phase 1 and Phase 2 application code and regression suites. The hosted staging save/reload/calendar acceptance run and current full regression run remain outstanding; see [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md).
 **Related:** [Requirements Traceability](REQUIREMENTS_TRACEABILITY.md), [Owner Decision Record](OWNER_DECISIONS.md), [Database Schema](DATABASE_SCHEMA.md), [Security Architecture](SECURITY_ARCHITECTURE.md), [Settlement Engine](SETTLEMENT_ENGINE_SPEC.md)
 
 ## 1. Test layers
@@ -9,72 +9,12 @@
 | --- | --- | --- |
 | Pure TypeScript unit/property tests | Settlement arithmetic, date/deadline logic, deterministic policies | Vitest; property generator selected/pinned in Phase 1 |
 | Database tests | Constraints, transaction invariants, grants/RLS allow-deny | Supabase local stack + pgTAP + supabase test db |
-| Edge Function contract tests | Authn/authz, request validation, idempotency, provider behavior | Local Supabase Edge Runtime + Node fetch integration harness |
+| Edge Function contract tests | Authn/authz, request validation, idempotency, provider behavior | Deno test or locked TypeScript test harness |
 | Component tests | Accessible forms, rule acknowledgment, member/admin actions | React Testing Library + DOM assertions |
 | End-to-end | Member and admin journeys, mobile layout, email test sink, deployment smoke | Playwright or equivalent pinned browser runner |
 | Operational exercises | Cron catch-up, export/restore, monitoring, failure handling | Scripted integration runbook with recorded evidence |
 
-Tool versions are pinned in lockfiles and rechecked against current Supabase support before platform changes. Phase 1 tests use synthetic local accounts and Supabase's local email sink; they never use real member/payment data.
-
-### Phase 1 executed test IDs
-
-| ID | Requirement / scenario | Layer | Executed result |
-| --- | --- | --- | --- |
-| SEC-14 | Public email signup is disabled while admin invitation and verified profile completion work | Local Auth/Edge integration | Pass: anonymous signup rejected; bootstrap admin and ordinary invited member complete only against matching HMAC invitation. |
-| SEC-15 | Bootstrap grants one initial admin only; later bootstrap is blocked once an active admin exists | Edge + pgTAP | Pass: first admin activated in integration; pgTAP proves active-admin guard. |
-| SEC-16 | Mutating actions require Idempotency-Key; replay, conflict, concurrency and expiry are correct | Edge + pgTAP | Pass: replay returns same safe result; changed payload conflicts; in-progress duplicate does not execute; expired replay rejects. |
-| SEC-17 | Payment identifier is encrypted before persistence and never returned by safe API/Data API | Edge integration + SQL inspection + bundle scan | Pass: AES-GCM ciphertext, fresh 12-byte nonce and key version observed in private storage; public response and Data API contain no identifier. |
-| SEC-18 | Active member cannot read another profile/method or change role directly; admin transition is audited | RLS + Edge integration | Pass: own read succeeds, other-member read is filtered, direct role update fails, non-admin action gets 403, admin update produces one audit event. |
-| SEC-19 | Existing JWT loses member API access immediately after account suspension | Edge integration | Pass: same test JWT receives 403 after server-side status change. |
-| UI-01 | Invitation-only sign-in and profile form interaction | Vitest + local Chrome smoke | Pass: 8 component assertions and one desktop/mobile browser smoke; no horizontal overflow or page/console errors. |
-
-Executed commands: `npm run typecheck`, `npm test`, `npm run test:db`, `npm run test:integration`, `npm run build`, `npm run security:scan`. The integration script starts no hosted service and resets only local Supabase. A temporary, non-locked Playwright package was used for the browser smoke; browser automation is not a committed dependency.
-
-### Phase 2 executed test IDs
-
-| ID | Requirement / scenario | Layer | Executed result |
-| --- | --- | --- | --- |
-| CAL-01 | Seven seeded sites and repeatable round-robin assignment | TypeScript + pgTAP + Edge integration | Pass: seven configured sites/positions, valid rotation, and explicit next position verified. |
-| CAL-02 | Site reorder and per-trip override preserve suggested site and sequence | TypeScript + pgTAP + Edge integration | Pass: selected campsite can change without mutating suggestion; rotation reorder is admin-only/versioned. |
-| CAL-03 | Rolling 12-month calendar catches up without duplicate months | pgTAP + Edge integration | Pass: unique first-of-month key and repeat generation; local Cron registration exists. Hosted Cron not verified. |
-| CAL-04 | Admin configures date, campsite, poll fields, timezone and planning minimum | Component + Edge integration | Pass: stale versions reject; unset timezone prevents opening. Minimum remains planning-only. |
-| CAL-05 | Poll deadline closes only the interest poll | pgTAP + Edge integration | Pass: due poll changes to closed once; no confirmation, cancellation, contribution, or email side effect. |
-| CAL-06 | Existing deadline edits preserve the club-local date/time and the trip timezone snapshot | Vitest + pgTAP | Pass: a UTC instant is rendered with the trip snapshot even after the club default timezone changes; saving retains the snapshot and exact deadline instant. |
-| CAL-07 | Cabin Booking Status has the three requested values and saves through trusted operation | Vitest + Edge integration + pgTAP | Pass: UI offers only Booked / No vacancy / Sites available; synthetic Edge integration saved each value and verified it through calendar reads; SQL rejects other values; ambiguous legacy values remain unmapped for admin review. |
-| RULE-TS-01 | Effective Constitution bundle combines applicable general, unexpired override, and trip rules | Pure TypeScript + Edge integration | Pass: source ordering and current effective values are deterministic. |
-| RULE-TS-02 | An override based on a stale general rule version is ignored/rejected | Pure TypeScript + Edge integration | Pass: override cannot silently shadow a newer base version. |
-| RULE-TS-03 | Equivalent input rule sets serialize to the same bundle ordering/hash | Pure TypeScript | Pass: reordering equivalent source arrays produces deterministic output. |
-| DB-01 | Phase 2 Data API role/row boundary | pgTAP + Edge integration | Pass: anon/member direct writes denied; member sees own RSVP/request; unrelated response details and private campsite notes are not returned. |
-| DB-02 | Rule versions, bundles, acknowledgments, and events resist mutation/deletion | pgTAP | Pass: immutable history guards and append-only event rows reject updates/deletes. |
-| DB-03 | No minimum-basis policy or financial operation is writable | pgTAP + API integration | Pass: `minimum_basis` remains NULL; no trip confirmation/cancellation/contribution tables/actions are present. |
-| DB-04 | Rule effective dates, trip expiry, exact linked override | pgTAP + TypeScript + Edge integration | Pass: expired trip rule/override is excluded; override links the current general version and expires. |
-| DB-05 | Bundle/hash is current, locked, and tied to exact source versions | TypeScript + Edge integration | Pass: deterministic rendered content/hash; publication and poll opening serialize bundle refresh. |
-| DB-06 | Coming acknowledgment remains pinned after a later rule edit | pgTAP + integration + component | Pass: member RSVP pointer and original bundle/hash remain unchanged. |
-| DB-07 | Effective/expiry boundaries refresh open-poll rule bundles and stale Coming submissions are rejected | pgTAP | Pass: unchanged hash reuses the immutable version; timed rule effectiveness adds a new bundle, expiry removes it; member and admin Coming paths reject an acknowledgment to the superseded bundle; prior acknowledgments stay unchanged. |
-| DB-08 | Reconfiguring an existing poll after the club timezone default changes preserves its timezone snapshot and deadline instant | pgTAP | Pass: trusted SQL configuration uses the existing trip snapshot for date/time interpretation; only a trip without a snapshot takes the current club default. |
-| DB-09 | General Constitution rules are seeded with immutable version 1 rows and included in all current poll bundles | pgTAP + Edge integration | Pass: 15 owner-provided rule/guideline definitions plus the existing poll disclosure are present; all 12 poll bundles contain all 16 rules; historical bundle rows remain immutable and unchanged hashes reuse the current version. CI pgTAP and hosted read-only counts passed. |
-| DB-10 | Cabin booking status domain and legacy conversion | pgTAP + Edge integration | Pass: constrained current column accepts only the three supported values; only `available` and `unavailable` map to unambiguous meanings; old source remains preserved. CI migration replay and integration checks passed. |
-| RSVP-01 | Coming requires and records the exact current rule acknowledgment | pgTAP + Edge + component | Pass: stale/missing bundle or hash is rejected; RSVP and immutable acknowledgment are atomic. |
-| RSVP-02 | Not Coming is allowed without rule acknowledgment | Edge + component | Pass: non-Coming answer stores no acknowledgment. |
-| RSVP-03 | Admin adds late interest for selected member | Edge + component | Pass: admin-only; Coming requires the member's acknowledgment; no confirmation/payment state. |
-| RSVP-04 | Member changes Coming to Not Coming before open poll deadline | Edge + component | Pass: version increments and append-only `changed` event is written once. |
-| RSVP-05 | After cutoff, withdrawal is a request and Coming remains unchanged | Edge + RLS + component | Pass: pending request visible to admin, no effective post-confirmation behavior inferred. |
-| RSVP-06 | Rules change after Coming signup | pgTAP + Edge + component | Pass: new rule bundle is versioned; original acknowledgment and RSVP pointer remain exact; no re-ack. |
-| API-01 | Phase 1 invitation regression; Phase 2 verified JWT and active-member/admin authorization | Integration | Pass: Phase 1 and Phase 2 synthetic Auth harnesses. |
-| API-02 | Member Coming/Not Coming and exact acknowledgment | Integration | Pass: Coming rejects missing/stale acknowledgment; Not Coming requires none; replay is safe. |
-| API-03 | Admin late interest entry | Integration + component | Pass: admin only; Coming requires the member's acknowledgment; remains interest, not confirmed attendance. |
-| API-04 | Open-poll change vs closed/deadline withdrawal request | Integration + component | Pass: pre-deadline change becomes Not Coming; later request leaves Coming unchanged and appears to admins. |
-| API-05 | Phase 2 mutation authorization, idempotency and concurrency/version controls | Integration + pgTAP | Pass: missing key rejects, duplicate replay returns stored result, changed request conflicts, stale versions fail. |
-| API-06 | Authenticated calendar/Constitution reads refresh open-poll bundles through a service-role-only operation | Edge integration + pgTAP | Pass: calendar and Constitution reads return the current bundle; direct authenticated execute/read is denied; trusted refresh uses hash idempotency and preserves immutable prior bundles. |
-| API-07 | Admin poll save persists booking status via `trip-api` | Synthetic Edge integration | Pass: each valid booking state saves with optimistic versioning and returns unchanged on trusted calendar read; invalid enum is rejected. |
-| P2-UI-01–10 | Coming acknowledgment, Not Coming, role-separated controls, settings, timezone-safe deadline edit, campsite edit, late entry, rule override, retained old rule version, pending withdrawal | Vitest / Testing Library | Existing Phase 2 tests preserved. |
-| P2-UI-11 | Poll editor exposes only Booked / No vacancy / Sites available and confirms successful save | Vitest / Testing Library | Pass: selection sends the exact trusted API field and success state appears. |
-| P2-UI-12 | Missing timezone prevents poll save with clear configuration instructions | Vitest / Testing Library | Pass: no mutation request is issued and a field-specific message directs admin to Club-wide settings. |
-| P2-UI-13 | Stale poll edit displays refresh guidance | Vitest / Testing Library | Pass: a 409 from the trusted API is surfaced as a stale-edit message. |
-| P2-UI-14 | Ambiguous legacy cabin availability remains visible to admins and is not auto-mapped | Vitest / Edge integration | Pass: admin sees the legacy value and must choose a new booking status; member calendar omits the legacy field. The hosted read-only admin view shows the legacy value without guessing. |
-| P2-UI-15 | Seeded Constitution rule text is visible in admin rule history | Vitest / Testing Library | Pass: loaded general-rule versions display their text in the Constitution tab; hosted admin read displayed the seeded rule keys. |
-
-CI runs typecheck, Vitest, local Supabase reset/pgTAP, Phase 1 and Phase 2 synthetic integration suites, Vite build, and the frontend credential scan. The owner-authorized hosted smoke was read-only: Render route/assets, authenticated calendar and Constitution views, CORS, hosted migration, and current rule-bundle counts were checked. It did not write test data. Hosted Cron, email delivery, external backup/restore, and full hosted adversarial RLS tests remain open operational gates.
+Tool versions are pinned in lockfiles and rechecked against current Supabase support before implementation. Development and staging tests use synthetic accounts and a test email sink; never run synthetic acceptance records against production or use real member/payment data.
 
 ## 2. Automated test inventory and acceptance criteria
 
@@ -117,6 +57,23 @@ CI runs typecheck, Vitest, local Supabase reset/pgTAP, Phase 1 and Phase 2 synth
 | TRIP-12 | Reinstatement without current cabin verification | Edge | Rejected; valid availability evidence plus admin and sufficient threshold required. |
 | TRIP-13 | Member history after account deactivation | RLS + DB | History/ledger FKs remain stable; deactivated auth cannot access current trip. |
 | TRIP-14 | Admin cancels an open trip before cutoff after contributions may exist | DB/Edge integration | Under `coming_rsvp`, no contribution is due but any premature/extra receipt remains unresolved. Under `received_contribution`, existing obligations/receipts remain immutable and unresolved. No automatic refund, retention, or reallocation occurs; financial close stays blocked pending approved disposition. |
+
+### Phase 2 poll save and hosted acceptance
+
+These tests use only synthetic records in a development/staging Supabase project whose identity has been confirmed before the run. Never point the fixture, browser, or database oracle at production. Read back the saved trip from PostgreSQL (or an authorized test-only read path) independently of the browser response; a success toast alone is not persistence evidence. Record the Render release/build, migration version, deployed function versions, test run ID, and sanitized request IDs with certification evidence.
+
+| ID | Requirement / scenario | Layer | Pass criteria |
+| --- | --- | --- | --- |
+| PH2-POLL-01 | Administrator authentication and November poll creation | Playwright + Edge/DB | A verified synthetic administrator signs in; only an authoritative active administrator can open the poll editor. Creating the November trip produces one persisted row with a stable ID and unique month key. |
+| PH2-POLL-02 | Valid campsite, start/end dates, deadline and save | Playwright + Edge/DB | Administrator selects an active campsite, enters ordered dates and a valid registration deadline, saves, and sees success only after the backend returns success. The backend validates campsite and date fields and commits atomically. |
+| PH2-POLL-03 | IANA club timezone and registration-deadline calculation | Unit + Playwright + DB | `America/Los_Angeles` is loaded from the administrator-managed setting. The cutoff equals the earlier of 35 calendar days before trip start or the contractual cancellation deadline minus the configured buffer, calculated using IANA zone rules across a DST boundary. Persisted instants round-trip to the same displayed local values. No fixed UTC offset is embedded in app or test logic. |
+| PH2-POLL-04 | Timezone change with existing deadlines | Playwright + Edge/DB | A proposed timezone change shows the existing trips/deadlines it would affect. The write is not applied before explicit administrator confirmation; confirmation records a durable audit event and the resulting persisted deadline values can be independently read. |
+| PH2-POLL-05 | Reload and calendar readback | Playwright + DB | After success, reload and a fresh session read show the same campsite, start/end dates, timezone and deadline from persisted backend data; the calendar renders those persisted values. |
+| PH2-POLL-06 | Failed save and partial-write handling | Playwright + Edge/DB | Force a backend rejection/failure in isolated staging. UI shows an actionable failure with correlation ID and no success state; transaction leaves no partial trip, month-key, or related row. A subsequent authoritative query verifies no unintended record. |
+| PH2-POLL-07 | Repeated save/edit idempotency | Playwright + Edge/DB | Repeating the same create request with the same idempotency key returns the existing result; editing updates the same trip ID; no duplicate November trip or audit/outbox side effects are created. A different payload reusing the key is rejected. |
+| PH2-POLL-08 | Past-deadline validation | Playwright + Edge/DB | A registration deadline before the server's current time is rejected by both the UI and trusted backend; no trip mutation is committed and no success state is shown. |
+| PH2-POLL-09 | Ordinary member authorization denial | Playwright + Data API/Edge | A synthetic active ordinary member cannot open the admin editor, call poll create/edit operations, or bypass the UI through direct API access; no row changes. |
+| PH2-POLL-10 | Hosted runtime and security evidence | Deployment + catalog/API checks | Render build and SPA routing work; applied migration and deployed Edge Function versions match the release; required environment names are present without exposing privileged values; grants and RLS match the catalog matrix; hosted API succeeds for an authorized staging request; sanitized error logging contains no secrets; browser assets contain no privileged credentials. |
 
 ### Cabin reservation, contributions and cancellation
 
