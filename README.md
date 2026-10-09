@@ -4,7 +4,7 @@ The full private club coordination platform is governed by the approved design a
 
 ## Current authorization
 
-Phase 1 is reviewed as PASS WITH RISK. Phase 2 implementation is complete pending owner review of [its certification report](docs/PHASE2_CERTIFICATION.md). Do not start Phase 3, deploy to production, configure production secrets, or onboard real members until separately authorized.
+Phase 1 is reviewed as PASS WITH RISK. Phase 2 is deployed for the owner's limited verification and is certified PASS WITH RISK in [its certification report](docs/PHASE2_CERTIFICATION.md). Do not start Phase 3 or onboard additional real members until separately authorized. Financial and trip-decision features remain out of scope.
 
 ## Technology
 
@@ -52,7 +52,7 @@ npm run security:scan
 
 The Render Blueprint builds `frontend/` and receives only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Edge Function secrets and their rotation notes are listed in `supabase/functions/.env.example`; keep actual values in the Supabase secret store. The bootstrap token is one-time and must be removed after initial administrator activation.
 
-No production deployment has been performed. Configure Render/Supabase only after owner authorization and completion of the applicable launch gates in [Operations and Recovery](docs/OPERATIONS_AND_RECOVERY.md).
+The owner authorized the limited Phase 2 deployment to the existing Render Static Site and single Supabase project on October 9, 2026. This deployment verifies polling and Constitution behavior; it does not authorize financial operations, automatic trip decisions, Phase 3, or additional member onboarding. Hosted Cron, email delivery, backups, restore, and launch operations still require the gates in [Operations and Recovery](docs/OPERATIONS_AND_RECOVERY.md).
 
 ## Architecture artifacts
 

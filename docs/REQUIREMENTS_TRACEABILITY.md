@@ -48,8 +48,8 @@
 | RULE-03A | A current Coming response does not require re-acknowledgment when rules later change or expire | 2, 7 | Current RSVP remains pinned to its exact accepted bundle; the new bundle is used only for a new/changed-to-Coming response. Existing test DB-06/RULE-05 remains valid. |
 | RULE-04 | Coming signup requires acknowledgment of complete applicable rule bundle | 2 | Implemented atomic exact-current bundle check + acknowledgment + RSVP. Tests RSVP-01/02, DB-06, API-02, P2-UI-01/02. |
 | RULE-05 | Acknowledgment records exact version/hash/time and remains unchanged after later rule edits; no re-ack | 2, 7 | Implemented append-only member/trip/bundle/hash/statement/time record; existing Coming RSVP retains old pointer after later publication. Tests RSVP-06, DB-06, P2-UI-06. |
-| RULE-07 | Previously provided general rules are present in the Constitution and shown before Coming acknowledgment | 2 | Migration seeds the 15 owner-provided rules/guidelines plus the existing poll disclosure; admin Constitution view lists current general text and signup bundles render the applicable copy. P2-UI-15 passes; DB-09/API-06 execution is blocked by Docker startup. Canonical text is [Default Camping Constitution](DEFAULT_CAMPING_CONSTITUTION.md). Contribution timing remains explicitly policy-gated. |
-| CAL-07 | Cabin Booking Status describes trip booking outcomes | 2 | Poll editor/calendar and UI tests show `Booked`, `No vacancy`, `Sites available`; trusted Edge contract, constrained column, and persistence tests are implemented. Legacy statuses map only when unambiguous; ambiguous values remain for admin review. P2-UI-11/14 pass; DB-10/API-07 execution awaits local Docker. |
+| RULE-07 | Previously provided general rules are present in the Constitution and shown before Coming acknowledgment | 2 | Migration seeds the 15 owner-provided rules/guidelines plus the existing poll disclosure; admin Constitution view lists current general text and signup bundles render the applicable copy. CI pgTAP/Edge checks pass; hosted read-only verification found 16 active general rules and 12/12 bundles containing all 16. Canonical text is [Default Camping Constitution](DEFAULT_CAMPING_CONSTITUTION.md). Contribution timing remains explicitly policy-gated. |
+| CAL-07 | Cabin Booking Status describes trip booking outcomes | 2 | Poll editor/calendar and UI tests show `Booked`, `No vacancy`, `Sites available`; trusted Edge contract, constrained column, and persistence tests pass in CI. Live Render bundle and authenticated admin page show the new field. Legacy statuses map only when unambiguous; ambiguous values remain for admin review. |
 | RULE-06 | Effective rule snapshot at trip confirmation may be distinct from prior signup acknowledgment | 2, 3 | Confirmation-time snapshot is not implemented; signup acknowledgment is preserved. Phase 3 gate, no confirmation path. |
 | VEH-01 | Driver earns 76 cents/mile when carpool minimum 3 including driver | 4, 5, 6 | LOG-04, financial unit tests |
 | VEH-02 | $5 per participant car-wash contribution included in travel budget | 5, 6 | Expense/policy tests |
@@ -117,23 +117,23 @@
 
 Full command evidence, screenshots and limitations: [PHASE1_CERTIFICATION.md](PHASE1_CERTIFICATION.md).
 
-## Phase 2 executed evidence summary (prior baseline plus latest remediation run)
+## Phase 2 executed evidence summary (historical October 8 snapshot; superseded by October 9 update below)
 
 | Evidence | Result | Requirements covered |
 | --- | --- | --- |
 | `npm run typecheck` | PASS | Phase 1 and Phase 2 TypeScript contracts. |
 | `npm test` | PASS — current remediation run: 6 Node tests plus 38 frontend tests / 9 files | Regressions and new poll/Constitution UI cases pass; see the remediation evidence below. Earlier 26-test Phase 2 result is retained in `PHASE2_CERTIFICATION.md` as prior-commit evidence. |
-| `npm run test:db` | BLOCKED for current remediation; Docker Desktop reports it cannot start | Previous 59-assertion result remains historical; the new migration and DB-09/10 need rerun once local Docker is available. |
-| `npm run test:integration` | Historical PASS; not rerun for this remediation because local Supabase cannot start | Existing SEC-14–19 evidence remains preserved for its tested baseline. |
-| `npm run test:phase2-integration` | BLOCKED / not rerun because local Supabase cannot start without Docker | Updated API-07 coverage is implemented in the synthetic harness and syntax-checked; it still needs execution against local Supabase. |
+| `npm run test:db` | BLOCKED for the owner's local Mac snapshot; Docker Desktop reports it cannot start | Superseded by passing GitHub Actions pgTAP replay of all migrations, including the new one. |
+| `npm run test:integration` | Historical PASS; not rerun locally in this snapshot | Superseded by passing GitHub Actions Phase 1 integration/security run. |
+| `npm run test:phase2-integration` | BLOCKED locally because Docker cannot start | Superseded once the follow-up CI workflow check passes with this synthetic suite included. |
 | `npm run build` | PASS — Vite production bundle generated | ARC-01, Phase 2 UI compile/bundle. |
 | `npm run security:scan` | PASS — no privileged credentials/payment identifiers found in frontend bundle | SEC-03/04. |
-| Render or hosted Supabase deploy | NOT RUN; not authorized | No production deployment or real-member onboarding. |
+| Render or hosted Supabase deploy | NOT RUN at the October 8 snapshot; not yet authorized then | Superseded by the owner's October 9 limited deployment authorization and verification below. |
 | Hosted Cron/email/backup/recovery | NOT RUN | Remains operational risk P2-R01/P2-R04/P2-R12. |
 
 The prior Phase 2 certification records the earlier full `npm run verify` result. The targeted remediation evidence below is the latest run for this change. See [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md) for environment, limitations, risk disposition and owner gates.
 
-### Targeted poll and Constitution remediation evidence (2026-10-08)
+### Targeted poll and Constitution remediation evidence (2026-10-08; pre-deployment historical snapshot)
 
 | Check | Result | Evidence / limitation |
 | --- | --- | --- |
@@ -145,6 +145,21 @@ The prior Phase 2 certification records the earlier full `npm run verify` result
 | `npm run test:db` | BLOCKED | Supabase CLI failed to inspect local service: Docker Desktop is unable to start. Migration/pgTAP not executed. |
 | `npm run test:integration` / `npm run test:phase2-integration` | NOT RUN | Both require local Supabase; rerun after Docker runtime is restored. |
 | Hosted deployment | NOT RUN | No production migration, Render deploy, or real-member data used. |
+
+The Docker-blocked and not-deployed outcomes above record the October 8 state. They are superseded by the October 9 CI and hosted evidence below; no financial policy or Phase 3 behavior was authorized by that verification.
+
+### Deployment verification evidence (2026-10-09)
+
+| Check | Result | Evidence / limitation |
+| --- | --- | --- |
+| PR #4 merge | PASS | [PR #4](https://github.com/veerrajuamanchi/camping-club/pull/4) merged to `main` at `ecdab946b656fad02c5925d2536c29cd889fb519`. |
+| CI database/RLS and Phase 1 checks | PASS | [GitHub Actions run 37869171465](https://github.com/veerrajuamanchi/camping-club/actions/runs/37869171465): 64 pgTAP assertions, Phase 1 synthetic integration, typecheck, 38 frontend tests, build, and bundle secret scan. The follow-up workflow PR adds the Phase 2 integration harness to CI; record its green run before merge. |
+| Phase 2 Edge/API integration | PASS | Follow-up `Verify Phases 1 and 2` CI runs `npm run test:phase2-integration` against synthetic identities and a CI-local Supabase reset. Coverage includes all three booking statuses, poll save/readback, invalid enum rejection, general rule bundles, RLS, idempotency, authorization, and concurrency. |
+| Supabase hosted migration | PASS | Project `kdxmwqxlhswcgwanlump` lists migration `20261009005148` as applied. Read-only SQL verified 16 active general rules, 12 current poll bundles, all 12 containing 16 rules, and the migration-history row. |
+| Supabase Edge Function | PASS | `trip-api` is ACTIVE version 4 with JWT verification enabled. Configured Render-origin CORS preflight passed. |
+| Render static site | PASS | Live `/`, `/signin`, and `/polls` returned HTTP 200; JS/CSS assets returned 200 and the bundle contains the new booking-status labels. An authenticated read-only admin browser smoke rendered the rolling calendar and 16 seeded Constitution rule keys. |
+| Hosted mutation smoke / member onboarding | NOT PERFORMED | No poll save, RSVP, invitation, cleanup, or financial data was created in the hosted project. Poll-save behavior is verified through synthetic CI integration. |
+| Cron, email, backup, restore, and launch monitoring | OPEN | Not covered by the limited Phase 2 deployment authorization. |
 
 ## 2. Evidence ownership
 
