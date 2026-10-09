@@ -11,7 +11,7 @@ Phase 2 treats each calendar entry as a monthly interest poll. It deliberately h
 | Current `camping_trips.poll_status` | Authorized transition | Operation and event | Notification effect |
 | --- | --- | --- | --- |
 | No row for month | `draft` row generated for an unused month | Monthly Cron or admin `admin_generate_calendar`; `trip_poll_events.calendar_month_generated`; unique `month_key` and serialized configuration/rotation prevent duplicate month assignments | No email; appears in the signed-in calendar. |
-| `draft` | `open` | Admin configures dates, campsite, club timezone snapshot, deadline, poll fields and then `admin_set_poll_status`; `poll_opened` event, request key, version and reason | No email in Phase 2. |
+| `draft` | `open` | Admin configures dates, campsite, club timezone snapshot, deadline, planning poll fields, and optional Cabin Booking Status (`Booked`, `No vacancy`, or `Sites available`), then `admin_set_poll_status`; `poll_opened` event, request key, version and reason | No email in Phase 2. |
 | `open` | `closed` | Admin close or five-minute `phase2_close_due_polls`; `poll_closed` event. Cron only closes polls whose configured deadline has passed. | No email in Phase 2. |
 | `closed` | `open` | Admin reopen with expected version/reason, and only when dates/timezone/current rule bundle are valid and the deadline is still in the future; `poll_reopened` event | No email in Phase 2. |
 

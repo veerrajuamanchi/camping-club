@@ -23,7 +23,7 @@
 | SEC-06 | Private receipt storage and three-month deletion | 5, 7 | SEC-10, EXP-06, OPS-08 |
 | TRIP-01 | Seven campsites and round-robin monthly rotation | 2 | Implemented migration seeds seven sites; monthly generator preserves suggested/selected site and next-position cursor. Tests CAL-01/02 and DB-01. |
 | TRIP-02 | Rolling 12-month calendar, no duplicate month, catch-up | 2, 7 | Implemented `phase2_generate_calendar` + monthly Cron and admin catch-up; unique `month_key`, repeat-safe. Local tests CAL-01/03; hosted Cron/monitoring remains unverified (P2-R12). |
-| TRIP-03 | Friday–Sunday default; admin can edit dates/timezone | 2 | Dates and timezone/deadline are configurable per poll; timezone is required before open. Admin must enter actual dates; no assumed weekend dates. Tests CAL-04/05, P2-UI-04. Contractual cabin-buffer deadline remains Phase 3 because cabin booking data is absent. |
+| TRIP-03 | Friday–Sunday default; admin can edit dates/timezone | 2 | Dates and timezone/deadline are configurable per poll; timezone is required before save/open and the UI explains how to resolve it. Admin must enter actual dates; no assumed weekend dates. Tests CAL-04/05, P2-UI-04/12. Contractual cabin-buffer deadline remains Phase 3 because cabin reservation data is absent. |
 | TRIP-03A | Editing a saved deadline preserves the trip timezone and deadline instant | 2 | `pollDeadlineAt` is formatted to the immutable per-trip timezone snapshot before populating date/time inputs; the trusted operation keeps that snapshot on later edits even if the club default changes. Tests CAL-06/P2-UI-10/DB-08. |
 | TRIP-04 | Binary Coming / Not coming RSVP | 2 | Implemented with optimistic versions and append-only `trip_rsvp_events`; members see own answer and aggregate Coming count. Tests RSVP-01/02/04, DB-01, P2-UI-01/02. |
 | TRIP-05 | Default threshold four and structured trip override; count basis and payer-coverage treatment are owner-selected and unset until approval | 2, 3 | Planning minimum (default 4) is configurable and stored, but is not evaluated; `minimum_basis` remains NULL and has no API write path. No confirmation/cancellation/contribution automation. OD-01/02 pending. Tests DB-03, CAL-04. |
@@ -48,6 +48,8 @@
 | RULE-03A | A current Coming response does not require re-acknowledgment when rules later change or expire | 2, 7 | Current RSVP remains pinned to its exact accepted bundle; the new bundle is used only for a new/changed-to-Coming response. Existing test DB-06/RULE-05 remains valid. |
 | RULE-04 | Coming signup requires acknowledgment of complete applicable rule bundle | 2 | Implemented atomic exact-current bundle check + acknowledgment + RSVP. Tests RSVP-01/02, DB-06, API-02, P2-UI-01/02. |
 | RULE-05 | Acknowledgment records exact version/hash/time and remains unchanged after later rule edits; no re-ack | 2, 7 | Implemented append-only member/trip/bundle/hash/statement/time record; existing Coming RSVP retains old pointer after later publication. Tests RSVP-06, DB-06, P2-UI-06. |
+| RULE-07 | Previously provided general rules are present in the Constitution and shown before Coming acknowledgment | 2 | Migration seeds the 15 owner-provided rules/guidelines plus the existing poll disclosure; admin Constitution view lists current general text and signup bundles render the applicable copy. P2-UI-15 passes; DB-09/API-06 execution is blocked by Docker startup. Canonical text is [Default Camping Constitution](DEFAULT_CAMPING_CONSTITUTION.md). Contribution timing remains explicitly policy-gated. |
+| CAL-07 | Cabin Booking Status describes trip booking outcomes | 2 | Poll editor/calendar and UI tests show `Booked`, `No vacancy`, `Sites available`; trusted Edge contract, constrained column, and persistence tests are implemented. Legacy statuses map only when unambiguous; ambiguous values remain for admin review. P2-UI-11/14 pass; DB-10/API-07 execution awaits local Docker. |
 | RULE-06 | Effective rule snapshot at trip confirmation may be distinct from prior signup acknowledgment | 2, 3 | Confirmation-time snapshot is not implemented; signup acknowledgment is preserved. Phase 3 gate, no confirmation path. |
 | VEH-01 | Driver earns 76 cents/mile when carpool minimum 3 including driver | 4, 5, 6 | LOG-04, financial unit tests |
 | VEH-02 | $5 per participant car-wash contribution included in travel budget | 5, 6 | Expense/policy tests |
@@ -115,21 +117,34 @@
 
 Full command evidence, screenshots and limitations: [PHASE1_CERTIFICATION.md](PHASE1_CERTIFICATION.md).
 
-## Phase 2 executed evidence summary
+## Phase 2 executed evidence summary (prior baseline plus latest remediation run)
 
 | Evidence | Result | Requirements covered |
 | --- | --- | --- |
 | `npm run typecheck` | PASS | Phase 1 and Phase 2 TypeScript contracts. |
-| `npm test` | PASS — 26 tests / 6 files | CAL-01–06, RULE-TS-01–03, RSVP-01–06, P2-UI-01–10; member/admin journeys, timezone-safe deadline editing, campsite management, late interest, exact rule version, poll settings, overrides, pending withdrawal. |
-| `npm run test:db` | PASS — 59 pgTAP assertions across Phase 1 and Phase 2 SQL tests | DB-01–08; calendar uniqueness/rotation, RLS and grants, poll configuration/close, immutable rules and acknowledgments, effective/expiry boundaries, stale-bundle rejection, and timezone snapshot preservation. |
-| `npm run test:integration` | PASS — Phase 1 local Auth/Edge/RLS/security regression | Existing SEC-14–19 and invitation/payment-identifier boundary evidence preserved. |
-| `npm run test:phase2-integration` | PASS — synthetic local member/admin and Edge Function integration | API-01–06, RSVP-01–06; authorization, idempotency, refreshed calendar/Constitution reads, direct Data API bundle denial, admin site/rule actions, exact acknowledgment, poll close and withdrawal request. |
+| `npm test` | PASS — current remediation run: 6 Node tests plus 38 frontend tests / 9 files | Regressions and new poll/Constitution UI cases pass; see the remediation evidence below. Earlier 26-test Phase 2 result is retained in `PHASE2_CERTIFICATION.md` as prior-commit evidence. |
+| `npm run test:db` | BLOCKED for current remediation; Docker Desktop reports it cannot start | Previous 59-assertion result remains historical; the new migration and DB-09/10 need rerun once local Docker is available. |
+| `npm run test:integration` | Historical PASS; not rerun for this remediation because local Supabase cannot start | Existing SEC-14–19 evidence remains preserved for its tested baseline. |
+| `npm run test:phase2-integration` | BLOCKED / not rerun because local Supabase cannot start without Docker | Updated API-07 coverage is implemented in the synthetic harness and syntax-checked; it still needs execution against local Supabase. |
 | `npm run build` | PASS — Vite production bundle generated | ARC-01, Phase 2 UI compile/bundle. |
 | `npm run security:scan` | PASS — no privileged credentials/payment identifiers found in frontend bundle | SEC-03/04. |
 | Render or hosted Supabase deploy | NOT RUN; not authorized | No production deployment or real-member onboarding. |
 | Hosted Cron/email/backup/recovery | NOT RUN | Remains operational risk P2-R01/P2-R04/P2-R12. |
 
-The final local command sequence was `npm run verify`, which executes the commands above in order. See [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md) for environment, limitations, risk disposition and owner gates.
+The prior Phase 2 certification records the earlier full `npm run verify` result. The targeted remediation evidence below is the latest run for this change. See [PHASE2_CERTIFICATION.md](PHASE2_CERTIFICATION.md) for environment, limitations, risk disposition and owner gates.
+
+### Targeted poll and Constitution remediation evidence (2026-10-08)
+
+| Check | Result | Evidence / limitation |
+| --- | --- | --- |
+| `npm test` | PASS — 6 Node tests and 38 frontend tests across 9 files | Includes booking-status choices and save payload, missing-timezone guidance, stale-edit message, and ambiguous legacy status review. |
+| `npm run typecheck` | PASS | Frontend TypeScript contracts. |
+| `npm run build` | PASS | Production Vite bundle generated locally. |
+| `npm run security:scan` | PASS | Four bundle files scanned; no privileged credentials or payment-key material. |
+| `node --check scripts/test-phase2-integration.mjs` and `git diff --check` | PASS | Synthetic integration script parses; patch whitespace checks clean. |
+| `npm run test:db` | BLOCKED | Supabase CLI failed to inspect local service: Docker Desktop is unable to start. Migration/pgTAP not executed. |
+| `npm run test:integration` / `npm run test:phase2-integration` | NOT RUN | Both require local Supabase; rerun after Docker runtime is restored. |
+| Hosted deployment | NOT RUN | No production migration, Render deploy, or real-member data used. |
 
 ## 2. Evidence ownership
 

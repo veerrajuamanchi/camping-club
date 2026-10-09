@@ -21,6 +21,13 @@ export class MemberApiError extends Error {
   }
 }
 
+export class TripApiError extends Error {
+  constructor(readonly code?: string, readonly status?: number) {
+    super("The trip request could not be completed.");
+    this.name = "TripApiError";
+  }
+}
+
 export async function responseErrorCode(response?: Response): Promise<string | undefined> {
   if (!response) return undefined;
   try {
@@ -53,7 +60,11 @@ export async function invokeTripApi<T>(action: string, input?: unknown, idempote
   const headers = tripMutationActions.has(action)
     ? { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() }
     : undefined;
-  const { data, error } = await supabase.functions.invoke("trip-api", { body: { action, input }, headers });
-  if (error || data?.error) throw new Error("The request could not be completed.");
+  const { data, error, response } = await supabase.functions.invoke("trip-api", { body: { action, input }, headers });
+  if (error || data?.error) {
+    const responseCode = await responseErrorCode(response);
+    const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
+    throw new TripApiError(responseCode ?? payloadCode, response?.status);
+  }
   return data?.data as T;
 }
