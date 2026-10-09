@@ -1,6 +1,6 @@
 # API Contracts — Supabase Trusted Operations
 
-**Status:** Phase 1 and Phase 2 contracts are implemented and locally tested. Contracts for Phases 3–8 remain planned. No hosted service or production deployment was exercised.
+**Status:** Phase 1 and Phase 2 contracts are implemented. Earlier contracts were locally tested; the latest booking-status Edge changes are pending local Supabase integration because Docker Desktop could not start. Contracts for Phases 3–8 remain planned. No hosted service or production deployment was exercised.
 **Sources:** [Approved design](superpowers/specs/2026-10-08-camping-club-platform-design.md), [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md), [STATE_MACHINES.md](STATE_MACHINES.md)
 
 ## 1. Contract conventions
@@ -65,7 +65,7 @@ Phase 1 local acceptance tests cover the invite/bootstrap path, Auth/JWT verific
 | `admin_generate_calendar` | Active admin | Ensures unique month rows through the requested month; repeated request is idempotent. Monthly Cron uses the same generator. |
 | `admin_reorder_campsites` | Active admin | Reorders active-site round robin and next pointer; optimistic request key and reason are recorded. |
 | `admin_update_campsite` | Active admin | Edits public campsite fields and restricted admin notes; expected version prevents stale updates. |
-| `admin_configure_trip` | Active admin | Overrides campsite, dates, poll deadline/timezone snapshot, capacity, display information and planning minimum; expected version and reason required. An existing timezone snapshot remains stable across later edits and club-default changes; the current default is captured only when the trip has no snapshot yet. |
+| `admin_configure_trip` | Active admin | Overrides campsite, dates, poll deadline/timezone snapshot, capacity, display information, planning minimum, and `cabinBookingStatus` (`booked`, `no_vacancy`, or `sites_available`); expected version and reason required. Booking status is distinct from campsite availability research. An existing timezone snapshot remains stable across later edits and club-default changes; the current default is captured only when the trip has no snapshot yet. |
 | `admin_set_poll_status` | Active admin | Opens/closes or reopens an interest poll subject to poll configuration/version. Poll close never confirms/cancels a trip or creates obligations. Cron closes only due open polls. |
 | `admin_publish_rule` | Active admin | Adds immutable general or trip-specific rule version; trip-specific rules require expiry. General publication creates a new effective bundle without changing prior acknowledgments. |
 | `admin_set_rule_override` | Active admin | Adds expiring override tied to the exact current general rule version for one trip; old override is retired, never overwritten. |

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(37);
+select plan(42);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -18,7 +18,11 @@ select is((select jsonb_agg(name order by rotation_position) from public.campsit
 select is((select count(*)::integer from public.campsites where availability_url like 'https://%'),7,'each seeded campsite has its source URL');
 select is((select default_minimum_participants::integer from public.club_configuration where singleton),4,'default minimum remains four');
 select is((select club_timezone from public.club_configuration where singleton),null::text,'club timezone must be explicitly configured');
-select is((select count(*)::integer from public.rule_definitions where stable_key='poll-interest-disclosure'),1,'a general interest-poll disclosure is available to acknowledge');
+select is((select count(*)::integer from public.rule_definitions where scope='general' and active),16,'the general Constitution includes the disclosure and fifteen discussed club rules/guidelines');
+select is((select count(*)::integer from public.rule_versions rv join public.rule_definitions d on d.id=rv.definition_id where d.scope='general' and rv.human_text like '%$0.76%'),1,'the seeded general Constitution preserves the driver mileage rule');
+select ok((select bool_or(rv.human_text like '%first-come, first-served%') from public.rule_versions rv join public.rule_definitions d on d.id=rv.definition_id where d.scope='general' and d.stable_key='responsibility-workload'),'the seeded Constitution includes signup responsibility selection order');
+select has_column('public','camping_trips','cabin_booking_status','trip records persist the new cabin booking status separately');
+select is((select count(*)::integer from public.trip_rule_bundles b cross join lateral jsonb_array_elements(b.rendered_bundle) r where b.is_current and r->>'source'='general'),192,'all twelve generated polls show the disclosure and fifteen seeded general rules in their current immutable bundle');
 
 select is((select count(*)::integer from public.camping_trips),12,'migration creates the first rolling year of interest polls');
 select is(public.phase2_generate_calendar('21000000-0000-4000-8000-000000000003'::uuid,(date_trunc('month',now())::date + interval '13 months')::date,'31000000-0000-4000-8000-000000000001'::uuid)->>'generated_count','1','generator extends the rolling horizon by one month');
@@ -104,11 +108,13 @@ update public.club_configuration set club_timezone='America/Denver',version=vers
 select public.phase2_admin_configure_trip('21000000-0000-4000-8000-000000000003'::uuid,
   (select trip_id from phase2_timezone_fixture),current_date+90,current_date+92,current_date+55,time '18:00',4,8,
   (select selected_campsite_id from public.camping_trips where id=(select trip_id from phase2_timezone_fixture)),
-  'unknown','timezone preservation test',1,'Timezone snapshot regression','82000000-0000-4000-8000-000000000001'::uuid);
+  'booked','timezone preservation test',1,'Timezone snapshot regression','82000000-0000-4000-8000-000000000001'::uuid);
 select is((select club_timezone_snapshot from public.camping_trips where id=(select trip_id from phase2_timezone_fixture)),
   'America/Los_Angeles','existing poll keeps its captured timezone after club default changes');
 select is((select poll_deadline_at from public.camping_trips where id=(select trip_id from phase2_timezone_fixture)),
   (select prior_deadline from phase2_timezone_fixture),'saving an existing poll preserves its deadline instant across a club timezone change');
+select is((select event_details->>'cabin_booking_status' from public.trip_poll_events where request_id='82000000-0000-4000-8000-000000000001'::uuid and event_type='trip_configured'),
+  'booked','trip configuration audit event records the selected Cabin Booking Status');
 
 select * from finish();
 rollback;

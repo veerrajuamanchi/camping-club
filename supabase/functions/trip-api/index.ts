@@ -39,7 +39,7 @@ const inputSchemas = {
   admin_configure_trip: z.object({
     tripId: uuid, startsOn: date, endsOn: date, deadlineDate: date.nullable(), deadlineTime: time.nullable(),
     minimumParticipants: z.number().int().min(1).max(100), maxCapacity: z.number().int().min(1).max(100).nullable(),
-    selectedCampsiteId: uuid, availabilityStatus: z.enum(["available", "limited", "unavailable", "unknown", "manual_confirmation"]),
+    selectedCampsiteId: uuid, cabinBookingStatus: z.enum(["booked", "no_vacancy", "sites_available"]),
     additionalInformation: z.string().max(4000), expectedVersion: z.number().int().positive(), reason,
   }).strict(),
   admin_set_poll_status: z.object({ tripId: uuid, pollStatus: z.enum(["open", "closed"]), expectedVersion: z.number().int().positive(), reason }).strict(),
@@ -132,7 +132,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
     service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,active,version").eq("active", true).order("rotation_position"),
-    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,poll_status,additional_information,cabin_availability_status,version").gte("month_key", month).order("month_key").limit(12),
+    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,poll_status,additional_information,cabin_booking_status,cabin_availability_status,version").gte("month_key", month).order("month_key").limit(12),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
@@ -225,7 +225,8 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
         startsOn: trip.starts_on, endsOn: trip.ends_on, clubTimezone: trip.club_timezone_snapshot,
         pollDeadlineAt: trip.poll_deadline_at, minimumParticipants: trip.minimum_participants,
         minimumBasis: null, maxCapacity: trip.max_capacity, pollStatus: trip.poll_status,
-        additionalInformation: trip.additional_information, cabinAvailabilityStatus: trip.cabin_availability_status,
+        additionalInformation: trip.additional_information, cabinBookingStatus: trip.cabin_booking_status,
+        legacyCabinAvailabilityStatus: member.member_role === "admin" ? trip.cabin_availability_status : undefined,
         version: trip.version, comingCount: counts.get(trip.id) ?? 0, tripDecision: "none",
         currentRuleBundle: bundle ? { id: bundle.id, version: bundle.version_no, contentHash: bundle.content_hash, rules: bundle.rendered_bundle, createdAt: bundle.created_at } : null,
         myRsvp: own ? {
@@ -346,7 +347,7 @@ Deno.serve(async (request) => {
     }
     case "admin_configure_trip":
       rpcName = "phase2_admin_configure_trip";
-      rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_starts_on: input.startsOn, p_ends_on: input.endsOn, p_deadline_date: input.deadlineDate, p_deadline_time: input.deadlineTime, p_minimum_participants: input.minimumParticipants, p_max_capacity: input.maxCapacity, p_selected_campsite_id: input.selectedCampsiteId, p_availability_status: input.availabilityStatus, p_additional_information: input.additionalInformation, p_expected_version: input.expectedVersion, p_reason: input.reason, p_request_id: key };
+      rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_starts_on: input.startsOn, p_ends_on: input.endsOn, p_deadline_date: input.deadlineDate, p_deadline_time: input.deadlineTime, p_minimum_participants: input.minimumParticipants, p_max_capacity: input.maxCapacity, p_selected_campsite_id: input.selectedCampsiteId, p_cabin_booking_status: input.cabinBookingStatus, p_additional_information: input.additionalInformation, p_expected_version: input.expectedVersion, p_reason: input.reason, p_request_id: key };
       break;
     case "admin_set_poll_status":
       rpcName = "phase2_admin_set_poll_status";

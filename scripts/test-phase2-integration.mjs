@@ -116,6 +116,12 @@ try {
   check(initialCalendar.trips.every((trip) => trip.tripDecision === "none"), "Calendar exposed an automatic trip decision.");
   check(!JSON.stringify(initialCalendar).match(/contribution|paymentDue|confirmedAttendees/i), "Interest-poll calendar exposed financial or confirmation state.");
   check(!JSON.stringify(initialCalendar).match(/adminNotes|participantEntries|withdrawalRequests|members"/i), "Member calendar exposed administrator-only details or other members' RSVP identities.");
+  check(initialCalendar.trips.every((trip) => trip.legacyCabinAvailabilityStatus === undefined), "Member calendar exposed the administrator-only legacy booking field.");
+  const legacyReviewCalendarResponse = await tripApi("get_calendar", adminToken);
+  check(legacyReviewCalendarResponse.ok, "Administrator could not read the trip calendar.");
+  const legacyReviewCalendar = (await legacyReviewCalendarResponse.json()).data;
+  check(legacyReviewCalendar.trips.every((trip) => trip.cabinBookingStatus === null && trip.legacyCabinAvailabilityStatus === "unknown"),
+    "Ambiguous legacy booking statuses were guessed or hidden from the administrator review path.");
 
   const forbiddenAdmin = await tripApi("admin_configure_club", memberToken, { timezone: "America/Los_Angeles" }, randomUUID());
   check(forbiddenAdmin.status === 403, "Non-administrator changed Phase 2 club configuration.");
@@ -172,19 +178,42 @@ try {
   const startsOn = `${trip.monthKey}-20`;
   const deadlineDate = addDays(startsOn, -35);
   const configureTripKey = randomUUID();
-  const configuredTrip = await tripApi("admin_configure_trip", adminToken, {
+  let configuredTrip = await tripApi("admin_configure_trip", adminToken, {
     tripId: trip.tripId, startsOn, endsOn: addDays(startsOn, 2), deadlineDate, deadlineTime: "18:00:00",
     minimumParticipants: 4, maxCapacity: 8, selectedCampsiteId: trip.suggestedCampsiteId,
-    availabilityStatus: "unknown", additionalInformation: "Synthetic test poll", expectedVersion: trip.version,
+    cabinBookingStatus: "booked", additionalInformation: "Synthetic test poll", expectedVersion: trip.version,
     reason: "Local integration fixture",
   }, configureTripKey);
   check(configuredTrip.ok, `Administrator could not configure the interest poll (${configuredTrip.status}).`);
-  const openPoll = await tripApi("admin_set_poll_status", adminToken, { tripId: trip.tripId, pollStatus: "open", expectedVersion: 2, reason: "Local test open" }, randomUUID());
+  let savedTrip = (await (await tripApi("get_calendar", adminToken)).json()).data.trips.find((row) => row.tripId === trip.tripId);
+  check(savedTrip?.cabinBookingStatus === "booked" && savedTrip.additionalInformation === "Synthetic test poll",
+    "Admin poll save did not persist its cabin booking status and trip information through the trusted API.");
+  const invalidBookingStatus = await tripApi("admin_configure_trip", adminToken, {
+    tripId: trip.tripId, startsOn, endsOn: addDays(startsOn, 2), deadlineDate, deadlineTime: "18:00:00",
+    minimumParticipants: 4, maxCapacity: 8, selectedCampsiteId: trip.suggestedCampsiteId,
+    cabinBookingStatus: "limited", additionalInformation: "Invalid synthetic poll", expectedVersion: 2,
+    reason: "Invalid booking-status contract test",
+  }, randomUUID());
+  check(invalidBookingStatus.status === 400, "The trusted poll API accepted an unsupported cabin booking status.");
+  for (const [index, cabinBookingStatus] of ["no_vacancy", "sites_available"].entries()) {
+    configuredTrip = await tripApi("admin_configure_trip", adminToken, {
+      tripId: trip.tripId, startsOn, endsOn: addDays(startsOn, 2), deadlineDate, deadlineTime: "18:00:00",
+      minimumParticipants: 4, maxCapacity: 8, selectedCampsiteId: trip.suggestedCampsiteId,
+      cabinBookingStatus, additionalInformation: "Synthetic test poll", expectedVersion: index + 2,
+      reason: "Local integration booking-status coverage",
+    }, randomUUID());
+    check(configuredTrip.ok, `Administrator could not save ${cabinBookingStatus} booking status (${configuredTrip.status}).`);
+    savedTrip = (await (await tripApi("get_calendar", adminToken)).json()).data.trips.find((row) => row.tripId === trip.tripId);
+    check(savedTrip?.cabinBookingStatus === cabinBookingStatus, `Trusted calendar read did not persist ${cabinBookingStatus}.`);
+  }
+  const openPoll = await tripApi("admin_set_poll_status", adminToken, { tripId: trip.tripId, pollStatus: "open", expectedVersion: 4, reason: "Local test open" }, randomUUID());
   check(openPoll.ok, `Administrator could not open the interest poll (${openPoll.status}).`);
 
   const refreshed = (await (await tripApi("get_calendar", memberToken)).json()).data;
   const openTrip = refreshed.trips.find((row) => row.tripId === trip.tripId);
   check(openTrip?.pollStatus === "open" && openTrip.currentRuleBundle?.contentHash, "Open poll did not expose its current immutable rule bundle.");
+  check(openTrip.currentRuleBundle.rules.some((rule) => rule.stable_key === "driver-mileage" && rule.text.includes("$0.76")),
+    "The member's current rule bundle did not include the seeded general Constitution text.");
   const constitutionResponse = await tripApi("get_constitution", memberToken, { tripId: trip.tripId });
   check(constitutionResponse.ok && (await constitutionResponse.json()).data.currentBundle?.id === openTrip.currentRuleBundle.id,
     "Open-poll Constitution read did not return the refreshed current bundle.");

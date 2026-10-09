@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { TripApiError } from "../../lib/supabase";
 import { TripCalendarPage, type Calendar, type TripApi } from "./TripCalendarPage";
 
 const makeCalendar = (): Calendar => ({
   clubConfiguration: { timezone: "America/Los_Angeles", defaultPollLeadDays: 35, defaultPollCloseTime: "18:00:00", defaultMinimumParticipants: 4, nextMonthToGenerate: "2027-01-01", nextRotationPosition: 1, version: 2 },
   campsites: [{ campsiteId: "site-1", rotationPosition: 1, name: "Del Monte", availabilityUrl: "https://example.test", locationDescription: "North", directions: null, cabinCapacity: 8, cabinTypes: ["cabin"], reservationInstructions: null, estimatedRateCents: 25000, availabilityStatus: "unknown", availabilitySourceUrl: null, availabilityVerifiedAt: null, version: 1 }],
-  trips: [{ tripId: "trip-1", monthKey: "2027-01", rotationPosition: 1, suggestedCampsiteId: "site-1", selectedCampsiteId: "site-1", startsOn: "2027-01-15", endsOn: "2027-01-17", clubTimezone: "America/Los_Angeles", pollDeadlineAt: "2027-01-01T18:00:00-08:00", minimumParticipants: 4, minimumBasis: null, maxCapacity: 8, pollStatus: "open", additionalInformation: "Bring warm clothes", cabinAvailabilityStatus: "unknown", version: 3, comingCount: 2, tripDecision: "none", currentRuleBundle: { id: "bundle-1", version: 1, contentHash: "a".repeat(64), rules: [{ stable_key: "disclosure", text: "Coming is an interest response only.", structured_values: {} }], createdAt: "2026-10-01T00:00:00Z" }, myRsvp: null }],
+  trips: [{ tripId: "trip-1", monthKey: "2027-01", rotationPosition: 1, suggestedCampsiteId: "site-1", selectedCampsiteId: "site-1", startsOn: "2027-01-15", endsOn: "2027-01-17", clubTimezone: "America/Los_Angeles", pollDeadlineAt: "2027-01-01T18:00:00-08:00", minimumParticipants: 4, minimumBasis: null, maxCapacity: 8, pollStatus: "open", additionalInformation: "Bring warm clothes", cabinBookingStatus: "booked", version: 3, comingCount: 2, tripDecision: "none", currentRuleBundle: { id: "bundle-1", version: 1, contentHash: "a".repeat(64), rules: [{ stable_key: "disclosure", text: "Coming is an interest response only.", structured_values: {} }], createdAt: "2026-10-01T00:00:00Z" }, myRsvp: null }],
 });
 
 describe("TripCalendarPage", () => {
@@ -68,6 +69,63 @@ describe("TripCalendarPage", () => {
     })));
   });
 
+  it("saves a poll with the selected cabin booking status and confirms the save", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async () => calendar);
+    render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
+    await screen.findByText("Monthly interest polls");
+
+    const bookingStatus = screen.getByLabelText("Cabin Booking Status");
+    expect(Array.from((bookingStatus as HTMLSelectElement).options).map((option) => option.textContent)).toEqual([
+      "Select a status", "Booked", "No vacancy", "Sites available",
+    ]);
+    fireEvent.change(bookingStatus, { target: { value: "booked" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save poll details" }));
+
+    await waitFor(() => expect(api).toHaveBeenCalledWith("admin_configure_trip", expect.objectContaining({
+      tripId: "trip-1", cabinBookingStatus: "booked",
+    })));
+    expect(await screen.findByText("Poll configuration saved.")).toBeInTheDocument();
+  });
+
+  it("shows ambiguous legacy availability to admins without guessing a booking status", async () => {
+    const calendar = makeCalendar();
+    calendar.trips[0].cabinBookingStatus = null;
+    calendar.trips[0].legacyCabinAvailabilityStatus = "limited";
+    const api = vi.fn(async () => calendar);
+    render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
+    await screen.findByText("Monthly interest polls");
+    expect(await screen.findByText("Previous availability value: limited. Choose a booking status; this older value was not converted automatically.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cabin Booking Status")).toHaveValue("");
+  });
+
+  it("explains that the club timezone must be set before a poll can be saved", async () => {
+    const calendar = makeCalendar();
+    calendar.clubConfiguration.timezone = null;
+    calendar.trips[0].clubTimezone = null;
+    calendar.trips[0].pollDeadlineAt = null;
+    const api = vi.fn(async () => calendar);
+    render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
+    await screen.findByText("Monthly interest polls");
+    fireEvent.click(screen.getByRole("button", { name: "Save poll details" }));
+
+    expect(await screen.findByText("Set the club timezone in Club-wide settings before saving this poll.")).toBeInTheDocument();
+    expect(api).not.toHaveBeenCalledWith("admin_configure_trip", expect.anything());
+  });
+
+  it("explains when another administrator changed the poll before this save", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async (action: string) => {
+      if (action === "admin_configure_trip") throw new TripApiError("stale_record", 409);
+      return calendar;
+    });
+    render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
+    await screen.findByText("Monthly interest polls");
+    fireEvent.click(screen.getByRole("button", { name: "Save poll details" }));
+
+    expect(await screen.findByText("This poll changed while you were editing. Refresh the calendar and try again.")).toBeInTheDocument();
+  });
+
   it("lets an administrator update campsite details and restricted notes", async () => {
     const api = vi.fn(async () => makeCalendar());
     render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
@@ -119,6 +177,25 @@ describe("TripCalendarPage", () => {
     await waitFor(() => expect(api).toHaveBeenCalledWith("admin_set_rule_override", expect.objectContaining({
       tripId: "trip-1", baseRuleVersionId: "version-1", text: "Use quiet hours as agreed by this trip.",
     })));
+  });
+
+  it("shows the seeded general rule text in the administrator Constitution history", async () => {
+    const calendar = makeCalendar();
+    const generalRules = [
+      { id: "driver", stable_key: "driver-mileage", category: "transport", scope: "general", active: true },
+      { id: "meals", stable_key: "meal-preferences", category: "meals", scope: "general", active: true },
+    ];
+    const versions = [
+      { id: "driver-v1", definition_id: "driver", version_no: 1, human_text: "A driver is reimbursed $0.76 per mile when the carpool carries at least three people, including the driver.", effective_from: "2026-01-01T00:00:00Z", expires_at: null },
+      { id: "meals-v1", definition_id: "meals", version_no: 1, human_text: "Collect vegetarian or non-vegetarian preferences for the whole trip or each planned meal.", effective_from: "2026-01-01T00:00:00Z", expires_at: null },
+    ];
+    const api = vi.fn(async (action: string) => action === "get_constitution"
+      ? { definitions: generalRules, versions, overrides: [] }
+      : calendar);
+    render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Constitution" }));
+    expect(await screen.findByText(versions[0].human_text)).toBeInTheDocument();
+    expect(screen.getByText(versions[1].human_text)).toBeInTheDocument();
   });
 
   it("preserves the exact older Constitution version for an existing Coming response", async () => {

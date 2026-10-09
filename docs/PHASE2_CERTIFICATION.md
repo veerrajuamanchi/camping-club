@@ -87,3 +87,22 @@ The implementation review identified two issues before certification was finaliz
 ## Recommendation
 
 **Phase 2 is complete and ready for owner review as PASS WITH RISK.** Review this report, [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md), the [Phase 2 risk register](PHASE2_RISK_REGISTER.md), and [OWNER_DECISIONS.md](OWNER_DECISIONS.md). Stop here. Phase 3, production deployment, production secrets, and real-member onboarding require separate explicit approval.
+
+## Targeted poll and Constitution remediation (2026-10-08)
+
+The latest approved remediation changes the poll field to **Cabin Booking Status** with values **Booked**, **No vacancy**, and **Sites available**; seeds the existing general rules into immutable Constitution versions; and makes poll validation and stale-edit failures visible. It does not choose the unresolved participation/payment basis, start contribution collection, or deploy.
+
+| Check | Result | Evidence / limitation |
+| --- | --- | --- |
+| `npm test` | PASS — 6 Node tests plus 38 frontend tests across 9 files | Includes the new booking-status form/save contract, missing-timezone guidance, stale-edit feedback, and ambiguous legacy-value review. |
+| `npm run typecheck` | PASS | Frontend contracts compile. |
+| `npm run build` | PASS | Vite production bundle generated locally. |
+| `npm run security:scan` | PASS | Four bundle files scanned; no privileged credentials or payment-key material. |
+| `node --check scripts/test-phase2-integration.mjs` and `git diff --check` | PASS | Integration harness syntax and patch checks. |
+| `npm run test:db` | BLOCKED | Docker Desktop reports it cannot start, so the new migration and updated pgTAP suite were not executed. |
+| Phase 1 and Phase 2 local Supabase integration | NOT RUN for this remediation | Both require the unavailable local Docker/Supabase runtime. The updated Phase 2 harness checks all three booking values, old-value rejection, admin-only legacy display, and seeded rule content; it must be run after Docker is restored. |
+| Render / hosted Supabase | NOT RUN | No hosted migration or deployment was performed. |
+
+**Targeted remediation assessment: PASS WITH RISK.** Frontend interaction behavior, compile/build, and bundle scan pass. Database migration replay, RLS/pgTAP, and Edge persistence integration remain unverified because Docker Desktop cannot start. Re-run `npm run test:db`, `npm run test:integration`, and `npm run test:phase2-integration` before treating the migration/API change as fully certified.
+
+This is an update to the earlier Phase 2 evidence, not approval to begin Phase 3 or deploy. The original implementation evidence above remains preserved as historical results for its tested commit.
