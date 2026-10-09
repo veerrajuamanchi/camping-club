@@ -110,3 +110,14 @@ insert into public.rule_versions(definition_id,version_no,human_text,structured_
 select d.id,1,s.human_text,'{}'::jsonb,now()
 from seed_rules s join public.rule_definitions d on d.scope='general' and d.stable_key=s.stable_key
 where not exists(select 1 from public.rule_versions v where v.definition_id=d.id and v.version_no=1);
+
+-- The original calendar was generated before these general rules existed.
+-- Rebuild the immutable current bundles so every poll presents the actual
+-- Constitution now in force. Historical bundle rows remain intact.
+do $$
+declare v_trip_id uuid;
+begin
+  for v_trip_id in select id from public.camping_trips order by month_key loop
+    perform private.phase2_build_rule_bundle(v_trip_id,null);
+  end loop;
+end $$;

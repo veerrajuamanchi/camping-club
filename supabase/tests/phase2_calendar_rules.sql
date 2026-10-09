@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(41);
+select plan(42);
 
 insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
 values
@@ -22,6 +22,7 @@ select is((select count(*)::integer from public.rule_definitions where scope='ge
 select is((select count(*)::integer from public.rule_versions rv join public.rule_definitions d on d.id=rv.definition_id where d.scope='general' and rv.human_text like '%$0.76%'),1,'the seeded general Constitution preserves the driver mileage rule');
 select ok((select bool_or(rv.human_text like '%first-come, first-served%') from public.rule_versions rv join public.rule_definitions d on d.id=rv.definition_id where d.scope='general' and d.stable_key='responsibility-workload'),'the seeded Constitution includes signup responsibility selection order');
 select has_column('public','camping_trips','cabin_booking_status','trip records persist the new cabin booking status separately');
+select is((select count(*)::integer from public.trip_rule_bundles b cross join lateral jsonb_array_elements(b.rendered_bundle) r where b.is_current and r->>'source'='general'),192,'all twelve generated polls show the disclosure and fifteen seeded general rules in their current immutable bundle');
 
 select is((select count(*)::integer from public.camping_trips),12,'migration creates the first rolling year of interest polls');
 select is(public.phase2_generate_calendar('21000000-0000-4000-8000-000000000003'::uuid,(date_trunc('month',now())::date + interval '13 months')::date,'31000000-0000-4000-8000-000000000001'::uuid)->>'generated_count','1','generator extends the rolling horizon by one month');
