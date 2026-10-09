@@ -295,7 +295,9 @@ try {
   }, randomUUID());
   check(tripRule.ok, `Administrator could not publish an expiring trip-specific rule (${tripRule.status}).`);
 
-  const closePoll = await tripApi("admin_set_poll_status", adminToken, { tripId: trip.tripId, pollStatus: "closed", expectedVersion: 3, reason: "Local test close" }, randomUUID());
+  const beforeClose = (await (await tripApi("get_calendar", adminToken)).json()).data.trips.find((row) => row.tripId === trip.tripId);
+  check(Boolean(beforeClose), "Administrator could not read the trip version before closing the poll.");
+  const closePoll = await tripApi("admin_set_poll_status", adminToken, { tripId: trip.tripId, pollStatus: "closed", expectedVersion: beforeClose.version, reason: "Local test close" }, randomUUID());
   check(closePoll.ok, `Administrator could not close the poll without deciding trip status (${closePoll.status}).`);
   const withdrawal = await tripApi("request_withdrawal", memberToken, { tripId: trip.tripId, reason: "Synthetic post-close withdrawal" }, randomUUID());
   check(withdrawal.ok && (await withdrawal.json()).data.state === "pending_owner_policy", "Closed-poll withdrawal did not remain pending under the unapproved policy.");
