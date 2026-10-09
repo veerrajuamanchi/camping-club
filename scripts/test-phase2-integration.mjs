@@ -36,6 +36,17 @@ server.stdout.on("data", (part) => logParts.push(part));
 server.stderr.on("data", (part) => logParts.push(part));
 const fixtures = [];
 const check = (condition, message) => { if (!condition) throw new Error(message); };
+function collectPropertyNames(value, names = []) {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectPropertyNames(entry, names);
+  } else if (value && typeof value === "object") {
+    for (const [name, child] of Object.entries(value)) {
+      names.push(name);
+      collectPropertyNames(child, names);
+    }
+  }
+  return names;
+}
 async function eventually(probe, message) {
   const expiresAt = Date.now() + 12000;
   while (Date.now() < expiresAt) {
@@ -114,8 +125,9 @@ try {
   check(initialCalendar.trips.length === 12, "Member calendar did not return the rolling twelve-month horizon.");
   check(initialCalendar.trips.every((trip) => trip.pollStatus === "draft" && trip.minimumBasis === null), "Calendar silently opened a poll or selected a minimum-count policy.");
   check(initialCalendar.trips.every((trip) => trip.tripDecision === "none"), "Calendar exposed an automatic trip decision.");
-  check(!JSON.stringify(initialCalendar).match(/contribution|paymentDue|confirmedAttendees/i), "Interest-poll calendar exposed financial or confirmation state.");
-  check(!JSON.stringify(initialCalendar).match(/adminNotes|participantEntries|withdrawalRequests|members"/i), "Member calendar exposed administrator-only details or other members' RSVP identities.");
+  const calendarProperties = collectPropertyNames(initialCalendar);
+  check(!calendarProperties.some((name) => /contribution|paymentDue|confirmedAttendees/i.test(name)), "Interest-poll calendar exposed financial or confirmation state.");
+  check(!calendarProperties.some((name) => /adminNotes|participantEntries|withdrawalRequests|^members$/i.test(name)), "Member calendar exposed administrator-only details or other members' RSVP identities.");
   check(initialCalendar.trips.every((trip) => trip.legacyCabinAvailabilityStatus === undefined), "Member calendar exposed the administrator-only legacy booking field.");
   const legacyReviewCalendarResponse = await tripApi("get_calendar", adminToken);
   check(legacyReviewCalendarResponse.ok, "Administrator could not read the trip calendar.");
@@ -283,7 +295,9 @@ try {
   }, randomUUID());
   check(tripRule.ok, `Administrator could not publish an expiring trip-specific rule (${tripRule.status}).`);
 
-  const closePoll = await tripApi("admin_set_poll_status", adminToken, { tripId: trip.tripId, pollStatus: "closed", expectedVersion: 3, reason: "Local test close" }, randomUUID());
+  const beforeClose = (await (await tripApi("get_calendar", adminToken)).json()).data.trips.find((row) => row.tripId === trip.tripId);
+  check(Boolean(beforeClose), "Administrator could not read the trip version before closing the poll.");
+  const closePoll = await tripApi("admin_set_poll_status", adminToken, { tripId: trip.tripId, pollStatus: "closed", expectedVersion: beforeClose.version, reason: "Local test close" }, randomUUID());
   check(closePoll.ok, `Administrator could not close the poll without deciding trip status (${closePoll.status}).`);
   const withdrawal = await tripApi("request_withdrawal", memberToken, { tripId: trip.tripId, reason: "Synthetic post-close withdrawal" }, randomUUID());
   check(withdrawal.ok && (await withdrawal.json()).data.state === "pending_owner_policy", "Closed-poll withdrawal did not remain pending under the unapproved policy.");

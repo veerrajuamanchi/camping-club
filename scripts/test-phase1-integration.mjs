@@ -96,6 +96,15 @@ try {
     return response.status === 401;
   }, "Edge Functions did not become ready.");
 
+  await eventually(async () => {
+    const response = await fetch(`${api}/functions/v1/bootstrap-admin`, {
+      method: "POST",
+      headers: { apikey: publicKey, "Content-Type": "application/json", "x-bootstrap-token": "wrong" },
+      body: JSON.stringify({ email: `readiness-${suffix}@example.test` }),
+    });
+    return response.status === 401;
+  }, "Bootstrap Edge Function did not become ready.");
+
   const memberPreflight = await fetch(`${api}/functions/v1/member-api`, {
     method: "OPTIONS",
     headers: {
