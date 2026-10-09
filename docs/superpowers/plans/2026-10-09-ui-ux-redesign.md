@@ -33,7 +33,7 @@
 
 ## Phase UI-A: OTP Login + Access Request
 
-### Task A1: Database migration — access_requests table
+### Task 1: Database migration — access_requests table
 
 **Files:**
 - Create: `supabase/migrations/20261009180000_uiux_access_requests.sql`
@@ -174,7 +174,7 @@ git commit -m "migration: add private.access_requests table and helpers"
 
 ---
 
-### Task A2: migration — per_cabin_capacity column on camping_trips
+### Task 2: migration — per_cabin_capacity column on camping_trips
 
 **Files:**
 - Create: `supabase/migrations/20261009181000_uiux_trip_capacity.sql`
@@ -237,7 +237,7 @@ git commit -m "migration: add per_cabin_capacity and cabin_count columns to camp
 
 ---
 
-### Task A3: migration — waitlist table
+### Task 3: migration — waitlist table
 
 **Files:**
 - Create: `supabase/migrations/20261009182000_uiux_waitlist.sql`
@@ -342,7 +342,7 @@ git commit -m "migration: add trip_waitlist_entries table with RLS"
 
 ---
 
-### Task A4: New `auth-api` Edge Function — unauthenticated check_access and access request
+### Task 4: New `auth-api` Edge Function — unauthenticated check_access and access request
 
 **Files:**
 - Create: `supabase/functions/auth-api/index.ts`
@@ -600,7 +600,7 @@ git commit -m "feat: add auth-api Edge Function and invokeAuthApi helper"
 
 ---
 
-### Task A5: member-api — add access request management actions
+### Task 5: member-api — add access request management actions
 
 **Files:**
 - Modify: `supabase/functions/member-api/index.ts`
@@ -765,7 +765,7 @@ git commit -m "feat: add access request management to member-api"
 
 ---
 
-### Task A6: Frontend — OTP sign-in flow (replace password login)
+### Task 6: Frontend — OTP sign-in flow (replace password login)
 
 **Files:**
 - Modify: `frontend/src/features/auth/SignInForm.tsx` — replace password field with two-step OTP flow
@@ -1166,7 +1166,7 @@ git commit -m "feat: replace password login with Supabase email OTP flow"
 
 ---
 
-### Task A7: AdminMembersPage — add access request management UI
+### Task 7: AdminMembersPage — add access request management UI
 
 **Files:**
 - Modify: `frontend/src/features/admin/AdminMembersPage.tsx`
@@ -1285,7 +1285,7 @@ git commit -m "feat: add access request management to admin members page"
 
 ## Phase UI-B: Unified Landing Page (EventCard with full metadata)
 
-### Task B1: Extend trip-api get_calendar to return waitlist + capacity fields
+### Task 8: Extend trip-api get_calendar to return waitlist + capacity fields
 
 **Files:**
 - Modify: `supabase/functions/trip-api/index.ts` — `getCalendar` function
@@ -1429,7 +1429,7 @@ git commit -m "feat: extend get_calendar with capacity, waitlist count, and spot
 
 ---
 
-### Task B2: Redesign TripCalendarPage — unified EventCard landing page
+### Task 9: Redesign TripCalendarPage — unified EventCard landing page
 
 **Files:**
 - Modify: `frontend/src/features/trips/TripCalendarPage.tsx` — refactor `TripPollCard` into a new `EventCard` component with mobile-first layout
@@ -1693,7 +1693,7 @@ git commit -m "feat: redesign landing page with unified EventCard component for 
 
 ## Phase UI-C: Event Details Page
 
-### Task C1: trip-api get_trip_details action
+### Task 10: trip-api get_trip_details action
 
 **Files:**
 - Modify: `supabase/functions/trip-api/index.ts` — add `get_trip_details` action
@@ -1843,7 +1843,7 @@ git commit -m "feat: add get_trip_details action to trip-api"
 
 ---
 
-### Task C2: EventDetailsPage component — four-tab layout
+### Task 11: EventDetailsPage component — four-tab layout
 
 **Files:**
 - Create: `frontend/src/features/trips/EventDetailsPage.tsx`
@@ -2264,7 +2264,7 @@ git commit -m "feat: add EventDetailsPage with four tabs at /trips/:tripId"
 
 ## Phase UI-D: Waitlist — submit_rsvp capacity enforcement + admin promotion
 
-### Task D1: Extend submit_rsvp to enforce capacity and create waitlist entries
+### Task 12: Extend submit_rsvp to enforce capacity and create waitlist entries
 
 **Files:**
 - Modify: `supabase/functions/trip-api/index.ts` — `submit_rsvp` handler
@@ -2403,7 +2403,7 @@ git commit -m "feat: capacity enforcement in submit_rsvp — waitlist on full tr
 
 ---
 
-### Task D2: Admin waitlist promotion — admin_promote_from_waitlist action
+### Task 13: Admin waitlist promotion — admin_promote_from_waitlist action
 
 **Files:**
 - Modify: `supabase/functions/trip-api/index.ts` — add `admin_promote_from_waitlist` action
@@ -2546,7 +2546,7 @@ git commit -m "feat: add admin_promote_from_waitlist action and UI"
 
 ## Phase UI-E: Admin trip configure — cabin count and per-cabin capacity
 
-### Task E1: Add cabin_count and per_cabin_capacity to admin_configure_trip
+### Task 14: Add cabin_count and per_cabin_capacity to admin_configure_trip
 
 **Files:**
 - Modify: `supabase/functions/trip-api/index.ts` — `admin_configure_trip` schema and handler
@@ -2613,7 +2613,7 @@ git commit -m "feat: add cabin_count and per_cabin_capacity to admin trip config
 
 ## Phase UI-F: Regression verification and final build
 
-### Task F1: Full regression suite
+### Task 15: Full regression suite
 
 **Files:** No new files — test only.
 
