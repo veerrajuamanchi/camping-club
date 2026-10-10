@@ -133,6 +133,110 @@ function AdminTripPanel({
   );
 }
 
+function TripEditModal({
+  trip,
+  calendar,
+  api,
+  onClose,
+  onRefresh,
+}: {
+  trip: Trip;
+  calendar?: Calendar;
+  api: TripApi;
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const deadlineLocal = formatZonedDateTimeLocal(trip?.pollDeadlineAt ?? null, trip?.clubTimezone ?? calendar?.clubConfiguration.timezone ?? null);
+  const [deadline, setDeadline] = useState(deadlineLocal.slice(0, 10));
+  const [deadlineTime, setDeadlineTime] = useState(deadlineLocal.slice(11, 16) || calendar?.clubConfiguration.defaultPollCloseTime?.slice(0, 5) || "18:00");
+  const [startsOn, setStartsOn] = useState(trip?.startsOn ?? "");
+  const [endsOn, setEndsOn] = useState(trip?.endsOn ?? "");
+  const [minimum, setMinimum] = useState(trip?.minimumParticipants ?? calendar?.clubConfiguration.defaultMinimumParticipants ?? 4);
+  const [capacity, setCapacity] = useState(trip?.maxCapacity?.toString() ?? "");
+  const [cabinCount, setCabinCount] = useState(trip?.cabinCount?.toString() ?? "");
+  const [perCabinCapacity, setPerCabinCapacity] = useState(trip?.perCabinCapacity?.toString() ?? "6");
+  const [siteId, setSiteId] = useState(trip?.selectedCampsiteId ?? "");
+  const [bookingStatus, setBookingStatus] = useState<CabinBookingStatus | "">(trip?.cabinBookingStatus ?? "booked");
+  const [information, setInformation] = useState(trip?.additionalInformation ?? "");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!bookingStatus) { setMsg("Select a Cabin Booking Status before saving."); return; }
+    if (!trip.clubTimezone && !calendar?.clubConfiguration.timezone) { setMsg("Set club timezone before saving."); return; }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const effectiveDeadline = deadline || (startsOn ? datePlusDays(startsOn, -(calendar?.clubConfiguration.defaultPollLeadDays ?? 35)) : "");
+      await api("admin_configure_trip", {
+        tripId: trip.tripId,
+        startsOn,
+        endsOn,
+        deadlineDate: effectiveDeadline || null,
+        deadlineTime: deadlineTime || null,
+        minimumParticipants: Number(minimum),
+        maxCapacity: capacity ? Number(capacity) : null,
+        cabinCount: cabinCount ? Number(cabinCount) : null,
+        perCabinCapacity: perCabinCapacity ? Number(perCabinCapacity) : 6,
+        selectedCampsiteId: siteId,
+        cabinBookingStatus: bookingStatus,
+        additionalInformation: information,
+        expectedVersion: trip.version,
+        reason: "Administrator configured trip from calendar card",
+      });
+      await onRefresh();
+      onClose();
+    } catch {
+      setMsg("Could not save trip configuration. Please verify all inputs.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>Edit {monthName(trip.monthKey)} Camping</h2>
+        <form className="admin-form" onSubmit={handleSave}>
+          <div className="form-grid">
+            <label>Trip start<input type="date" required value={startsOn} onChange={(e) => setStartsOn(e.target.value)} /></label>
+            <label>Trip end<input type="date" required value={endsOn} onChange={(e) => setEndsOn(e.target.value)} /></label>
+            <label>Registration deadline date<input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
+            <label>Deadline time<input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} /></label>
+            <label>Minimum participants<input type="number" min="1" max="100" required value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} /></label>
+            <label>Max capacity (optional)<input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} /></label>
+            <label>Cabin count<input type="number" min="1" max="50" value={cabinCount} onChange={(e) => setCabinCount(e.target.value)} /></label>
+            <label>Per-cabin capacity<input type="number" min="1" max="50" value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} /></label>
+          </div>
+          <label>Selected campsite
+            <select value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+              {calendar?.campsites.map((s) => (
+                <option key={s.campsiteId} value={s.campsiteId}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>Cabin booking status
+            <select required value={bookingStatus} onChange={(e) => setBookingStatus(e.target.value as CabinBookingStatus)}>
+              {cabinBookingStatuses.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>Trip notes & information
+            <textarea value={information} onChange={(e) => setInformation(e.target.value)} />
+          </label>
+          {msg && <p role="alert" className="form-error">{msg}</p>}
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+            <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function EventCard({
   trip,
   campsite,
@@ -164,18 +268,9 @@ function EventCard({
     new Date(trip.pollDeadlineAt as string).getTime() > Date.now();
   const isComing = trip.myRsvp?.response === "coming";
   const isNotComing = trip.myRsvp?.response === "not_coming";
-  const isWaitlisted = Boolean(trip.myWaitlistPosition);
   const needsAcknowledgment = choice === "coming" && !isComing;
 
   const dateLabel = isDraft || !trip.startsOn || !trip.endsOn ? "Dates TBA" : `${trip.startsOn} – ${trip.endsOn}`;
-
-  const rsvpStatusLabel = isWaitlisted
-    ? "Waitlisted"
-    : isComing
-      ? "Going"
-      : isNotComing
-        ? "Not Going"
-        : "No response";
 
   async function submit() {
     if (!choice) return;
@@ -232,76 +327,117 @@ function EventCard({
     }
   }
 
+  const [showEditModal, setShowEditModal] = useState(false);
+
   return (
-    <article className="card event-card" aria-label={`Trip ${dateLabel}`}>
-      <Link
-        to={`/trips/${trip.tripId}`}
-        className="event-card-link"
-        aria-label={`View details for ${trip.additionalInformation || "camping trip"}`}
-      >
-        <div className="event-card-head">
-          <div>
-            <p className="eyebrow">{monthName(trip.monthKey)}</p>
-            <h2 className="event-card-title">{trip.additionalInformation || "Camping Trip"}</h2>
-            <p className="event-card-date">{dateLabel}</p>
-            {campsite && (
-              <p className="event-card-location">
-                {campsite.name}
-                {campsite.locationDescription ? ` · ${campsite.locationDescription}` : ""}
-              </p>
-            )}
-          </div>
-          <span
-            className={`status-chip status-${
-              trip.myWaitlistPosition ? "waitlisted" : (trip.myRsvp?.response ?? "none")
-            }`}
-          >
-            {rsvpStatusLabel}
+    <article className="event-card-container" aria-label={`Trip ${dateLabel}`}>
+      <div className="event-card-header">
+        <div>
+          <p className="eyebrow">{monthName(trip.monthKey)}</p>
+          <h2 className="event-card-name">
+            {trip.additionalInformation || `${monthName(trip.monthKey)} Camping`}
+          </h2>
+          {campsite && (
+            <p className="event-card-campsite">
+              {campsite.name}{campsite.locationDescription ? ` · ${campsite.locationDescription}` : ""}
+            </p>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {isAdmin && (
+            <button
+              type="button"
+              className="secondary-button"
+              style={{ padding: "0.2rem 0.55rem", fontSize: "0.78rem" }}
+              onClick={() => setShowEditModal(true)}
+            >
+              ✏️ Edit
+            </button>
+          )}
+          <span className={`event-status-pill status-${isDraft ? "upcoming" : trip.pollStatus}`}>
+            {isDraft ? "Upcoming" : trip.pollStatus}
           </span>
         </div>
-      </Link>
+      </div>
 
-      <div className="event-card-meta">
-        {trip.cabinCount != null && (
-          <span>
-            {trip.cabinCount} cabin{trip.cabinCount !== 1 ? "s" : ""} booked
-          </span>
-        )}
-        {trip.effectiveCapacity != null && <span>Capacity: {trip.effectiveCapacity}</span>}
-        <span>{trip.comingCount} confirmed</span>
-        {trip.spotsRemaining != null && <span>{trip.spotsRemaining} spots remaining</span>}
-        {trip.waitlistCount > 0 && <span>{trip.waitlistCount} on waitlist</span>}
+      <div className="event-card-date-row">
+        <span>📅</span>
+        <span>{dateLabel}</span>
+      </div>
+
+      <div className="metrics-grid">
+        <div>
+          <p className="metric-value">{trip.cabinCount ?? "—"}</p>
+          <p className="metric-label">Cabins booked</p>
+        </div>
+        <div>
+          <p className="metric-value">{trip.spotsRemaining ?? "—"}</p>
+          <p className="metric-label">Spots left</p>
+          {trip.spotsRemaining != null && <span className="sr-only">{trip.spotsRemaining} spots remaining</span>}
+        </div>
+        <div>
+          <p className="metric-value">{trip.waitlistCount}</p>
+          <p className="metric-label">Waitlist</p>
+          <span className="sr-only">{trip.waitlistCount} on waitlist</span>
+        </div>
       </div>
 
       {!isDraft && (
-        <div className="response-actions">
-          <button
-            type="button"
-            disabled={!isOpen}
-            className={choice === "coming" || (!choice && isComing) ? "selected" : "secondary-button"}
-            onClick={() => {
-              if (!isOpen) return;
-              setChoice(isComing && !choice ? null : "coming");
-              setError(null);
-            }}
-          >
-            {!choice && isComing ? "Going ✓" : "Going"}
-          </button>
-          <button
-            type="button"
-            disabled={!isOpen}
-            className={choice === "not_coming" || (!choice && isNotComing) ? "selected" : "secondary-button"}
-            onClick={() => {
-              if (!isOpen) return;
-              setChoice(isNotComing && !choice ? null : "not_coming");
-              setAcknowledged(false);
-              setError(null);
-            }}
-          >
-            Not Going
-          </button>
+        <div className="rsvp-section">
+          <p className="rsvp-label">Your RSVP</p>
+          <div className="rsvp-pills">
+            <button
+              type="button"
+              disabled={!isOpen}
+              aria-label={!choice && isComing ? "Going ✓" : "Going"}
+              className={`rsvp-pill-btn ${choice === "coming" || (!choice && isComing) ? "active selected" : ""}`}
+              onClick={() => {
+                if (!isOpen) return;
+                setChoice(isComing && !choice ? null : "coming");
+                setError(null);
+              }}
+            >
+              {!choice && isComing ? "Yes, Going ✓" : "Yes, Going"}
+            </button>
+            <button
+              type="button"
+              disabled={!isOpen}
+              aria-label="Not Going"
+              className={`rsvp-pill-btn ${choice === "not_coming" || (!choice && isNotComing) ? "active selected" : ""}`}
+              onClick={() => {
+                if (!isOpen) return;
+                setChoice(isNotComing && !choice ? null : "not_coming");
+                setAcknowledged(false);
+                setError(null);
+              }}
+            >
+              No, Not Going
+            </button>
+          </div>
         </div>
       )}
+
+      {isDraft && (
+        <p style={{ margin: 0, fontSize: "0.88rem", color: "#6b7280" }}>
+          RSVP: Not answered
+        </p>
+      )}
+
+      <div className="event-card-footer">
+        <div>
+          {isComing && <span className="status-badge-going status-chip status-coming">Going</span>}
+          {isNotComing && <span className="status-badge-not-going status-chip status-not_coming">Not Going</span>}
+          {trip.myWaitlistPosition && (
+            <span className="status-badge-not-going status-chip status-waitlisted">Waitlisted</span>
+          )}
+          {!isComing && !isNotComing && !trip.myWaitlistPosition && (
+            <span className="status-chip status-none">No response</span>
+          )}
+        </div>
+        <Link to={`/trips/${trip.tripId}`} className="view-details-link">
+          View details &gt;
+        </Link>
+      </div>
 
       {choice === "coming" && needsAcknowledgment && trip.currentRuleBundle && (
         <section className="rules-acknowledgment" aria-label="Camping Constitution acknowledgment">
@@ -390,6 +526,16 @@ function EventCard({
         <p role="alert" className="form-error">
           {error}
         </p>
+      )}
+
+      {showEditModal && (
+        <TripEditModal
+          trip={trip}
+          calendar={calendar}
+          api={api}
+          onClose={() => setShowEditModal(false)}
+          onRefresh={onRefresh}
+        />
       )}
 
       {isAdmin && (
@@ -579,7 +725,7 @@ function PollManager({ calendar, api, onRefresh }: { calendar: Calendar; api: Tr
     } finally { setBusy(false); }
   }
 
-  return <section className="stack"><ClubSettingsForm calendar={calendar} api={api} onRefresh={onRefresh} /><div className="card"><p className="eyebrow">Rolling 12-month calendar</p><h2>Monthly interest polls</h2><p>Configure trip dates, registration deadline, campsite, and minimum interest count. The minimum count is stored for planning only until the owner approves how it is evaluated. Opening or closing a poll never confirms or cancels a trip.</p><label>Select month<select value={trip?.tripId ?? ""} onChange={(event) => setSelectedId(event.target.value)}>{calendar.trips.map((row) => <option value={row.tripId} key={row.tripId}>{monthName(row.monthKey)} · {calendar.campsites.find((site) => site.campsiteId === row.selectedCampsiteId)?.name}</option>)}</select></label>{trip && <form className="admin-form" onSubmit={(event) => void configurePoll(event)}><div className="form-grid"><label>Trip start<input type="date" required value={startsOn} onChange={(event) => setStartsOn(event.target.value)} /></label><label>Trip end<input type="date" required value={endsOn} onChange={(event) => setEndsOn(event.target.value)} /></label><label>Registration deadline date<input type="date" required value={deadline || (startsOn ? datePlusDays(startsOn, -calendar.clubConfiguration.defaultPollLeadDays) : "")} onChange={(event) => setDeadline(event.target.value)} /></label><label>Deadline time in {trip.clubTimezone ?? calendar.clubConfiguration.timezone ?? "club timezone"}<input type="time" required value={deadlineTime} onChange={(event) => setDeadlineTime(event.target.value)} /></label><label>Minimum participation count<input type="number" min="1" max="100" required value={minimum} onChange={(event) => setMinimum(Number(event.target.value))} /></label><label>Optional capacity<input type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} /></label><label>Cabin count<input type="number" min="1" max="50" value={cabinCount} onChange={(e) => setCabinCount(e.target.value)} /></label><label>Per-cabin capacity (default 6)<input type="number" min="1" max="50" value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} /></label></div><label>Selected campsite<select value={siteId} onChange={(event) => setSiteId(event.target.value)}>{calendar.campsites.map((site) => <option key={site.campsiteId} value={site.campsiteId}>{site.name}{site.campsiteId === trip.suggestedCampsiteId ? " · round-robin suggestion" : ""}</option>)}</select></label><label>Cabin Booking Status<select required value={bookingStatus} onChange={(event) => setBookingStatus(event.target.value as CabinBookingStatus | "")}><option value="" disabled>Select a status</option>{cabinBookingStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>{!bookingStatus && trip.legacyCabinAvailabilityStatus && <p role="note">Previous availability value: {trip.legacyCabinAvailabilityStatus.replaceAll("_", " ")}. Choose a booking status; this older value was not converted automatically.</p>}<label>Trip information<textarea value={information} onChange={(event) => setInformation(event.target.value)} /></label><button disabled={busy}>Save poll details</button></form>}
+  return <section className="stack"><ClubSettingsForm calendar={calendar} api={api} onRefresh={onRefresh} /><div className="card"><p className="eyebrow">Rolling 12-month calendar</p><h2>Monthly interest polls</h2><p>Configure trip dates, registration deadline, campsite, and minimum interest count. The minimum count is stored for planning only until the owner approves how it is evaluated. Opening or closing a poll never confirms or cancels a trip.</p><label>Select month<select value={trip?.tripId ?? ""} onChange={(event) => setSelectedId(event.target.value)}>{calendar.trips.map((row) => <option value={row.tripId} key={row.tripId}>{monthName(row.monthKey)} · {calendar.campsites.find((site) => site.campsiteId === row.selectedCampsiteId)?.name}</option>)}</select></label>{trip && <form className="admin-form" onSubmit={(event) => void configurePoll(event)}><div className="form-grid"><label>Trip start<input type="date" required value={startsOn} onChange={(event) => setStartsOn(event.target.value)} /></label><label>Trip end<input type="date" required value={endsOn} onChange={(event) => setEndsOn(event.target.value)} /></label><label>Registration deadline date<input type="date" required value={deadline || (startsOn ? datePlusDays(startsOn, -calendar.clubConfiguration.defaultPollLeadDays) : "")} onChange={(event) => setDeadline(event.target.value)} /></label><label>Deadline time in {trip.clubTimezone ?? calendar.clubConfiguration.timezone ?? "club timezone"}<input type="time" required value={deadlineTime} onChange={(event) => setDeadlineTime(event.target.value)} /></label><label>Minimum participation count<input type="number" min="1" max="100" required value={minimum} onChange={(event) => setMinimum(Number(event.target.value))} /></label><label>Optional capacity<input type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} /></label><label>Cabin count<input type="number" min="1" max="50" value={cabinCount} onChange={(e) => setCabinCount(e.target.value)} /></label><label>Per-cabin capacity (default 6)<input type="number" min="1" max="50" value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} /></label></div><label>Selected campsite<select value={siteId} onChange={(event) => setSiteId(event.target.value)}>{calendar.campsites.map((site) => <option key={site.campsiteId} value={site.campsiteId}>{site.name}{site.campsiteId === trip.suggestedCampsiteId && (!startsOn && !trip.startsOn) ? " · round-robin suggestion" : ""}</option>)}</select></label><label>Cabin Booking Status<select required value={bookingStatus} onChange={(event) => setBookingStatus(event.target.value as CabinBookingStatus | "")}><option value="" disabled>Select a status</option>{cabinBookingStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>{!bookingStatus && trip.legacyCabinAvailabilityStatus && <p role="note">Previous availability value: {trip.legacyCabinAvailabilityStatus.replaceAll("_", " ")}. Choose a booking status; this older value was not converted automatically.</p>}<label>Trip information<textarea value={information} onChange={(event) => setInformation(event.target.value)} /></label><button disabled={busy}>Save poll details</button></form>}
       {trip && <div className="poll-actions"><span className={`status-chip status-${trip.pollStatus}`}>{trip.pollStatus}</span>{trip.pollStatus === "open" ? <button type="button" className="secondary-button" disabled={busy} onClick={() => void setPollStatus("closed")}>Close poll</button> : <button type="button" disabled={busy} onClick={() => void setPollStatus("open")}>Open poll</button>}<span>{trip.comingCount} Coming responses</span></div>}
       {trip && trip.pollStatus === "open" && <section className="late-entry"><h3>Record a late interest response</h3><p>For Coming, the member must have personally acknowledged the current rule bundle first.</p><div className="form-grid"><label>Member<select value={lastMinuteMember} onChange={(event) => setLastMinuteMember(event.target.value)}><option value="">Choose member</option>{(calendar.members ?? []).map((member) => <option key={member.memberId} value={member.memberId}>{member.displayName}</option>)}</select></label><label>Response<select value={lastMinuteResponse} onChange={(event) => setLastMinuteResponse(event.target.value as "coming" | "not_coming")}><option value="coming">Coming</option><option value="not_coming">Not Coming</option></select></label></div><button type="button" disabled={busy || !lastMinuteMember} onClick={() => void addLastMinuteEntry()}>Save late response</button>{(trip.participantEntries?.length ?? 0) > 0 && <ul className="admin-participant-list">{trip.participantEntries?.map((entry) => <li key={entry.memberId}>{entry.displayName} <strong>{entry.response === "coming" ? "Coming" : "Not Coming"}</strong></li>)}</ul>}</section>}
       {(calendar.withdrawalRequests ?? []).filter((request) => request.tripId === trip?.tripId).length > 0 && <section className="late-entry"><h3>Pending withdrawal requests</h3><p>Requests remain pending and do not alter a Coming response while the owner policy is unresolved.</p><ul>{(calendar.withdrawalRequests ?? []).filter((request) => request.tripId === trip?.tripId).map((request) => <li key={request.requestId}><strong>{request.displayName}</strong> · {new Date(request.createdAt).toLocaleString()}<p>{request.reason}</p></li>)}</ul></section>}
@@ -674,38 +820,77 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
   const [calendar, setCalendar] = useState<Calendar | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>(isAdmin ? "calendar" : "calendar");
+  const [tab, setTab] = useState<Tab>("calendar");
 
   async function refresh() {
     setError(null);
-    try { setCalendar(await api<Calendar>("get_calendar")); }
-    catch { setError("The trip calendar could not be loaded. Please try again."); }
-    finally { setLoading(false); }
+    try {
+      setCalendar(await api<Calendar>("get_calendar"));
+    } catch {
+      setError("The trip calendar could not be loaded. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+  }, []);
 
-  return <section className="trip-page"><div className="page-heading"><p className="eyebrow">Private club planning</p><h1>Camping calendar</h1><p>Monthly interest polls, campsite rotation, and the Camping Constitution.</p></div>
-    {isAdmin && <div className="admin-tabs" role="tablist" aria-label="Trip administration"><button role="tab" aria-selected={tab === "calendar"} onClick={() => setTab("calendar")}>Polls &amp; calendar</button><button role="tab" aria-selected={tab === "campsites"} onClick={() => setTab("campsites")}>Campsites</button><button role="tab" aria-selected={tab === "constitution"} onClick={() => setTab("constitution")}>Constitution</button></div>}
-    {loading && <p role="status">Loading camping calendar…</p>}{error && <div className="card"><ErrorText value={error} /><button className="secondary-button" onClick={() => void refresh()}>Try again</button></div>}
-    {calendar && (!isAdmin || tab === "calendar") && (
-      <div className="stack">
-        {isAdmin && <PollManager calendar={calendar} api={api} onRefresh={refresh} />}
-        {[...calendar.trips]
-          .sort(sortTrips)
-          .map((trip) => (
-            <EventCard
-              key={trip.tripId}
-              trip={trip}
-              campsite={calendar.campsites.find((s) => s.campsiteId === trip.selectedCampsiteId)}
-              calendar={calendar}
-              isAdmin={isAdmin}
-              api={api}
-              onRefresh={refresh}
-            />
-          ))}
+  return (
+    <section className="trip-page">
+      <div className="feed-header">
+        <h1 className="feed-title">Upcoming Camping</h1>
+        <span className="badge-pill">12 months</span>
       </div>
-    )}
-    {calendar && isAdmin && tab === "campsites" && <CampsiteManager calendar={calendar} api={api} onRefresh={refresh} />}
-    {calendar && isAdmin && tab === "constitution" && <ConstitutionManager calendar={calendar} api={api} onRefresh={refresh} />}
-  </section>;
+
+      {isAdmin && (
+        <div className="admin-tabs" role="tablist" aria-label="Trip administration">
+          <button role="tab" aria-selected={tab === "calendar"} onClick={() => setTab("calendar")}>
+            Polls &amp; calendar
+          </button>
+          <button role="tab" aria-selected={tab === "campsites"} onClick={() => setTab("campsites")}>
+            Campsites
+          </button>
+          <button role="tab" aria-selected={tab === "constitution"} onClick={() => setTab("constitution")}>
+            Constitution
+          </button>
+        </div>
+      )}
+
+      {loading && <p role="status">Loading camping calendar…</p>}
+      {error && (
+        <div className="card">
+          <ErrorText value={error} />
+          <button className="secondary-button" onClick={() => void refresh()}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {calendar && (!isAdmin || tab === "calendar") && (
+        <div className="stack">
+          {isAdmin && <PollManager calendar={calendar} api={api} onRefresh={refresh} />}
+          {[...calendar.trips]
+            .sort(sortTrips)
+            .map((trip) => (
+              <EventCard
+                key={trip.tripId}
+                trip={trip}
+                campsite={calendar.campsites.find((s) => s.campsiteId === trip.selectedCampsiteId)}
+                calendar={calendar}
+                isAdmin={isAdmin}
+                api={api}
+                onRefresh={refresh}
+              />
+            ))}
+        </div>
+      )}
+      {calendar && isAdmin && tab === "campsites" && (
+        <CampsiteManager calendar={calendar} api={api} onRefresh={refresh} />
+      )}
+      {calendar && isAdmin && tab === "constitution" && (
+        <ConstitutionManager calendar={calendar} api={api} onRefresh={refresh} />
+      )}
+    </section>
+  );
 }

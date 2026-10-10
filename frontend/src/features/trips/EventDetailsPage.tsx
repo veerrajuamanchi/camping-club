@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 
 type TripDetails = {
@@ -8,6 +8,7 @@ type TripDetails = {
   pollStatus: "draft" | "open" | "closed";
   startsOn: string | null;
   endsOn: string | null;
+  minimumParticipants?: number;
   additionalInformation: string;
   comingCount: number;
   effectiveCapacity: number | null;
@@ -16,12 +17,26 @@ type TripDetails = {
   myWaitlistPosition: number | null;
   myRsvp: null | { response: "coming" | "not_coming"; version: number; acknowledgmentId: string | null; updatedAt: string; acceptedRuleBundle?: { version: number } | null };
   currentRuleBundle: null | { id: string; version: number; contentHash: string; rules: Array<{ stable_key: string; text: string; category?: string; structured_values: Record<string, unknown> }>; createdAt: string };
-  campsite: null | { campsiteId: string; name: string; locationDescription: string; availabilityUrl: string | null; directions: string | null; cabinCapacity: number | null; reservationInstructions: string | null };
+  campsite: null | {
+    campsiteId: string;
+    name: string;
+    locationDescription: string;
+    availabilityUrl: string | null;
+    directions: string | null;
+    cabinCapacity: number | null;
+    reservationInstructions: string | null;
+    imageUrl?: string | null;
+    campHostName?: string | null;
+    campHostPhone?: string | null;
+    campFeatures?: string[];
+    cabinInformation?: string | null;
+  };
   perCabinCapacity: number;
   cabinCount: number | null;
   maxCapacity: number | null;
   participantEntries: Array<{ memberId: string; displayName: string; response: string }>;
   waitlistEntries: Array<{ memberId: string; displayName: string; position: number; createdAt: string }>;
+  allMemberEntries?: Array<{ memberId: string; displayName: string; response: string; version: number }>;
   version: number;
 };
 
@@ -34,6 +49,11 @@ const constitutionGroups: Array<{ label: string; categories: string[] }> = [
   { label: "Lodging & Responsibilities", categories: ["lodging", "participation"] },
   { label: "Packing & Meals", categories: ["meals", "custom"] },
 ];
+
+function monthName(monthKey: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
 
 type Props = { isAdmin: boolean; api?: TripApiType };
 const defaultApi: TripApiType = (action, input) => invokeTripApi(action, input);
@@ -50,6 +70,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
   const [rsvpError, setRsvpError] = useState<string | null>(null);
   const [waitlistedPosition, setWaitlistedPosition] = useState<number | null>(null);
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
+  const [adminRosterMsg, setAdminRosterMsg] = useState<string | null>(null);
 
   async function refresh() {
     if (!tripId) return;
@@ -137,6 +158,30 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
     }
   }
 
+  async function toggleAdminRoster(memberId: string, currentResponse: string, expectedVersion: number) {
+    if (!details) return;
+    const newResponse = currentResponse === "coming" ? "not_coming" : "coming";
+    setRsvpBusy(true);
+    setAdminRosterMsg(null);
+    try {
+      await api("admin_record_interest", {
+        tripId: details.tripId,
+        memberId,
+        response: newResponse,
+        expectedVersion,
+        reason: `Administrator updated roster: marked ${newResponse === "coming" ? "Going" : "Not Going"}`,
+      });
+      await refresh();
+      setAdminRosterMsg("Roster attendance updated.");
+    } catch {
+      setAdminRosterMsg(newResponse === "coming"
+        ? "Could not mark Going. The member must have personally acknowledged the constitution, or poll is closed."
+        : "Could not update attendance. Try again.");
+    } finally {
+      setRsvpBusy(false);
+    }
+  }
+
   if (loading) return <p role="status">Loading trip details…</p>;
   if (error || !details)
     return (
@@ -150,11 +195,13 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
 
   const isDraft = details.pollStatus === "draft";
   const isOpen = details.pollStatus === "open";
+  const isComing = details.myRsvp?.response === "coming";
+  const isNotComing = details.myRsvp?.response === "not_coming";
   const rsvpStatusLabel = details.myWaitlistPosition
     ? "Waitlisted"
-    : details.myRsvp?.response === "coming"
+    : isComing
       ? "Going"
-      : details.myRsvp?.response === "not_coming"
+      : isNotComing
         ? "Not Going"
         : "No response";
 
@@ -166,23 +213,96 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
     }),
   }));
 
+  const tripTitle = details.additionalInformation || `${monthName(details.monthKey)} Camping`;
+  const campsiteLocation = details.campsite
+    ? `${details.campsite.name}${details.campsite.locationDescription ? ` · ${details.campsite.locationDescription}` : ""}`
+    : "TBA";
+
   return (
     <section className="event-details">
-      <div className="page-heading">
-        <p className="eyebrow">{details.monthKey}</p>
-        <h1>{details.additionalInformation || "Camping Trip"}</h1>
-        {!isDraft && details.startsOn && (
-          <p>
-            {details.startsOn} – {details.endsOn}
-          </p>
-        )}
-        {isDraft && <p className="eyebrow">Dates TBA</p>}
+      <Link to="/" className="back-link">
+        &larr; All camping events
+      </Link>
+
+      <div className="event-details-hero">
+        <div>
+          <h1 className="hero-title">{tripTitle}</h1>
+          <p className="hero-subtitle">{campsiteLocation}</p>
+          <div className="hero-badges">
+            <span className={`event-status-pill status-${isDraft ? "upcoming" : details.pollStatus}`}>
+              {isDraft ? "Upcoming" : details.pollStatus}
+            </span>
+            {isComing && <span className="status-badge-going">You're going</span>}
+            {isNotComing && <span className="status-badge-not-going">Not going</span>}
+            {details.myWaitlistPosition && (
+              <span className="status-badge-not-going">Waitlist #{details.myWaitlistPosition}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="hero-info-list">
+          {!isDraft && details.startsOn && details.endsOn ? (
+            <div className="hero-info-item">
+              <span>📅</span>
+              <strong>{details.startsOn} – {details.endsOn}</strong>
+            </div>
+          ) : (
+            <div className="hero-info-item">
+              <span>📅</span>
+              <strong>Dates TBA</strong>
+            </div>
+          )}
+          {details.campsite?.locationDescription && (
+            <div className="hero-info-item">
+              <span>📍</span>
+              <span>Campsite Address: {details.campsite.locationDescription}</span>
+            </div>
+          )}
+          <div className="hero-info-item">
+            <span>🏕️</span>
+            <span>
+              {details.cabinCount != null ? `${details.cabinCount} cabins · ` : ""}
+              {details.perCabinCapacity} people per cabin
+              {details.effectiveCapacity != null ? ` (${details.effectiveCapacity} total spots)` : ""}
+            </span>
+          </div>
+          {details.minimumParticipants != null && (
+            <div className="hero-info-item">
+              <span>👥</span>
+              <span>Minimum participants required: {details.minimumParticipants}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="metric-boxes-grid">
+          <div className="metric-box-card">
+            <p className="metric-value">{details.comingCount}</p>
+            <p className="metric-label">Going</p>
+          </div>
+          <div className="metric-box-card">
+            <p className="metric-value">{details.spotsRemaining ?? "—"}</p>
+            <p className="metric-label">Spots left</p>
+          </div>
+          <div className="metric-box-card">
+            <p className="metric-value">{details.waitlistCount}</p>
+            <p className="metric-label">Waitlisted</p>
+          </div>
+        </div>
       </div>
 
       <div className="event-tabs" role="tablist" aria-label="Trip sections">
         {(["overview", "constitution", "logistics", "financials"] as Tab[]).map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            className={tab === t ? "active" : ""}
+            onClick={() => setTab(t)}
+          >
+            {t === "overview" && "Overview & attendees"}
+            {t === "constitution" && "Camping Constitution"}
+            {t === "logistics" && "Logistics & Packing"}
+            {t === "financials" && "Financials"}
           </button>
         ))}
       </div>
@@ -191,21 +311,57 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
         <div className="stack">
           {details.campsite && (
             <div className="card">
-              <h2>Campsite</h2>
+              <h2>Campsite Information</h2>
+              {details.campsite.imageUrl && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <img
+                    src={details.campsite.imageUrl}
+                    alt={details.campsite.name}
+                    style={{ width: "100%", maxHeight: "280px", objectFit: "cover", borderRadius: "12px" }}
+                  />
+                </div>
+              )}
               <p>
                 <strong>{details.campsite.name}</strong>
               </p>
-              {details.campsite.locationDescription && <p>{details.campsite.locationDescription}</p>}
+              {details.campsite.locationDescription && (
+                <p>
+                  <strong>Campsite Address:</strong> {details.campsite.locationDescription}
+                </p>
+              )}
+              {details.campsite.campHostName && (
+                <p>
+                  <strong>Camp Host:</strong> {details.campsite.campHostName}
+                  {details.campsite.campHostPhone ? ` (${details.campsite.campHostPhone})` : ""}
+                </p>
+              )}
+              {details.campsite.cabinInformation && (
+                <p>
+                  <strong>Cabin Information:</strong> {details.campsite.cabinInformation}
+                </p>
+              )}
+              {details.campsite.campFeatures && details.campsite.campFeatures.length > 0 && (
+                <div style={{ margin: "0.5rem 0" }}>
+                  <strong>Camp Features:</strong>
+                  <div className="attendees-chips-grid">
+                    {details.campsite.campFeatures.map((f, i) => (
+                      <span key={i} className="attendee-chip">{f}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
               {details.campsite.availabilityUrl && (
-                <a href={details.campsite.availabilityUrl} target="_blank" rel="noopener noreferrer">
-                  View campsite
-                </a>
+                <p>
+                  <a href={details.campsite.availabilityUrl} target="_blank" rel="noopener noreferrer" aria-label="View campsite">
+                    View campsite &gt;
+                  </a>
+                </p>
               )}
             </div>
           )}
 
           <div className="card">
-            <h2>Attendance</h2>
+            <h2>RSVP & Attendance</h2>
             <div className="event-card-meta">
               {details.cabinCount != null && <span>{details.cabinCount} cabins booked</span>}
               {details.effectiveCapacity != null && <span>Capacity: {details.effectiveCapacity}</span>}
@@ -282,18 +438,47 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
             )}
 
             {details.participantEntries.length > 0 && (
-              <details>
-                <summary>{details.comingCount} Going</summary>
-                <ul>
+              <div style={{ marginTop: "1.25rem" }}>
+                <h3>Who's going ({details.comingCount})</h3>
+                <div className="attendees-chips-grid">
                   {details.participantEntries.map((e) => (
-                    <li key={e.memberId}>{e.displayName}</li>
+                    <span key={e.memberId} className="attendee-chip">
+                      {e.displayName}
+                    </span>
                   ))}
-                </ul>
-              </details>
+                </div>
+              </div>
+            )}
+
+            {isAdmin && details.allMemberEntries && details.allMemberEntries.length > 0 && (
+              <div className="admin-roster-box">
+                <h3>Admin: Manage Attendee Roster</h3>
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#6b7280" }}>
+                  Select or deselect members to update who is going.
+                </p>
+                {adminRosterMsg && <p role="status">{adminRosterMsg}</p>}
+                <div style={{ display: "grid", gap: "0.5rem" }}>
+                  {details.allMemberEntries.map((m) => {
+                    const isMemberGoing = m.response === "coming";
+                    return (
+                      <label key={m.memberId} className="admin-roster-item">
+                        <input
+                          type="checkbox"
+                          checked={isMemberGoing}
+                          disabled={rsvpBusy}
+                          onChange={() => void toggleAdminRoster(m.memberId, m.response, m.version)}
+                        />
+                        <span>{m.displayName}</span>
+                        {isMemberGoing && <span className="status-badge-going" style={{ fontSize: "0.7rem" }}>Going</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             {isAdmin && details.waitlistEntries.length > 0 && (
-              <details>
+              <details style={{ marginTop: "1rem" }}>
                 <summary>Waitlist ({details.waitlistEntries.length})</summary>
                 <ol>
                   {details.waitlistEntries.map((w) => (
@@ -379,3 +564,4 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
     </section>
   );
 }
+

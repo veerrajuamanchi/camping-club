@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./app/AuthProvider";
 import { AccessBoundary } from "./features/auth/AccessBoundary";
 import { AcceptInvitation } from "./features/auth/AcceptInvitation";
 import { SignInPage } from "./features/auth/SignInPage";
 import { AdminMembersPage } from "./features/admin/AdminMembersPage";
+import { AdminCampsitesPage } from "./features/admin/AdminCampsitesPage";
 import { MemberProfileForm, type MemberProfileInput } from "./features/members/MemberProfileForm";
 import { TripCalendarPage } from "./features/trips/TripCalendarPage";
 import { EventDetailsPage } from "./features/trips/EventDetailsPage";
@@ -57,24 +59,54 @@ function AppRoutes() {
     navigate("/", { replace: true });
   }
 
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
   return (
     <>
       <header className="site-header">
-        <Link to="/" className="brand">
-          Private Camping Club
+        <Link to="/" className="brand-container">
+          <div className="brand-logo">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m19 20-7-14-7 14" />
+              <path d="M12 6v14" />
+              <path d="m4.5 15 7.5 5 7.5-5" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="brand-title">Private Camping Club</h1>
+            <p className="brand-slogan">Plan together. Camp together.</p>
+          </div>
         </Link>
-        <nav>
-          {membership.status === "active" && (
-            <>
-              <Link to="/">Trips</Link>
-              <Link to="/profile">Profile</Link>
-              {membership.role === "admin" && <Link to="/admin/members">Members</Link>}
-              <button className="link-button" onClick={() => void signOut()}>
-                Sign out
-              </button>
-            </>
-          )}
-        </nav>
+
+        {membership.status === "active" && (
+          <div className="user-menu-wrapper">
+            <button
+              type="button"
+              className="user-avatar-btn"
+              aria-label="User menu"
+              onClick={() => setUserMenuOpen((open: boolean) => !open)}
+            >
+              {profile?.displayName?.charAt(0).toUpperCase() || "👤"}
+            </button>
+
+            {userMenuOpen && (
+              <div className="user-dropdown" onClick={() => setUserMenuOpen(false)}>
+                <Link to="/profile">👤 My Profile</Link>
+                {membership.role === "admin" && (
+                  <>
+                    <hr />
+                    <Link to="/admin/campsites">🏕️ Campsite Directory</Link>
+                    <Link to="/admin/members">👥 Members & Access</Link>
+                  </>
+                )}
+                <hr />
+                <button type="button" onClick={() => void signOut()}>
+                  🚪 Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </header>
       <main className="container">
         <Routes>
@@ -121,6 +153,14 @@ function AppRoutes() {
             element={
               <AccessBoundary state={membership} requiredRole="admin">
                 <AdminMembersPage />
+              </AccessBoundary>
+            }
+          />
+          <Route
+            path="/admin/campsites"
+            element={
+              <AccessBoundary state={membership} requiredRole="admin">
+                <AdminCampsitesPage />
               </AccessBoundary>
             }
           />

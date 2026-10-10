@@ -12,7 +12,7 @@ const structuredValues = z.record(z.string(), z.unknown());
 const reason = z.string().trim().min(1).max(500);
 const actionNames = [
   "get_calendar", "get_constitution", "get_trip_details", "admin_configure_club", "admin_generate_calendar",
-  "admin_reorder_campsites", "admin_update_campsite", "admin_configure_trip", "admin_set_poll_status",
+  "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
   "admin_promote_from_waitlist",
 ] as const;
@@ -28,6 +28,25 @@ const inputSchemas = {
   }).strict(),
   admin_generate_calendar: z.object({ throughMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).strict(),
   admin_reorder_campsites: z.object({ order: z.array(uuid).min(7), nextRotationPosition: z.number().int().min(1), reason }).strict(),
+  admin_create_campsite: z.object({
+    name: z.string().trim().min(1).max(120),
+    availabilityUrl: z.string().url().startsWith("https://").nullable().optional(),
+    locationDescription: z.string().max(2000),
+    directions: z.string().max(4000).nullable().optional(),
+    cabinCapacity: z.number().int().positive().nullable().optional(),
+    cabinTypes: z.array(z.string().trim().min(1).max(100)).max(20).optional().default([]),
+    reservationInstructions: z.string().max(4000).nullable().optional(),
+    estimatedRateCents: z.number().int().nonnegative().nullable().optional(),
+    availabilityStatus: z.enum(["available", "limited", "unavailable", "unknown", "manual_confirmation"]).optional().default("available"),
+    availabilitySourceUrl: z.string().url().nullable().optional(),
+    imageUrl: z.string().url().nullable().optional(),
+    campHostName: z.string().trim().max(120).nullable().optional(),
+    campHostPhone: z.string().trim().max(40).nullable().optional(),
+    campFeatures: z.array(z.string().trim().min(1).max(100)).max(30).optional().default([]),
+    cabinInformation: z.string().max(4000).nullable().optional(),
+    adminNotes: z.string().max(4000).optional().default(""),
+    reason,
+  }).strict(),
   admin_update_campsite: z.object({
     campsiteId: uuid, expectedVersion: z.number().int().positive(), name: z.string().trim().min(1).max(120),
     availabilityUrl: z.string().url().startsWith("https://").nullable(), locationDescription: z.string().max(2000),
@@ -36,6 +55,11 @@ const inputSchemas = {
     estimatedRateCents: z.number().int().nonnegative().nullable(),
     availabilityStatus: z.enum(["available", "limited", "unavailable", "unknown", "manual_confirmation"]),
     availabilitySourceUrl: z.string().url().nullable(), availabilityVerifiedAt: z.string().datetime().nullable(),
+    imageUrl: z.string().url().nullable().optional(),
+    campHostName: z.string().trim().max(120).nullable().optional(),
+    campHostPhone: z.string().trim().max(40).nullable().optional(),
+    campFeatures: z.array(z.string().trim().min(1).max(100)).max(30).optional(),
+    cabinInformation: z.string().max(4000).nullable().optional(),
     adminNotes: z.string().max(4000), reason,
   }).strict(),
   admin_configure_trip: z.object({
@@ -72,12 +96,12 @@ type IdempotencyClaim = { state: "started" | "in_progress" | "replay"; resultId?
 type Action = typeof actionNames[number];
 
 const adminActions = new Set<Action>([
-  "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite",
+  "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
   "admin_promote_from_waitlist",
 ]);
 const mutatingActions = new Set<Action>([
-  "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite",
+  "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
   "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
 ]);
@@ -137,7 +161,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const month = `${new Date().toISOString().slice(0, 7)}-01`;
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
-    service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,active,version").eq("active", true).order("rotation_position"),
+    service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,active,version").eq("active", true).order("rotation_position"),
     service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,version").gte("month_key", month).order("month_key").limit(12),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
@@ -307,7 +331,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   const [campsiteResult, bundleResult, rsvpResult, waitlistResult] = await Promise.all([
     trip.selected_campsite_id
       ? service.from("campsites")
-          .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,version")
+          .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,version")
           .eq("id", trip.selected_campsite_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -359,6 +383,27 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
         createdAt: w.created_at,
       }))
     : [];
+
+  let allMemberEntries: Array<{ memberId: string; displayName: string; response: string; version: number }> = [];
+  if (member.member_role === "admin") {
+    const { data: allActiveMembers, error: allMembersError } = await service
+      .from("member_profiles")
+      .select("member_id,display_name")
+      .eq("account_status", "active")
+      .order("display_name");
+    checkError(allMembersError);
+
+    const rsvpByMember = new Map(rsvps.map((r) => [r.member_id, r]));
+    allMemberEntries = (allActiveMembers ?? []).map((m) => {
+      const r = rsvpByMember.get(m.member_id);
+      return {
+        memberId: m.member_id,
+        displayName: m.display_name,
+        response: r?.response ?? "not_coming",
+        version: r?.version ?? 0,
+      };
+    });
+  }
 
   const ownWaitlistEntry = waitlist.find((w) => w.member_id === member.member_id);
 
@@ -421,6 +466,11 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       directions: campsite.directions,
       cabinCapacity: campsite.cabin_capacity,
       reservationInstructions: campsite.reservation_instructions,
+      imageUrl: campsite.image_url,
+      campHostName: campsite.camp_host_name,
+      campHostPhone: campsite.camp_host_phone,
+      campFeatures: campsite.camp_features ?? [],
+      cabinInformation: campsite.cabin_information,
     } : null,
     currentRuleBundle: bundleResult.data ? {
       id: bundleResult.data.id,
@@ -438,6 +488,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     } : null,
     participantEntries,
     waitlistEntries,
+    allMemberEntries,
   };
 }
 
@@ -556,6 +607,12 @@ Deno.serve(async (request) => {
       rpcName = "phase2_admin_update_campsite";
       const { campsiteId, reason: why, ...campsiteInput } = input;
       rpcArgs = { p_actor_id: member.member_id, p_campsite_id: campsiteId, p_input: campsiteInput, p_reason: why, p_request_id: key };
+      break;
+    }
+    case "admin_create_campsite": {
+      rpcName = "phase2_admin_create_campsite";
+      const { reason: why, ...campsiteInput } = input;
+      rpcArgs = { p_actor_id: member.member_id, p_input: campsiteInput, p_reason: why, p_request_id: key };
       break;
     }
     case "admin_configure_trip":

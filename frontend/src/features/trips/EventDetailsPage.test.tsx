@@ -211,14 +211,42 @@ describe("EventDetailsPage", () => {
   it("renders participant list and waitlist only for admins", async () => {
     // Non-admin view
     const { unmount } = renderPage(tripData, false);
-    expect(await screen.findByText("3 Going")).toBeInTheDocument();
+    expect(await screen.findByText("Who's going (3)")).toBeInTheDocument();
     expect(screen.queryByText(/waitlist \(1\)/i)).not.toBeInTheDocument();
     unmount();
 
     // Admin view
     renderPage(tripData, true);
-    expect(await screen.findByText("3 Going")).toBeInTheDocument();
+    expect(await screen.findByText("Who's going (3)")).toBeInTheDocument();
     expect(screen.getByText(/waitlist \(1\)/i)).toBeInTheDocument();
+  });
+
+  it("allows admin to toggle member attendance on attendee roster checklist", async () => {
+    const user = userEvent.setup();
+    const adminTripData = {
+      ...tripData,
+      allMemberEntries: [
+        { memberId: "m1", displayName: "Alice", response: "coming", version: 1 },
+        { memberId: "m2", displayName: "Bob", response: "not_coming", version: 0 },
+      ],
+    };
+    const { apiMock } = renderPage(adminTripData, true);
+    await screen.findByText("Admin: Manage Attendee Roster");
+
+    // Find Bob's checkbox
+    const bobCheckbox = screen.getByLabelText(/Bob/);
+    expect(bobCheckbox).not.toBeChecked();
+
+    await user.click(bobCheckbox);
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith("admin_record_interest", {
+        tripId: "trip-1",
+        memberId: "m2",
+        response: "coming",
+        expectedVersion: 0,
+        reason: "Administrator updated roster: marked Going",
+      });
+    });
   });
 
   it("handles API error when loading trip details", async () => {

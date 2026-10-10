@@ -57,7 +57,7 @@ export async function invokeMemberApi<T>(action: string, input?: unknown, idempo
 }
 
 const tripMutationActions = new Set([
-  "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite",
+  "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
   "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
 ]);
