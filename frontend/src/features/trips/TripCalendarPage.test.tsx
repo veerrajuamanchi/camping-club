@@ -9,29 +9,44 @@ const makeCalendar = (): Calendar => ({
   trips: [{ tripId: "trip-1", monthKey: "2027-01", rotationPosition: 1, suggestedCampsiteId: "site-1", selectedCampsiteId: "site-1", startsOn: "2027-01-15", endsOn: "2027-01-17", clubTimezone: "America/Los_Angeles", pollDeadlineAt: "2027-01-01T18:00:00-08:00", minimumParticipants: 4, minimumBasis: null, maxCapacity: 8, perCabinCapacity: 6, cabinCount: null, effectiveCapacity: 8, spotsRemaining: 6, waitlistCount: 0, myWaitlistPosition: null, pollStatus: "open", additionalInformation: "Bring warm clothes", cabinBookingStatus: "booked", version: 3, comingCount: 2, tripDecision: "none", currentRuleBundle: { id: "bundle-1", version: 1, contentHash: "a".repeat(64), rules: [{ stable_key: "disclosure", text: "Coming is an interest response only.", structured_values: {} }], createdAt: "2026-10-01T00:00:00Z" }, myRsvp: null }],
 });
 
+const buildCalendar = (tripOverrides: Partial<Calendar["trips"][number]>[] = []): Calendar => {
+  const base = makeCalendar();
+  if (tripOverrides.length > 0) {
+    base.trips = tripOverrides.map((override, i) => ({
+      ...base.trips[0],
+      tripId: `trip-${i + 1}`,
+      ...override,
+    }));
+  }
+  return base;
+};
+
+const mockApi = (calendar: Calendar): TripApi => {
+  return vi.fn(async () => calendar) as unknown as TripApi;
+};
+
 describe("TripCalendarPage", () => {
-  it("requires rule acknowledgment for Coming and records the exact bundle", async () => {
+  it("requires rule acknowledgment for Going and records the exact bundle", async () => {
     const api = vi.fn(async () => makeCalendar());
     render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
     await screen.findByText(/January 2027/);
-    fireEvent.click(screen.getByRole("button", { name: "Coming" }));
+    fireEvent.click(screen.getByRole("button", { name: "Going" }));
     expect(screen.getByText("Coming is an interest response only.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Submit Coming response" }));
-    expect(await screen.findByText("Acknowledge the current Camping Constitution before selecting Coming.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
+    expect(await screen.findByText("Acknowledge the Camping Constitution before selecting Going.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: /I have read and agree/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Submit Coming response" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("submit_rsvp", expect.objectContaining({
       tripId: "trip-1", response: "coming", bundleId: "bundle-1", contentHash: "a".repeat(64), expectedVersion: 0,
     })));
-    expect(screen.getByText(/Interest only/)).toBeInTheDocument();
   });
 
   it("lets a member answer Not Coming without accepting the rules", async () => {
     const api = vi.fn(async () => makeCalendar());
     render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
     await screen.findByText(/January 2027/);
-    fireEvent.click(screen.getByRole("button", { name: "Not Coming" }));
-    fireEvent.click(screen.getByRole("button", { name: "Submit Not Coming response" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not Going" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Not Going" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("submit_rsvp", expect.objectContaining({ tripId: "trip-1", response: "not_coming" })));
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
@@ -208,7 +223,7 @@ describe("TripCalendarPage", () => {
     fireEvent.click(screen.getByText("View the exact rules version you accepted"));
     expect(screen.getByText("Original accepted rule.")).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Your response: Coming" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Going ✓" })).toBeInTheDocument();
   });
 
   it("records a post-deadline withdrawal request without changing Coming", async () => {
@@ -222,5 +237,58 @@ describe("TripCalendarPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit withdrawal request" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("request_withdrawal", { tripId: "trip-1", reason: "I can no longer attend" }));
     expect(await screen.findByText(/effective poll response remains Coming/i)).toBeInTheDocument();
+  });
+
+  it("shows Dates TBA for draft trips", async () => {
+    const calendar = buildCalendar([{
+      tripId: "t1", pollStatus: "draft", startsOn: null, endsOn: null,
+      perCabinCapacity: 6, cabinCount: 2, effectiveCapacity: 12,
+      spotsRemaining: 12, waitlistCount: 0, myWaitlistPosition: null,
+      comingCount: 0, myRsvp: null,
+    }]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    expect(await screen.findByText(/dates tba/i)).toBeTruthy();
+  });
+
+  it("shows spots remaining and waitlist count", async () => {
+    const calendar = buildCalendar([{
+      tripId: "t1", pollStatus: "open", startsOn: "2026-12-05", endsOn: "2026-12-07",
+      perCabinCapacity: 6, cabinCount: 2, effectiveCapacity: 12,
+      spotsRemaining: 8, waitlistCount: 3, myWaitlistPosition: null,
+      comingCount: 4, myRsvp: null,
+    }]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    expect(await screen.findByText(/8 spots remaining/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 on waitlist/i)).toBeInTheDocument();
+  });
+
+  it("displays correct RSVP status badge for going, not going, waitlisted, and no response", async () => {
+    const calendar = buildCalendar([
+      { tripId: "t1", startsOn: "2027-01-15", endsOn: "2027-01-17", myRsvp: { response: "coming", acknowledgmentId: "ack", version: 1, updatedAt: "" } },
+      { tripId: "t2", startsOn: "2027-02-15", endsOn: "2027-02-17", myRsvp: { response: "not_coming", acknowledgmentId: null, version: 1, updatedAt: "" } },
+      { tripId: "t3", startsOn: "2027-03-15", endsOn: "2027-03-17", myWaitlistPosition: 2, myRsvp: null },
+      { tripId: "t4", startsOn: "2027-04-15", endsOn: "2027-04-17", myRsvp: null, myWaitlistPosition: null },
+    ]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    const goingChip = await screen.findByText("Going", { selector: ".status-chip" });
+    expect(goingChip).toHaveClass("status-coming");
+    const notGoingChip = screen.getByText("Not Going", { selector: ".status-chip" });
+    expect(notGoingChip).toHaveClass("status-not_coming");
+    const waitlistedChip = screen.getByText("Waitlisted", { selector: ".status-chip" });
+    expect(waitlistedChip).toHaveClass("status-waitlisted");
+    const noResponseChip = screen.getByText("No response", { selector: ".status-chip" });
+    expect(noResponseChip).toHaveClass("status-none");
+  });
+
+  it("renders trips in chronological order with drafts and null dates last", async () => {
+    const calendar = buildCalendar([
+      { tripId: "t1", monthKey: "2027-03", startsOn: "2027-03-10", endsOn: "2027-03-12", additionalInformation: "March Trip" },
+      { tripId: "t2", monthKey: "2027-01", startsOn: "2027-01-15", endsOn: "2027-01-17", additionalInformation: "January Trip" },
+      { tripId: "t3", monthKey: "2027-02", startsOn: null, endsOn: null, pollStatus: "draft", additionalInformation: "Draft Trip" },
+    ]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    await screen.findByText("January Trip");
+    const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(titles).toEqual(["January Trip", "March Trip", "Draft Trip"]);
   });
 });

@@ -59,62 +59,322 @@ function ErrorText({ value }: { value: string | null }) {
   return value ? <p role="alert" className="form-error">{value}</p> : null;
 }
 
-function TripPollCard({ trip, api, onRefresh }: { trip: Trip; api: TripApi; onRefresh: () => Promise<void> }) {
+function AdminTripPanel({
+  trip,
+  calendar,
+  api,
+  onRefresh,
+}: {
+  trip: Trip;
+  calendar?: Calendar;
+  api: TripApi;
+  onRefresh: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function setPollStatus(pollStatus: "open" | "closed") {
+    if (pollStatus === "open" && !trip.clubTimezone && !calendar?.clubConfiguration.timezone) {
+      setMessage("Set the club timezone in Club-wide settings before opening this poll.");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      await api("admin_set_poll_status", {
+        tripId: trip.tripId,
+        pollStatus,
+        expectedVersion: trip.version,
+        reason: `Administrator ${pollStatus} interest poll`,
+      });
+      await onRefresh();
+      setMessage(`Interest poll ${pollStatus}. No trip decision was made.`);
+    } catch {
+      setMessage("Could not change the poll. Confirm it has dates, a future deadline, and an applicable rule bundle.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const tripWithdrawals = (calendar?.withdrawalRequests ?? []).filter((r) => r.tripId === trip.tripId);
+
+  return (
+    <div className="admin-trip-panel stack">
+      <div className="poll-actions">
+        <span className={`status-chip status-${trip.pollStatus}`}>{trip.pollStatus}</span>
+        {trip.pollStatus === "open" ? (
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => void setPollStatus("closed")}>
+            Close poll
+          </button>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => void setPollStatus("open")}>
+            Open poll
+          </button>
+        )}
+        <span>{trip.comingCount} Coming responses</span>
+      </div>
+      {tripWithdrawals.length > 0 && (
+        <section className="late-entry">
+          <h3>Pending withdrawal requests</h3>
+          <p>Requests remain pending and do not alter a Coming response while the owner policy is unresolved.</p>
+          <ul>
+            {tripWithdrawals.map((r) => (
+              <li key={r.requestId}>
+                <strong>{r.displayName}</strong> · {new Date(r.createdAt).toLocaleString()}
+                <p>{r.reason}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {message && <p role="status">{message}</p>}
+    </div>
+  );
+}
+
+function EventCard({
+  trip,
+  campsite,
+  calendar,
+  isAdmin,
+  api,
+  onRefresh,
+}: {
+  trip: Trip;
+  campsite: Campsite | undefined;
+  calendar?: Calendar;
+  isAdmin: boolean;
+  api: TripApi;
+  onRefresh: () => Promise<void>;
+}) {
   const [choice, setChoice] = useState<"coming" | "not_coming" | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [withdrawalReason, setWithdrawalReason] = useState("");
   const [withdrawalMessage, setWithdrawalMessage] = useState<string | null>(null);
-  const isOpen = trip.pollStatus === "open" && Boolean(trip.pollDeadlineAt) && new Date(trip.pollDeadlineAt as string).getTime() > Date.now();
-  const rules = trip.currentRuleBundle?.rules ?? [];
-  const needsAcknowledgment = choice === "coming" && trip.myRsvp?.response !== "coming";
+
+  const isDraft = trip.pollStatus === "draft";
+  const isOpen =
+    trip.pollStatus === "open" &&
+    Boolean(trip.pollDeadlineAt) &&
+    new Date(trip.pollDeadlineAt as string).getTime() > Date.now();
+  const isComing = trip.myRsvp?.response === "coming";
+  const isNotComing = trip.myRsvp?.response === "not_coming";
+  const isWaitlisted = Boolean(trip.myWaitlistPosition);
+  const needsAcknowledgment = choice === "coming" && !isComing;
+
+  const dateLabel = isDraft || !trip.startsOn || !trip.endsOn ? "Dates TBA" : `${trip.startsOn} – ${trip.endsOn}`;
+
+  const rsvpStatusLabel = isWaitlisted
+    ? "Waitlisted"
+    : isComing
+      ? "Going"
+      : isNotComing
+        ? "Not Going"
+        : "No response";
 
   async function submit() {
     if (!choice) return;
     if (needsAcknowledgment && (!trip.currentRuleBundle || !acknowledged)) {
-      setError("Acknowledge the current Camping Constitution before selecting Coming.");
+      setError("Acknowledge the Camping Constitution before selecting Going.");
       return;
     }
-    setBusy(true); setError(null);
+    setBusy(true);
+    setError(null);
     try {
       await api("submit_rsvp", {
-        tripId: trip.tripId, response: choice, expectedVersion: trip.myRsvp?.version ?? 0,
-        ...(choice === "coming" && trip.currentRuleBundle ? { bundleId: trip.currentRuleBundle.id, contentHash: trip.currentRuleBundle.contentHash } : {}),
+        tripId: trip.tripId,
+        response: choice,
+        expectedVersion: trip.myRsvp?.version ?? 0,
+        ...(choice === "coming" && trip.currentRuleBundle
+          ? { bundleId: trip.currentRuleBundle.id, contentHash: trip.currentRuleBundle.contentHash }
+          : {}),
       });
-      setChoice(null); setAcknowledged(false);
+      setChoice(null);
+      setAcknowledged(false);
       await onRefresh();
     } catch {
-      setError("Your response could not be saved. Refresh and try again; the poll may have closed or changed.");
-    } finally { setBusy(false); }
+      setError("Response could not be saved. The poll may have changed — refresh and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function requestWithdrawal(event: React.FormEvent) {
-    event.preventDefault(); setBusy(true); setWithdrawalMessage(null);
+    event.preventDefault();
+    setBusy(true);
+    setWithdrawalMessage(null);
     try {
-      const result = await api<{ state: string }>("request_withdrawal", { tripId: trip.tripId, reason: withdrawalReason });
-      setWithdrawalMessage(result.state === "pending_owner_policy" ? "Request recorded for administrator review. Your effective poll response remains Coming until the withdrawal policy is approved." : "Withdrawal request recorded.");
-      setWithdrawalReason(""); await onRefresh();
-    } catch { setWithdrawalMessage("The request could not be saved. It may already be pending or the poll state may have changed."); }
-    finally { setBusy(false); }
+      const result = await api<{ state: string }>("request_withdrawal", {
+        tripId: trip.tripId,
+        reason: withdrawalReason,
+      });
+      setWithdrawalMessage(
+        result.state === "pending_owner_policy"
+          ? "Request recorded for administrator review. Your effective poll response remains Coming until the withdrawal policy is approved."
+          : "Withdrawal request recorded."
+      );
+      setWithdrawalReason("");
+      await onRefresh();
+    } catch {
+      setWithdrawalMessage("The request could not be saved. It may already be pending or the poll state may have changed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  return <article className="card trip-card">
-    <div className="trip-card-head"><div><p className="eyebrow">{monthName(trip.monthKey)} · campsite rotation {trip.rotationPosition}</p><h2>{trip.startsOn && trip.endsOn ? `${trip.startsOn} – ${trip.endsOn}` : "Dates to be announced"}</h2></div><span className={`status-chip status-${trip.pollStatus}`}>{trip.pollStatus === "open" ? "Interest poll open" : trip.pollStatus}</span></div>
-    <p className="trip-summary">{trip.additionalInformation || "Trip details will be shared by an administrator."}</p>
-    <div className="trip-meta"><span>{trip.comingCount} Coming responses</span><span>{trip.pollDeadlineAt ? `Closes ${new Date(trip.pollDeadlineAt).toLocaleString()}` : "Deadline not set"}</span><span>Cabin Booking Status: {cabinBookingStatuses.find((status) => status.value === trip.cabinBookingStatus)?.label ?? "Not set"}</span><span>{trip.currentRuleBundle ? `Rules version ${trip.currentRuleBundle.version}` : "Rules being prepared"}</span></div>
-    <p className="interest-notice"><strong>Interest only.</strong> A Coming response records interest and acknowledges the displayed rules. It does not confirm the trip or create a payment obligation.</p>
-    {trip.myRsvp && <p className="saved-response">Your current response: <strong>{trip.myRsvp.response === "coming" ? "Coming" : "Not Coming"}</strong>{trip.myRsvp.acceptedRuleBundle ? ` · you accepted Constitution version ${trip.myRsvp.acceptedRuleBundle.version}` : ""}</p>}
-    {trip.myRsvp?.response === "coming" && trip.myRsvp.acceptedRuleBundle && <details className="accepted-rules"><summary>View the exact rules version you accepted</summary><p>Constitution version {trip.myRsvp.acceptedRuleBundle.version} · {trip.myRsvp.acceptedRuleBundle.contentHash.slice(0, 12)}</p><div className="rules-list">{trip.myRsvp.acceptedRuleBundle.rules.map((rule) => <article key={rule.stable_key}><h4>{rule.stable_key.replaceAll("-", " ")}</h4><p>{rule.text}</p></article>)}</div></details>}
-    {isOpen && <>
-      <div className="response-actions"><button type="button" className={choice === "coming" || (!choice && trip.myRsvp?.response === "coming") ? "selected" : "secondary-button"} onClick={() => { if (trip.myRsvp?.response === "coming") setChoice(null); else setChoice("coming"); setError(null); }}>{trip.myRsvp?.response === "coming" && !choice ? "Your response: Coming" : "Coming"}</button><button type="button" className={choice === "not_coming" ? "selected" : "secondary-button"} onClick={() => { setChoice("not_coming"); setAcknowledged(false); setError(null); }}>Not Coming</button></div>
-      {choice === "coming" && needsAcknowledgment && <section className="rules-acknowledgment" aria-label="Camping Constitution acknowledgment"><h3>Camping Constitution · version {trip.currentRuleBundle?.version}</h3><div className="rules-list">{rules.map((rule) => <article key={rule.stable_key}><h4>{rule.stable_key.replaceAll("-", " ")}</h4><p>{rule.text}</p></article>)}</div><label className="checkbox-label"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /> <span>I have read and agree to the applicable rules shown above.</span></label><button type="button" onClick={() => void submit()} disabled={busy}>{busy ? "Saving…" : "Submit Coming response"}</button></section>}
-      {choice === "not_coming" && <div className="not-coming-submit"><button type="button" onClick={() => void submit()} disabled={busy}>{busy ? "Saving…" : "Submit Not Coming response"}</button></div>}
-    </>}
-    {!isOpen && trip.pollStatus === "open" && <p role="status">This poll has passed its deadline and is closing. You can contact an administrator.</p>}
-    {trip.pollStatus === "closed" && trip.myRsvp?.response === "coming" && <form className="withdrawal-request" onSubmit={(event) => void requestWithdrawal(event)}><h3>Request a withdrawal</h3><p>Because the poll is closed, your request will be recorded for administrator review. This will not change the current response.</p><label>Reason<textarea required minLength={1} maxLength={500} value={withdrawalReason} onChange={(event) => setWithdrawalReason(event.target.value)} /></label><button disabled={busy}>Submit withdrawal request</button>{withdrawalMessage && <p role="status">{withdrawalMessage}</p>}</form>}
-    <ErrorText value={error} />
-  </article>;
+  return (
+    <article className="card event-card" aria-label={`Trip ${dateLabel}`}>
+      <div className="event-card-head">
+        <div>
+          <p className="eyebrow">{monthName(trip.monthKey)}</p>
+          <h2 className="event-card-title">{trip.additionalInformation || "Camping Trip"}</h2>
+          <p className="event-card-date">{dateLabel}</p>
+          {campsite && (
+            <p className="event-card-location">
+              {campsite.name}
+              {campsite.locationDescription ? ` · ${campsite.locationDescription}` : ""}
+            </p>
+          )}
+        </div>
+        <span
+          className={`status-chip status-${
+            trip.myWaitlistPosition ? "waitlisted" : (trip.myRsvp?.response ?? "none")
+          }`}
+        >
+          {rsvpStatusLabel}
+        </span>
+      </div>
+
+      <div className="event-card-meta">
+        {trip.cabinCount != null && (
+          <span>
+            {trip.cabinCount} cabin{trip.cabinCount !== 1 ? "s" : ""} booked
+          </span>
+        )}
+        {trip.effectiveCapacity != null && <span>Capacity: {trip.effectiveCapacity}</span>}
+        <span>{trip.comingCount} confirmed</span>
+        {trip.spotsRemaining != null && <span>{trip.spotsRemaining} spots remaining</span>}
+        {trip.waitlistCount > 0 && <span>{trip.waitlistCount} on waitlist</span>}
+      </div>
+
+      {!isDraft && isOpen && (
+        <div className="response-actions">
+          <button
+            type="button"
+            className={choice === "coming" || (!choice && isComing) ? "selected" : "secondary-button"}
+            onClick={() => {
+              setChoice(isComing && !choice ? null : "coming");
+              setError(null);
+            }}
+          >
+            {!choice && isComing ? "Going ✓" : "Going"}
+          </button>
+          <button
+            type="button"
+            className={choice === "not_coming" ? "selected" : "secondary-button"}
+            onClick={() => {
+              setChoice("not_coming");
+              setAcknowledged(false);
+              setError(null);
+            }}
+          >
+            Not Going
+          </button>
+        </div>
+      )}
+
+      {choice === "coming" && needsAcknowledgment && trip.currentRuleBundle && (
+        <section className="rules-acknowledgment" aria-label="Camping Constitution acknowledgment">
+          <h3>Camping Constitution · version {trip.currentRuleBundle.version}</h3>
+          <div className="rules-list">
+            {trip.currentRuleBundle.rules.map((rule) => (
+              <article key={rule.stable_key}>
+                <h4>{rule.stable_key.replaceAll("-", " ")}</h4>
+                <p>{rule.text}</p>
+              </article>
+            ))}
+          </div>
+          <label className="checkbox-label">
+            <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+            <span>I have read and agree to the Camping Constitution shown above.</span>
+          </label>
+          <button type="button" onClick={() => void submit()} disabled={busy}>
+            {busy ? "Saving…" : "Confirm Going"}
+          </button>
+        </section>
+      )}
+
+      {choice === "not_coming" && (
+        <div className="not-coming-submit">
+          <button type="button" onClick={() => void submit()} disabled={busy}>
+            {busy ? "Saving…" : "Confirm Not Going"}
+          </button>
+        </div>
+      )}
+
+      {trip.myRsvp?.response === "coming" && trip.myRsvp.acceptedRuleBundle && (
+        <details className="accepted-rules">
+          <summary>View the exact rules version you accepted</summary>
+          <p>
+            You accepted Constitution version {trip.myRsvp.acceptedRuleBundle.version} ·{" "}
+            {trip.myRsvp.acceptedRuleBundle.contentHash.slice(0, 12)}
+          </p>
+          <div className="rules-list">
+            {trip.myRsvp.acceptedRuleBundle.rules.map((rule) => (
+              <article key={rule.stable_key}>
+                <h4>{rule.stable_key.replaceAll("-", " ")}</h4>
+                <p>{rule.text}</p>
+              </article>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {!isOpen && trip.pollStatus === "open" && (
+        <p role="status">This poll has passed its deadline and is closing. You can contact an administrator.</p>
+      )}
+
+      {trip.pollStatus === "closed" && trip.myRsvp?.response === "coming" && (
+        <form className="withdrawal-request" onSubmit={(event) => void requestWithdrawal(event)}>
+          <h3>Request a withdrawal</h3>
+          <p>
+            Because the poll is closed, your request will be recorded for administrator review. This will not change
+            the current response.
+          </p>
+          <label>
+            Reason
+            <textarea
+              required
+              minLength={1}
+              maxLength={500}
+              value={withdrawalReason}
+              onChange={(event) => setWithdrawalReason(event.target.value)}
+            />
+          </label>
+          <button disabled={busy}>Submit withdrawal request</button>
+          {withdrawalMessage && <p role="status">{withdrawalMessage}</p>}
+        </form>
+      )}
+
+      {error && (
+        <p role="alert" className="form-error">
+          {error}
+        </p>
+      )}
+
+      {isAdmin && (
+        <details className="admin-panel" onToggle={(e) => setShowAdminPanel((e.target as HTMLDetailsElement).open)}>
+          <summary>Admin controls</summary>
+          {showAdminPanel && (
+            <AdminTripPanel trip={trip} calendar={calendar} api={api} onRefresh={onRefresh} />
+          )}
+        </details>
+      )}
+    </article>
+  );
 }
 
 function CampsiteManager({ calendar, api, onRefresh }: { calendar: Calendar; api: TripApi; onRefresh: () => Promise<void> }) {
@@ -369,7 +629,29 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
   return <section className="trip-page"><div className="page-heading"><p className="eyebrow">Private club planning</p><h1>Camping calendar</h1><p>Monthly interest polls, campsite rotation, and the Camping Constitution.</p></div>
     {isAdmin && <div className="admin-tabs" role="tablist" aria-label="Trip administration"><button role="tab" aria-selected={tab === "calendar"} onClick={() => setTab("calendar")}>Polls &amp; calendar</button><button role="tab" aria-selected={tab === "campsites"} onClick={() => setTab("campsites")}>Campsites</button><button role="tab" aria-selected={tab === "constitution"} onClick={() => setTab("constitution")}>Constitution</button></div>}
     {loading && <p role="status">Loading camping calendar…</p>}{error && <div className="card"><ErrorText value={error} /><button className="secondary-button" onClick={() => void refresh()}>Try again</button></div>}
-    {calendar && (!isAdmin || tab === "calendar") && <div className="stack">{isAdmin && <PollManager calendar={calendar} api={api} onRefresh={refresh} />}{calendar.trips.map((trip) => <TripPollCard key={trip.tripId} trip={trip} api={api} onRefresh={refresh} />)}</div>}
+    {calendar && (!isAdmin || tab === "calendar") && (
+      <div className="stack">
+        {isAdmin && <PollManager calendar={calendar} api={api} onRefresh={refresh} />}
+        {[...calendar.trips]
+          .sort((a, b) => {
+            if (!a.startsOn && !b.startsOn) return 0;
+            if (!a.startsOn) return 1;
+            if (!b.startsOn) return -1;
+            return a.startsOn.localeCompare(b.startsOn);
+          })
+          .map((trip) => (
+            <EventCard
+              key={trip.tripId}
+              trip={trip}
+              campsite={calendar.campsites.find((s) => s.campsiteId === trip.selectedCampsiteId)}
+              calendar={calendar}
+              isAdmin={isAdmin}
+              api={api}
+              onRefresh={refresh}
+            />
+          ))}
+      </div>
+    )}
     {calendar && isAdmin && tab === "campsites" && <CampsiteManager calendar={calendar} api={api} onRefresh={refresh} />}
     {calendar && isAdmin && tab === "constitution" && <ConstitutionManager calendar={calendar} api={api} onRefresh={refresh} />}
   </section>;

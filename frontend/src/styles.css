@@ -77,3 +77,18 @@ small { color: #718077; font-weight: 400; }
 .rule-history li { margin-top: .7rem; }
 .rule-history li p { margin: .25rem 0; }
 @media(max-width: 700px) { .admin-workspace { grid-template-columns: 1fr; } .form-grid { grid-template-columns: 1fr; } .trip-card-head { flex-direction: column; } .trip-meta { display: grid; gap: .3rem; } .trip-meta span + span::before { content: ""; margin: 0; } }
+.event-card { display: grid; gap: .75rem; }
+.event-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.event-card-title { margin: .25rem 0; font-size: 1.35rem; }
+.event-card-date { font-weight: 600; margin: .2rem 0; color: #263b30; }
+.event-card-location { margin: .2rem 0; color: #5d6c62; }
+.event-card-meta { display: flex; gap: .65rem 1rem; flex-wrap: wrap; color: #627167; font-size: .88rem; }
+.event-card-meta span + span::before { content: "·"; margin-right: 1rem; color: #aab4aa; }
+.status-waitlisted { background: #fdf3d8; color: #875c12; }
+.status-coming { background: #e2f0e4; color: #28613f; }
+.status-not_coming { background: #edf0e9; color: #58645b; }
+.status-none { background: #f3f4f1; color: #76837a; }
+.admin-panel { margin-top: .75rem; border-top: 1px solid #e7ebe3; padding-top: .75rem; }
+.admin-panel summary { cursor: pointer; font-weight: 600; color: #4b5d52; }
+@media(max-width: 700px) { .event-card-head { flex-direction: column; } .event-card-meta { display: grid; gap: .3rem; } .event-card-meta span + span::before { content: ""; margin: 0; } }
+
