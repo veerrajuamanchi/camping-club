@@ -2,6 +2,57 @@ import { useEffect, useState, type FormEvent } from "react";
 import { invokeMemberApi } from "../../lib/supabase";
 
 type MemberRow = { member_id: string; display_name: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended"; created_at: string };
+type AccessRequest = { id: string; display_name: string; created_at: string };
+
+export function AccessRequestsSection() {
+  const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    void invokeMemberApi<{ requests: AccessRequest[] }>("list_access_requests")
+      .then((data) => setRequests(data.requests))
+      .catch(() => setMessage("Could not load access requests."));
+  }, []);
+
+  async function resolve(id: string, action: "approve" | "reject") {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await invokeMemberApi(
+        action === "approve" ? "approve_access_request" : "reject_access_request",
+        { requestId: id }
+      );
+      setRequests((prev) => prev.filter((r) => r.id !== id));
+      setMessage(action === "approve" ? "Request approved." : "Request rejected.");
+    } catch {
+      setMessage("Could not process request. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (requests.length === 0 && !message) return null;
+
+  return (
+    <section className="card" aria-labelledby="access-requests-heading">
+      <h2 id="access-requests-heading">Access requests</h2>
+      {message && <p role="status">{message}</p>}
+      {requests.length === 0 && <p>No pending requests.</p>}
+      <ul className="admin-participant-list">
+        {requests.map((r) => (
+          <li key={r.id}>
+            <span><strong>{r.display_name}</strong> · {new Date(r.created_at).toLocaleDateString()}</span>
+            <div>
+              <button type="button" disabled={busy} onClick={() => void resolve(r.id, "approve")}>Approve</button>
+              <button type="button" className="secondary-button" disabled={busy} onClick={() => void resolve(r.id, "reject")}>Reject</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export function AdminMembersPage() {
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -29,6 +80,7 @@ export function AdminMembersPage() {
   }
 
   return <section className="stack">
+    <AccessRequestsSection />
     <div className="card"><h1>Administrator · Members</h1><p>Role and access changes are performed and audited by the server.</p>
       <form onSubmit={invite} className="inline-form"><label>Invite by email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label><button disabled={busy}>Send invitation</button></form>
     </div>
