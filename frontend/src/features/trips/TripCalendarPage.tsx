@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { formatZonedDateTimeLocal } from "../../domain/calendar";
 
@@ -227,26 +228,32 @@ function EventCard({
 
   return (
     <article className="card event-card" aria-label={`Trip ${dateLabel}`}>
-      <div className="event-card-head">
-        <div>
-          <p className="eyebrow">{monthName(trip.monthKey)}</p>
-          <h2 className="event-card-title">{trip.additionalInformation || "Camping Trip"}</h2>
-          <p className="event-card-date">{dateLabel}</p>
-          {campsite && (
-            <p className="event-card-location">
-              {campsite.name}
-              {campsite.locationDescription ? ` · ${campsite.locationDescription}` : ""}
-            </p>
-          )}
+      <Link
+        to={`/trips/${trip.tripId}`}
+        className="event-card-link"
+        aria-label={`View details for ${trip.additionalInformation || "camping trip"}`}
+      >
+        <div className="event-card-head">
+          <div>
+            <p className="eyebrow">{monthName(trip.monthKey)}</p>
+            <h2 className="event-card-title">{trip.additionalInformation || "Camping Trip"}</h2>
+            <p className="event-card-date">{dateLabel}</p>
+            {campsite && (
+              <p className="event-card-location">
+                {campsite.name}
+                {campsite.locationDescription ? ` · ${campsite.locationDescription}` : ""}
+              </p>
+            )}
+          </div>
+          <span
+            className={`status-chip status-${
+              trip.myWaitlistPosition ? "waitlisted" : (trip.myRsvp?.response ?? "none")
+            }`}
+          >
+            {rsvpStatusLabel}
+          </span>
         </div>
-        <span
-          className={`status-chip status-${
-            trip.myWaitlistPosition ? "waitlisted" : (trip.myRsvp?.response ?? "none")
-          }`}
-        >
-          {rsvpStatusLabel}
-        </span>
-      </div>
+      </Link>
 
       <div className="event-card-meta">
         {trip.cabinCount != null && (

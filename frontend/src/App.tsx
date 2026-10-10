@@ -6,6 +6,7 @@ import { SignInPage } from "./features/auth/SignInPage";
 import { AdminMembersPage } from "./features/admin/AdminMembersPage";
 import { MemberProfileForm, type MemberProfileInput } from "./features/members/MemberProfileForm";
 import { TripCalendarPage } from "./features/trips/TripCalendarPage";
+import { EventDetailsPage } from "./features/trips/EventDetailsPage";
 import { configurationError, invokeAuthApi, invokeMemberApi, supabase } from "./lib/supabase";
 
 function SignInRoute() {
@@ -121,6 +122,20 @@ function AppRoutes() {
               <AccessBoundary state={membership} requiredRole="admin">
                 <AdminMembersPage />
               </AccessBoundary>
+            }
+          />
+          <Route
+            path="/trips/:tripId"
+            element={
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : membership.status === "profileRequired" ? (
+                <Navigate to="/accept-invitation" replace />
+              ) : (
+                <AccessBoundary state={membership} requiredRole="member">
+                  <EventDetailsPage isAdmin={membership.status === "active" && membership.role === "admin"} />
+                </AccessBoundary>
+              )
             }
           />
           <Route

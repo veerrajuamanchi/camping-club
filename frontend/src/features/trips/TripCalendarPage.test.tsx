@@ -1,7 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import { TripApiError } from "../../lib/supabase";
 import { TripCalendarPage, type Calendar, type TripApi } from "./TripCalendarPage";
+
+import type { ReactElement } from "react";
+import type { RenderOptions } from "@testing-library/react";
+
+const render = (ui: ReactElement, options?: Omit<RenderOptions, "wrapper">) =>
+  rtlRender(ui, { wrapper: MemoryRouter, ...options });
 
 const makeCalendar = (): Calendar => ({
   clubConfiguration: { timezone: "America/Los_Angeles", defaultPollLeadDays: 35, defaultPollCloseTime: "18:00:00", defaultMinimumParticipants: 4, nextMonthToGenerate: "2027-01-01", nextRotationPosition: 1, version: 2 },
