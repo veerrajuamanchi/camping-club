@@ -87,6 +87,10 @@ AS $$
 DECLARE
   v_id uuid;
 BEGIN
+  IF EXISTS (SELECT 1 FROM private.access_requests WHERE email_hmac = p_email_hmac AND status = 'approved') THEN
+    RAISE EXCEPTION 'duplicate_access_request' USING ERRCODE = 'P0001';
+  END IF;
+
   INSERT INTO private.access_requests (email_hmac, hmac_key_version, display_name)
   VALUES (p_email_hmac, p_hmac_key_version, p_display_name)
   RETURNING id INTO v_id;
@@ -111,6 +115,11 @@ AS $$
 DECLARE
   v_current_status text;
 BEGIN
+  -- Validate resolution status
+  IF p_status NOT IN ('approved', 'rejected') THEN
+    RAISE EXCEPTION 'invalid_resolution_status' USING ERRCODE = '22023';
+  END IF;
+
   -- Verify actor is an active admin
   IF NOT EXISTS (
     SELECT 1 FROM public.member_profiles
@@ -144,15 +153,41 @@ BEGIN
 END;
 $$;
 
--- Admin-visible count view (authenticated users can query; member-api checks admin role)
-CREATE OR REPLACE VIEW public.admin_access_request_count
-  WITH (security_invoker = true)
-AS
+-- View: admin access request count (internal / service_role)
+CREATE OR REPLACE VIEW private.admin_access_request_count_v AS
 SELECT count(*)::int AS pending_count
 FROM private.access_requests
 WHERE status = 'pending';
 
-GRANT SELECT ON public.admin_access_request_count TO authenticated;
+-- Admin-callable function to retrieve pending access request count
+CREATE OR REPLACE FUNCTION public.get_admin_access_request_count()
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = private, public, pg_temp
+AS $$
+DECLARE
+  v_count int;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.member_profiles
+    WHERE auth_user_id = auth.uid()
+      AND member_role = 'admin'
+      AND account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'administrator_required' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT count(*)::int INTO v_count
+  FROM private.access_requests
+  WHERE status = 'pending';
+
+  RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_admin_access_request_count() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_admin_access_request_count() TO authenticated;
 ```
 
 - [ ] **Step 2: Apply migration locally and run DB tests**
