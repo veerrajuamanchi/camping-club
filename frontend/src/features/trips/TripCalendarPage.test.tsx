@@ -291,4 +291,68 @@ describe("TripCalendarPage", () => {
     const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(titles).toEqual(["January Trip", "March Trip", "Draft Trip"]);
   });
+
+  it("renders Going and Not Going buttons as disabled when poll is closed or past deadline", async () => {
+    const calendar = buildCalendar([
+      {
+        tripId: "t1",
+        pollStatus: "closed",
+        startsOn: "2027-01-15",
+        endsOn: "2027-01-17",
+        additionalInformation: "Closed Trip",
+      },
+      {
+        tripId: "t2",
+        pollStatus: "open",
+        pollDeadlineAt: "2026-01-01T18:00:00-08:00",
+        startsOn: "2027-02-15",
+        endsOn: "2027-02-17",
+        additionalInformation: "Past Deadline Trip",
+      },
+    ]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    await screen.findByText("Closed Trip");
+
+    const goingButtons = screen.getAllByRole("button", { name: "Going" });
+    const notGoingButtons = screen.getAllByRole("button", { name: "Not Going" });
+    expect(goingButtons).toHaveLength(2);
+    expect(notGoingButtons).toHaveLength(2);
+
+    expect(goingButtons[0]).toBeDisabled();
+    expect(notGoingButtons[0]).toBeDisabled();
+    expect(goingButtons[1]).toBeDisabled();
+    expect(notGoingButtons[1]).toBeDisabled();
+
+    expect(screen.getByText("This poll is closed.")).toBeInTheDocument();
+    expect(screen.getByText("This poll has passed its deadline and is closing. You can contact an administrator.")).toBeInTheDocument();
+  });
+
+  it("shows Not Going button as selected when member already responded not coming", async () => {
+    const calendar = buildCalendar([
+      {
+        tripId: "t1",
+        pollStatus: "open",
+        startsOn: "2027-01-15",
+        endsOn: "2027-01-17",
+        myRsvp: { response: "not_coming", acknowledgmentId: null, version: 1, updatedAt: "" },
+      },
+    ]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    await screen.findByText("Not Going", { selector: ".status-chip" });
+    const notGoingButton = screen.getByRole("button", { name: "Not Going" });
+    expect(notGoingButton).toHaveClass("selected");
+  });
+
+  it("sorts all draft trips after published/open/closed trips, with drafts sorted by monthKey or startsOn", async () => {
+    const calendar = buildCalendar([
+      { tripId: "t1", monthKey: "2027-04", startsOn: null, pollStatus: "draft", additionalInformation: "Draft April" },
+      { tripId: "t2", monthKey: "2027-03", startsOn: "2027-03-10", endsOn: "2027-03-12", pollStatus: "open", additionalInformation: "March Open" },
+      { tripId: "t3", monthKey: "2027-01", startsOn: "2027-01-15", endsOn: "2027-01-17", pollStatus: "closed", additionalInformation: "January Closed" },
+      { tripId: "t4", monthKey: "2027-02", startsOn: "2027-02-20", endsOn: "2027-02-22", pollStatus: "draft", additionalInformation: "Draft February" },
+    ]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    await screen.findByText("January Closed");
+    const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(titles).toEqual(["January Closed", "March Open", "Draft February", "Draft April"]);
+  });
 });

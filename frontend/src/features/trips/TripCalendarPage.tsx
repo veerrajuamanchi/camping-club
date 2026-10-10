@@ -260,12 +260,14 @@ function EventCard({
         {trip.waitlistCount > 0 && <span>{trip.waitlistCount} on waitlist</span>}
       </div>
 
-      {!isDraft && isOpen && (
+      {!isDraft && (
         <div className="response-actions">
           <button
             type="button"
+            disabled={!isOpen}
             className={choice === "coming" || (!choice && isComing) ? "selected" : "secondary-button"}
             onClick={() => {
+              if (!isOpen) return;
               setChoice(isComing && !choice ? null : "coming");
               setError(null);
             }}
@@ -274,9 +276,11 @@ function EventCard({
           </button>
           <button
             type="button"
-            className={choice === "not_coming" ? "selected" : "secondary-button"}
+            disabled={!isOpen}
+            className={choice === "not_coming" || (!choice && isNotComing) ? "selected" : "secondary-button"}
             onClick={() => {
-              setChoice("not_coming");
+              if (!isOpen) return;
+              setChoice(isNotComing && !choice ? null : "not_coming");
               setAcknowledged(false);
               setError(null);
             }}
@@ -333,8 +337,12 @@ function EventCard({
         </details>
       )}
 
-      {!isOpen && trip.pollStatus === "open" && (
-        <p role="status">This poll has passed its deadline and is closing. You can contact an administrator.</p>
+      {!isDraft && !isOpen && (
+        <p role="status">
+          {trip.pollStatus === "closed"
+            ? "This poll is closed."
+            : "This poll has passed its deadline and is closing. You can contact an administrator."}
+        </p>
       )}
 
       {trip.pollStatus === "closed" && trip.myRsvp?.response === "coming" && (
@@ -612,6 +620,31 @@ function ConstitutionManager({ calendar, api, onRefresh }: { calendar: Calendar;
     <div className="card"><h2>Rule history</h2>{definitions.length === 0 ? <p>Loading rule history…</p> : definitions.map((definition) => <details key={definition.id} className="rule-history"><summary>{definition.stable_key} <span>({definition.scope}, {definition.category})</span></summary><ol>{versions.filter((version) => version.definition_id === definition.id).map((version) => <li key={version.id}><strong>Version {version.version_no}</strong> · effective {new Date(version.effective_from).toLocaleString()} · {version.expires_at ? `expires ${new Date(version.expires_at).toLocaleString()}` : "no expiry"}<p>{version.human_text}</p></li>)}</ol></details>)}</div></section>;
 }
 
+export function sortTrips(a: Trip, b: Trip): number {
+  const aIsDraft = a.pollStatus === "draft";
+  const bIsDraft = b.pollStatus === "draft";
+
+  if (aIsDraft !== bIsDraft) {
+    return aIsDraft ? 1 : -1;
+  }
+
+  if (aIsDraft) {
+    const monthCmp = a.monthKey.localeCompare(b.monthKey);
+    if (monthCmp !== 0) return monthCmp;
+    if (a.startsOn && b.startsOn) return a.startsOn.localeCompare(b.startsOn);
+    if (a.startsOn) return -1;
+    if (b.startsOn) return 1;
+    return 0;
+  }
+
+  if (!a.startsOn && !b.startsOn) return a.monthKey.localeCompare(b.monthKey);
+  if (!a.startsOn) return 1;
+  if (!b.startsOn) return -1;
+  const startCmp = a.startsOn.localeCompare(b.startsOn);
+  if (startCmp !== 0) return startCmp;
+  return a.monthKey.localeCompare(b.monthKey);
+}
+
 export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
   const [calendar, setCalendar] = useState<Calendar | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -633,12 +666,7 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
       <div className="stack">
         {isAdmin && <PollManager calendar={calendar} api={api} onRefresh={refresh} />}
         {[...calendar.trips]
-          .sort((a, b) => {
-            if (!a.startsOn && !b.startsOn) return 0;
-            if (!a.startsOn) return 1;
-            if (!b.startsOn) return -1;
-            return a.startsOn.localeCompare(b.startsOn);
-          })
+          .sort(sortTrips)
           .map((trip) => (
             <EventCard
               key={trip.tripId}
