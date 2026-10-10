@@ -23,7 +23,7 @@ function SignInRoute() {
     if (!supabase) throw new Error("not configured");
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     });
     if (error) throw error;
   }
