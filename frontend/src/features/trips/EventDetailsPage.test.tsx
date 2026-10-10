@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventDetailsPage } from "./EventDetailsPage";
+import { TripApiError } from "../../lib/supabase";
 
 const tripData = {
   tripId: "trip-1",
@@ -272,7 +273,26 @@ describe("EventDetailsPage", () => {
     });
   });
 
-  it("displays error message when promote from waitlist fails", async () => {
+  it("displays capacity error message when promote from waitlist fails with TripApiError 409", async () => {
+    const user = userEvent.setup();
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "admin_promote_from_waitlist") return Promise.reject(new TripApiError("trip_at_capacity", 409));
+      return Promise.resolve({});
+    });
+    renderPage(tripData, true, apiMock);
+    await screen.findByText("December Camping");
+
+    const promoteButton = screen.getByRole("button", { name: "Promote" });
+    await user.click(promoteButton);
+
+    expect(
+      await screen.findByText("Could not promote member. The trip may be at capacity.")
+    ).toBeInTheDocument();
+  });
+
+  it("displays capacity error message when promote from waitlist fails with Error containing capacity", async () => {
     const user = userEvent.setup();
     const apiMock = vi.fn().mockImplementation((action: string) => {
       if (action === "get_trip_details") return Promise.resolve(tripData);
@@ -288,6 +308,25 @@ describe("EventDetailsPage", () => {
 
     expect(
       await screen.findByText("Could not promote member. The trip may be at capacity.")
+    ).toBeInTheDocument();
+  });
+
+  it("displays general error message when promote from waitlist fails with unexpected error", async () => {
+    const user = userEvent.setup();
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "admin_promote_from_waitlist") return Promise.reject(new TripApiError("internal_error", 500));
+      return Promise.resolve({});
+    });
+    renderPage(tripData, true, apiMock);
+    await screen.findByText("December Camping");
+
+    const promoteButton = screen.getByRole("button", { name: "Promote" });
+    await user.click(promoteButton);
+
+    expect(
+      await screen.findByText("Could not promote member. Refresh and try again.")
     ).toBeInTheDocument();
   });
 });

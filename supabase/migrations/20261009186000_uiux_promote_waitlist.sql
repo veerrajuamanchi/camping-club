@@ -28,6 +28,9 @@ BEGIN
     RAISE EXCEPTION 'member_not_on_waitlist' USING ERRCODE = 'P0001';
   END IF;
 
+  -- Lock the trip row to serialize promotions
+  PERFORM 1 FROM public.camping_trips WHERE id = p_trip_id FOR UPDATE;
+
   -- Check capacity
   SELECT public.trip_effective_capacity(p_trip_id) INTO v_effective_capacity;
   SELECT count(*) INTO v_coming_count FROM public.trip_rsvps WHERE trip_id = p_trip_id AND response = 'coming';

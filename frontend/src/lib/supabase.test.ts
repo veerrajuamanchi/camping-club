@@ -174,5 +174,51 @@ describe("invokeTripApi", () => {
       expect(tripErr.status).toBe(500);
     }
   });
+
+  it("attaches Idempotency-Key header for admin_promote_from_waitlist", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValueOnce({
+      data: { data: { promoted: true } },
+      error: null,
+      response: new Response(JSON.stringify({ data: { promoted: true } }), { status: 200 }),
+    });
+
+    const result = await invokeTripApi<{ promoted: boolean }>(
+      "admin_promote_from_waitlist",
+      { tripId: "11111111-1111-4111-8111-111111111111", memberId: "22222222-2222-4222-8222-222222222222", reason: "Promote" },
+      "test-idempotency-key",
+    );
+
+    expect(invokeSpy).toHaveBeenCalledWith("trip-api", {
+      body: {
+        action: "admin_promote_from_waitlist",
+        input: { tripId: "11111111-1111-4111-8111-111111111111", memberId: "22222222-2222-4222-8222-222222222222", reason: "Promote" },
+      },
+      headers: { "Idempotency-Key": "test-idempotency-key" },
+    });
+    expect(result).toEqual({ promoted: true });
+  });
+
+  it("generates default Idempotency-Key header for admin_promote_from_waitlist when not provided", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValueOnce({
+      data: { data: { promoted: true } },
+      error: null,
+      response: new Response(JSON.stringify({ data: { promoted: true } }), { status: 200 }),
+    });
+
+    await invokeTripApi(
+      "admin_promote_from_waitlist",
+      { tripId: "11111111-1111-4111-8111-111111111111", memberId: "22222222-2222-4222-8222-222222222222" },
+    );
+
+    expect(invokeSpy).toHaveBeenCalledWith("trip-api", {
+      body: {
+        action: "admin_promote_from_waitlist",
+        input: { tripId: "11111111-1111-4111-8111-111111111111", memberId: "22222222-2222-4222-8222-222222222222" },
+      },
+      headers: { "Idempotency-Key": expect.any(String) },
+    });
+  });
 });
 

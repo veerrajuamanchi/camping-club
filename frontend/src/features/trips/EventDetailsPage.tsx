@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
-import { invokeTripApi } from "../../lib/supabase";
+import { invokeTripApi, TripApiError } from "../../lib/supabase";
 
 type TripDetails = {
   tripId: string;
@@ -123,8 +123,15 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
         reason: "Administrator promoted from waitlist",
       });
       await refresh();
-    } catch {
-      setRsvpError("Could not promote member. The trip may be at capacity.");
+    } catch (err: unknown) {
+      if (
+        (err instanceof TripApiError && (err.status === 409 || err.code === "trip_at_capacity")) ||
+        (err instanceof Error && /capacity/i.test(err.message))
+      ) {
+        setRsvpError("Could not promote member. The trip may be at capacity.");
+      } else {
+        setRsvpError("Could not promote member. Refresh and try again.");
+      }
     } finally {
       setRsvpBusy(false);
     }
