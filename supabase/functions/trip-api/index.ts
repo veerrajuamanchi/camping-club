@@ -132,7 +132,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
     service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,active,version").eq("active", true).order("rotation_position"),
-    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,poll_status,additional_information,cabin_booking_status,cabin_availability_status,version").gte("month_key", month).order("month_key").limit(12),
+    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,version").gte("month_key", month).order("month_key").limit(12),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
@@ -147,6 +147,29 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
     service.from("trip_rsvps").select("trip_id,member_id,response,rule_acknowledgment_id,version,updated_at").in("trip_id", tripIds),
   ]) : [{ data: [], error: null }, { data: [], error: null }];
   checkError(bundleResult.error); checkError(rsvpResult.error);
+  const [waitlistCountResult, ownWaitlistResult] = tripIds.length ? await Promise.all([
+    service
+      .from("trip_waitlist_entries")
+      .select("trip_id, id", { count: "exact" })
+      .in("trip_id", tripIds)
+      .eq("status", "waiting"),
+    service
+      .from("trip_waitlist_entries")
+      .select("trip_id, position, status")
+      .in("trip_id", tripIds)
+      .eq("member_id", member.member_id)
+      .eq("status", "waiting"),
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  checkError(waitlistCountResult.error);
+  checkError(ownWaitlistResult.error);
+
+  const waitlistCountsByTrip = new Map<string, number>();
+  for (const row of waitlistCountResult.data ?? []) {
+    waitlistCountsByTrip.set(row.trip_id, (waitlistCountsByTrip.get(row.trip_id) ?? 0) + 1);
+  }
+  const ownWaitlistByTrip = new Map(
+    (ownWaitlistResult.data ?? []).map((row) => [row.trip_id, row])
+  );
   const rsvps = rsvpResult.data ?? [];
   const acknowledgmentIds = [...new Set(rsvps.map((row) => row.rule_acknowledgment_id).filter((id): id is string => Boolean(id)))];
   const acknowledgmentResult = acknowledgmentIds.length
@@ -224,7 +247,22 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
         suggestedCampsiteId: trip.suggested_campsite_id, selectedCampsiteId: trip.selected_campsite_id,
         startsOn: trip.starts_on, endsOn: trip.ends_on, clubTimezone: trip.club_timezone_snapshot,
         pollDeadlineAt: trip.poll_deadline_at, minimumParticipants: trip.minimum_participants,
-        minimumBasis: null, maxCapacity: trip.max_capacity, pollStatus: trip.poll_status,
+        minimumBasis: null, maxCapacity: trip.max_capacity,
+        perCabinCapacity: trip.per_cabin_capacity ?? 6,
+        cabinCount: trip.cabin_count ?? null,
+        effectiveCapacity: trip.max_capacity
+          ?? (trip.cabin_count != null ? trip.cabin_count * (trip.per_cabin_capacity ?? 6) : null),
+        spotsRemaining: trip.max_capacity != null
+          ? Math.max(0, trip.max_capacity - (counts.get(trip.id) ?? 0))
+          : trip.cabin_count != null
+            ? Math.max(0, trip.cabin_count * (trip.per_cabin_capacity ?? 6) - (counts.get(trip.id) ?? 0))
+            : null,
+        waitlistCount: waitlistCountsByTrip.get(trip.id) ?? 0,
+        myWaitlistPosition: ownWaitlistByTrip.get(trip.id)?.position ?? null,
+        myWaitlistEntry: ownWaitlistByTrip.get(trip.id)
+          ? { position: ownWaitlistByTrip.get(trip.id)!.position, status: ownWaitlistByTrip.get(trip.id)!.status }
+          : undefined,
+        pollStatus: trip.poll_status,
         additionalInformation: trip.additional_information, cabinBookingStatus: trip.cabin_booking_status,
         legacyCabinAvailabilityStatus: member.member_role === "admin" ? trip.cabin_availability_status : undefined,
         version: trip.version, comingCount: counts.get(trip.id) ?? 0, tripDecision: "none",

@@ -11,13 +11,19 @@ type Campsite = {
   estimatedRateCents: number | null; availabilityStatus: string; availabilitySourceUrl: string | null;
   availabilityVerifiedAt: string | null; adminNotes?: string; version: number;
 };
-type Trip = {
+export type Trip = {
   tripId: string; monthKey: string; rotationPosition: number; suggestedCampsiteId: string; selectedCampsiteId: string;
   startsOn: string | null; endsOn: string | null; clubTimezone: string | null; pollDeadlineAt: string | null;
-  minimumParticipants: number; minimumBasis: null; maxCapacity: number | null; pollStatus: "draft" | "open" | "closed";
-  additionalInformation: string; cabinBookingStatus: CabinBookingStatus | null; legacyCabinAvailabilityStatus?: string | null; version: number; comingCount: number;
+  minimumParticipants: number; minimumBasis: null; maxCapacity: number | null;
+  perCabinCapacity: number; cabinCount: number | null;
+  effectiveCapacity: number | null; spotsRemaining: number | null;
+  waitlistCount: number; myWaitlistPosition: number | null;
+  pollStatus: "draft" | "open" | "closed";
+  additionalInformation: string; cabinBookingStatus: CabinBookingStatus | null;
+  legacyCabinAvailabilityStatus?: string | null; version: number; comingCount: number;
   tripDecision: "none"; currentRuleBundle: Bundle | null;
   myRsvp: null | { response: "coming" | "not_coming"; acknowledgmentId: string | null; version: number; updatedAt: string; acceptedRuleBundle?: Bundle | null };
+  myWaitlistEntry?: { position: number; status: string };
   participantEntries?: Array<{ memberId: string; displayName: string; response: "coming" | "not_coming"; version: number; acknowledgmentId: string | null }>;
 };
 export type Calendar = {

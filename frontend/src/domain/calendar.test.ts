@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultPollDeadlineDate, formatZonedDateTimeLocal, planMonthlyRotation } from "./calendar";
+import type { Trip } from "../features/trips/TripCalendarPage";
 
 const sites = [
   { id: "1", name: "Del Monte", rotationPosition: 1 },
@@ -43,5 +44,22 @@ describe("monthly campsite calendar", () => {
   it("formats a stored instant as the trip's club-local wall clock time", () => {
     expect(formatZonedDateTimeLocal("2027-01-02T02:00:00Z", "America/Los_Angeles")).toBe("2027-01-01T18:00");
     expect(formatZonedDateTimeLocal("2027-07-02T01:00:00Z", "America/Los_Angeles")).toBe("2027-07-01T18:00");
+  });
+
+  it("trip has waitlist and capacity fields", () => {
+    const trip: Trip = {
+      tripId: "a", monthKey: "2026-11", rotationPosition: 1,
+      suggestedCampsiteId: "b", selectedCampsiteId: "b",
+      startsOn: null, endsOn: null, clubTimezone: null, pollDeadlineAt: null,
+      minimumParticipants: 4, minimumBasis: null, maxCapacity: null,
+      perCabinCapacity: 6, cabinCount: null, effectiveCapacity: null,
+      spotsRemaining: null, waitlistCount: 0, myWaitlistPosition: null,
+      pollStatus: "draft", additionalInformation: "",
+      cabinBookingStatus: null, legacyCabinAvailabilityStatus: null,
+      version: 1, comingCount: 0, tripDecision: "none",
+      currentRuleBundle: null, myRsvp: null,
+    };
+    expect(trip.perCabinCapacity).toBe(6);
+    expect(trip.waitlistCount).toBe(0);
   });
 });
