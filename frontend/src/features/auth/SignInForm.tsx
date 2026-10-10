@@ -140,11 +140,12 @@ export function SignInForm({
             <input
               autoComplete="one-time-code"
               inputMode="numeric"
-              pattern="[0-9]{6}"
+              pattern="[0-9]{6,10}"
               required
-              maxLength={6}
+              maxLength={10}
               value={otp}
-              onChange={(e) => setOtp(e.target.value)}
+              onChange={(e) => setOtp(e.target.value.trim())}
+              placeholder="e.g. 12345678"
             />
           </label>
           {(error || localError) && <p role="alert">{error || localError}</p>}
