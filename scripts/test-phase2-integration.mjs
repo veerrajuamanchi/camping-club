@@ -22,6 +22,7 @@ await writeFile(envPath, [
   `INVITATION_HMAC_KEY=${secret()}`,
   `IDEMPOTENCY_HMAC_KEY=${secret()}`,
   "IDEMPOTENCY_HMAC_KEY_VERSION=v1",
+  "EMAIL_HMAC_KEY_VERSION=v1",
   `PAYMENT_ENCRYPTION_KEY=${secret()}`,
   "PAYMENT_ENCRYPTION_KEY_VERSION=local-test-v1",
   `PAYMENT_FINGERPRINT_KEY=${secret()}`,

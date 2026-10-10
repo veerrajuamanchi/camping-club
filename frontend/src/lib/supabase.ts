@@ -28,6 +28,13 @@ export class TripApiError extends Error {
   }
 }
 
+export class AuthApiError extends Error {
+  constructor(readonly code?: string, readonly status?: number) {
+    super("The auth request could not be completed.");
+    this.name = "AuthApiError";
+  }
+}
+
 export async function responseErrorCode(response?: Response): Promise<string | undefined> {
   if (!response) return undefined;
   try {
@@ -67,4 +74,17 @@ export async function invokeTripApi<T>(action: string, input?: unknown, idempote
     throw new TripApiError(responseCode ?? payloadCode, response?.status);
   }
   return data?.data as T;
+}
+
+export async function invokeAuthApi<T = unknown>(action: string, input?: unknown): Promise<T> {
+  if (!supabase) throw new Error(configurationError ?? "Supabase is unavailable.");
+  const { data, error, response } = await supabase.functions.invoke("auth-api", {
+    body: { action, input: input ?? {} },
+  });
+  if (error || data?.error) {
+    const responseCode = await responseErrorCode(response);
+    const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
+    throw new AuthApiError(responseCode ?? payloadCode, response?.status);
+  }
+  return (data?.data ?? data) as T;
 }
