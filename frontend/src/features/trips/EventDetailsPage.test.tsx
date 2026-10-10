@@ -232,4 +232,25 @@ describe("EventDetailsPage", () => {
 
     expect(await screen.findByText("Could not load trip details. Please try again.")).toBeInTheDocument();
   });
+
+  it("displays waitlist notice when Going RSVP is waitlisted", async () => {
+    const user = userEvent.setup();
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "submit_rsvp") return Promise.resolve({ waitlisted: true, position: 2 });
+      return Promise.resolve({});
+    });
+    renderPage(tripData, false, apiMock);
+    await screen.findByText("December Camping");
+
+    await user.click(screen.getByRole("button", { name: "Going" }));
+    await user.click(screen.getByLabelText(/i have read and agree to the camping constitution/i));
+    await user.click(screen.getByRole("button", { name: "Confirm Going" }));
+
+    expect(
+      await screen.findByText("You are #2 on the waitlist. The administrator will notify you if a spot opens.")
+    ).toBeInTheDocument();
+  });
 });
+

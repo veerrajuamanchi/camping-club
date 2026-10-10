@@ -155,6 +155,7 @@ function EventCard({
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [withdrawalReason, setWithdrawalReason] = useState("");
   const [withdrawalMessage, setWithdrawalMessage] = useState<string | null>(null);
+  const [waitlistedPosition, setWaitlistedPosition] = useState<number | null>(null);
 
   const isDraft = trip.pollStatus === "draft";
   const isOpen =
@@ -185,7 +186,7 @@ function EventCard({
     setBusy(true);
     setError(null);
     try {
-      await api("submit_rsvp", {
+      const result = await api<{ waitlisted?: boolean; position?: number }>("submit_rsvp", {
         tripId: trip.tripId,
         response: choice,
         expectedVersion: trip.myRsvp?.version ?? 0,
@@ -193,6 +194,11 @@ function EventCard({
           ? { bundleId: trip.currentRuleBundle.id, contentHash: trip.currentRuleBundle.contentHash }
           : {}),
       });
+      if (result?.waitlisted) {
+        setWaitlistedPosition(result.position ?? null);
+      } else {
+        setWaitlistedPosition(null);
+      }
       setChoice(null);
       setAcknowledged(false);
       await onRefresh();
@@ -372,6 +378,12 @@ function EventCard({
           <button disabled={busy}>Submit withdrawal request</button>
           {withdrawalMessage && <p role="status">{withdrawalMessage}</p>}
         </form>
+      )}
+
+      {waitlistedPosition !== null && (
+        <p role="status">
+          You are #{waitlistedPosition} on the waitlist. The administrator will notify you if a spot opens.
+        </p>
       )}
 
       {error && (

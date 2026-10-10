@@ -362,4 +362,24 @@ describe("TripCalendarPage", () => {
     const titles = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(titles).toEqual(["January Closed", "March Open", "Draft February", "Draft April"]);
   });
+
+  it("displays waitlist feedback when submit_rsvp returns waitlisted", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async (action: string) => {
+      if (action === "submit_rsvp") {
+        return { waitlisted: true, position: 2 };
+      }
+      return calendar;
+    });
+    render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
+    await screen.findByText(/January 2027/);
+    fireEvent.click(screen.getByRole("button", { name: "Going" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /I have read and agree/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
+
+    expect(
+      await screen.findByText("You are #2 on the waitlist. The administrator will notify you if a spot opens.")
+    ).toBeInTheDocument();
+  });
 });
+

@@ -569,10 +569,45 @@ Deno.serve(async (request) => {
       rpcName = "phase2_admin_set_rule_override";
       rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_base_rule_version_id: input.baseRuleVersionId, p_human_text: input.text, p_structured_values: input.structuredValues, p_expires_at: input.expiresAt, p_reason: input.reason, p_request_id: key };
       break;
-    case "submit_rsvp":
+    case "submit_rsvp": {
+      if (input.response === "coming") {
+        const [capacityResult, countResult] = await Promise.all([
+          service.rpc("trip_effective_capacity", { p_trip_id: input.tripId }),
+          service.from("trip_rsvps")
+            .select("member_id", { count: "exact" })
+            .eq("trip_id", input.tripId)
+            .eq("response", "coming"),
+        ]);
+        checkError(capacityResult.error);
+        checkError(countResult.error);
+        const effectiveCapacity = capacityResult.data as number | null;
+        const comingCount = countResult.count ?? 0;
+
+        if (effectiveCapacity !== null && comingCount >= effectiveCapacity) {
+          const alreadyComing = await service.from("trip_rsvps")
+            .select("id").eq("trip_id", input.tripId)
+            .eq("member_id", member.member_id).eq("response", "coming").maybeSingle();
+          checkError(alreadyComing.error);
+          if (!alreadyComing.data) {
+            const { data: waitlistResult, error: waitlistError } = await service.rpc("trip_api_join_waitlist", {
+              p_trip_id: input.tripId,
+              p_member_id: member.member_id,
+              p_request_id: key,
+            });
+            checkError(waitlistError);
+            try {
+              await finish(authUser.id, action, aggregate, key, input, (waitlistResult as { entryId?: string })?.entryId ?? null);
+            } catch {
+              return errorResponse(request, 500, "idempotency_completion_failed", requestId);
+            }
+            return json(request, 200, { waitlisted: true, position: (waitlistResult as { position: number }).position, requestId });
+          }
+        }
+      }
       rpcName = "phase2_submit_rsvp";
       rpcArgs = { p_auth_user_id: authUser.id, p_trip_id: input.tripId, p_response: input.response, p_bundle_id: input.bundleId ?? null, p_content_hash: input.contentHash ?? null, p_expected_version: input.expectedVersion, p_request_id: key };
       break;
+    }
     case "admin_record_interest":
       rpcName = "phase2_admin_record_interest";
       rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_member_id: input.memberId, p_response: input.response, p_expected_version: input.expectedVersion, p_reason: input.reason, p_request_id: key };

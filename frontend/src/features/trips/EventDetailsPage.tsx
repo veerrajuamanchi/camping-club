@@ -48,6 +48,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [rsvpBusy, setRsvpBusy] = useState(false);
   const [rsvpError, setRsvpError] = useState<string | null>(null);
+  const [waitlistedPosition, setWaitlistedPosition] = useState<number | null>(null);
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
 
   async function refresh() {
@@ -88,7 +89,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
     setRsvpBusy(true);
     setRsvpError(null);
     try {
-      await api("submit_rsvp", {
+      const result = await api<{ waitlisted?: boolean; position?: number }>("submit_rsvp", {
         tripId: details.tripId,
         response: rsvpChoice,
         expectedVersion: details.myRsvp?.version ?? 0,
@@ -96,6 +97,11 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
           ? { bundleId: details.currentRuleBundle.id, contentHash: details.currentRuleBundle.contentHash }
           : {}),
       });
+      if (result?.waitlisted) {
+        setWaitlistedPosition(result.position ?? null);
+      } else {
+        setWaitlistedPosition(null);
+      }
       setRsvpChoice(null);
       setAcknowledged(false);
       await refresh();
@@ -236,6 +242,12 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
               <button type="button" onClick={() => void submitRsvp()} disabled={rsvpBusy}>
                 {rsvpBusy ? "Saving…" : "Confirm Not Going"}
               </button>
+            )}
+
+            {waitlistedPosition !== null && (
+              <p role="status">
+                You are #{waitlistedPosition} on the waitlist. The administrator will notify you if a spot opens.
+              </p>
             )}
 
             {rsvpError && (
