@@ -98,6 +98,11 @@
 | DEP-01 | Migrations/config versioned; separate environments; Render deployment/rollback accounted for | 1, 8 | G1, OPS-09 |
 | DEP-02 | Complete certification before launch | 8 | G1–G6 report |
 | DEP-03 | Phase 2 poll save is verified end to end against an identified isolated development/staging Supabase project; hosted frontend, migrations, Edge Functions, environment allowlist, grants/RLS and API connectivity are evidenced before certification | 2 | PH2-POLL-01–10; `docs/PHASE2_CERTIFICATION.md` |
+| UI-01 | Passwordless OTP login & self-service access request onboarding flow with admin approval | UI-A | Tasks 1, 4, 5, 6, 7; `phase3_access_requests.sql`, `phase6_auth_api_helpers.sql`, `phase7_member_api_access_requests.sql`, `SignInForm.test.tsx`, `SignInPage.test.tsx`, `AdminMembersPage.test.tsx` |
+| UI-02 | Unified mobile-first landing page with chronological EventCards, "Dates TBA" for drafts, disabled buttons for closed polls, inline admin controls | UI-B | Tasks 8, 9; `phase4_trip_capacity.sql`, `TripCalendarPage.test.tsx`, `calendar.test.ts` |
+| UI-03 | Unified 4-tab EventDetailsPage (Overview, Constitution, Logistics, Financials) at `/trips/:tripId` with 4 rule categories and rule ack history | UI-C | Tasks 10, 11; `EventDetailsPage.test.tsx`, `rules.test.ts` |
+| UI-04 | Capacity enforcement on RSVP, FIFO waitlist overflow, and admin promotion with concurrency protection and idempotency | UI-D | Tasks 3, 12, 13; `phase5_waitlist.sql`, `phase8_waitlist_rsvp.sql`, `phase9_promote_waitlist.sql`, `supabase.test.ts`, `EventDetailsPage.test.tsx` |
+| UI-05 | Configurable cabin count and per-cabin capacity (default 6) in admin trip configure and PollManager | UI-E | Tasks 2, 14; `phase4_trip_capacity.sql`, `TripCalendarPage.test.tsx` |
 
 ## 2. Evidence ownership
 
