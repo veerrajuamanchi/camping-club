@@ -14,6 +14,7 @@ const actionNames = [
   "get_calendar", "get_constitution", "get_trip_details", "admin_configure_club", "admin_generate_calendar",
   "admin_reorder_campsites", "admin_update_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
+  "admin_promote_from_waitlist",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -61,6 +62,7 @@ const inputSchemas = {
     tripId: uuid, memberId: uuid, response: z.enum(["coming", "not_coming"]), expectedVersion: z.number().int().nonnegative(), reason,
   }).strict(),
   request_withdrawal: z.object({ tripId: uuid, reason }).strict(),
+  admin_promote_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason }).strict(),
 };
 
 type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended" };
@@ -70,11 +72,12 @@ type Action = typeof actionNames[number];
 const adminActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
+  "admin_promote_from_waitlist",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
-  "submit_rsvp", "admin_record_interest", "request_withdrawal",
+  "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string): Response {
@@ -616,6 +619,22 @@ Deno.serve(async (request) => {
       rpcName = "phase2_request_withdrawal";
       rpcArgs = { p_auth_user_id: authUser.id, p_trip_id: input.tripId, p_reason: input.reason, p_request_id: key };
       break;
+    case "admin_promote_from_waitlist": {
+      const { data: result, error } = await service.rpc("trip_api_promote_from_waitlist", {
+        p_trip_id: input.tripId,
+        p_member_id: input.memberId,
+        p_actor_id: member.member_id,
+      });
+      if (error?.message?.includes("member_not_on_waitlist")) return errorResponse(request, 404, "member_not_on_waitlist", requestId);
+      if (error?.code === "23514") return errorResponse(request, 409, "trip_at_capacity", requestId);
+      checkError(error);
+      try {
+        await finish(authUser.id, action, aggregate, key, input, null);
+      } catch {
+        return errorResponse(request, 500, "idempotency_completion_failed", requestId);
+      }
+      return json(request, 200, { promoted: true, requestId });
+    }
     default: return errorResponse(request, 400, "unsupported_operation", requestId);
   }
 

@@ -112,6 +112,24 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
     }
   }
 
+  async function promoteFromWaitlist(memberId: string) {
+    if (!details) return;
+    setRsvpBusy(true);
+    setRsvpError(null);
+    try {
+      await api("admin_promote_from_waitlist", {
+        tripId: details.tripId,
+        memberId,
+        reason: "Administrator promoted from waitlist",
+      });
+      await refresh();
+    } catch {
+      setRsvpError("Could not promote member. The trip may be at capacity.");
+    } finally {
+      setRsvpBusy(false);
+    }
+  }
+
   if (loading) return <p role="status">Loading trip details…</p>;
   if (error || !details)
     return (
@@ -273,7 +291,10 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
                 <ol>
                   {details.waitlistEntries.map((w) => (
                     <li key={w.memberId}>
-                      {w.displayName} · joined {new Date(w.createdAt).toLocaleDateString()}
+                      #{w.position} {w.displayName}
+                      <button type="button" disabled={rsvpBusy} onClick={() => void promoteFromWaitlist(w.memberId)}>
+                        Promote
+                      </button>
                     </li>
                   ))}
                 </ol>

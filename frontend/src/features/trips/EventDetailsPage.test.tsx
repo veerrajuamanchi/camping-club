@@ -252,5 +252,43 @@ describe("EventDetailsPage", () => {
       await screen.findByText("You are #2 on the waitlist. The administrator will notify you if a spot opens.")
     ).toBeInTheDocument();
   });
+
+  it("allows admin to promote member from waitlist", async () => {
+    const user = userEvent.setup();
+    const { apiMock } = renderPage(tripData, true);
+    await screen.findByText("December Camping");
+
+    const promoteButton = screen.getByRole("button", { name: "Promote" });
+    expect(promoteButton).toBeInTheDocument();
+
+    await user.click(promoteButton);
+
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith("admin_promote_from_waitlist", {
+        tripId: "trip-1",
+        memberId: "m4",
+        reason: "Administrator promoted from waitlist",
+      });
+    });
+  });
+
+  it("displays error message when promote from waitlist fails", async () => {
+    const user = userEvent.setup();
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "admin_promote_from_waitlist") return Promise.reject(new Error("Capacity reached"));
+      return Promise.resolve({});
+    });
+    renderPage(tripData, true, apiMock);
+    await screen.findByText("December Camping");
+
+    const promoteButton = screen.getByRole("button", { name: "Promote" });
+    await user.click(promoteButton);
+
+    expect(
+      await screen.findByText("Could not promote member. The trip may be at capacity.")
+    ).toBeInTheDocument();
+  });
 });
 
