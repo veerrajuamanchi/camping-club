@@ -1,40 +1,27 @@
-import { useState } from "react";
-import { supabase, invokeMemberApi } from "../../lib/supabase";
 import { MemberProfileForm, type MemberProfileInput } from "../members/MemberProfileForm";
+import { invokeMemberApi } from "../../lib/supabase";
 
-export function AcceptInvitation({ onComplete, passwordAlreadySet = false }: { onComplete: () => Promise<void>; passwordAlreadySet?: boolean }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  async function complete(input: MemberProfileInput) {
-    if (!supabase) throw new Error("Supabase is not configured.");
-    if (!passwordAlreadySet && password.length < 8) {
-      setError("Choose a password with at least 8 characters.");
-      throw new Error("A password is required");
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      if (!passwordAlreadySet) {
-        const { error: passwordError } = await supabase.auth.updateUser({ password });
-        if (passwordError) throw passwordError;
-      }
-      await invokeMemberApi("complete_profile", input);
-      await onComplete();
-    } catch {
-      setError("We could not complete the invitation. Reopen the invitation email or contact an administrator.");
-      throw new Error("Invitation completion failed");
-    } finally { setBusy(false); }
+type AcceptInvitationProps = {
+  onComplete: () => void | Promise<void>;
+};
+
+export function AcceptInvitation({ onComplete }: AcceptInvitationProps) {
+  async function completeProfile(input: MemberProfileInput) {
+    await invokeMemberApi("complete_profile", input);
+    await onComplete();
   }
 
-  if (!supabase) return <p>Supabase is not configured.</p>;
-  return <section className="stack">
-    <div className="card">
-      <h1>Accept club invitation</h1>
-      <p>Your verified email invitation authorizes a single profile setup.</p>
-      {passwordAlreadySet ? <p>Your password is set. Complete your profile to finish the invitation.</p> : <label>Create password<input type="password" autoComplete="new-password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} /></label>}
-      {error && <p role="alert">{error}</p>}
-    </div>
-    <MemberProfileForm mode="complete" onSave={complete} busy={busy} />
-  </section>;
+  return (
+    <section className="card auth-card" aria-labelledby="invitation-heading">
+      <h1 id="invitation-heading">Complete your profile</h1>
+      <p>Welcome to the Camping Club. Fill in your details to finish setting up your account.</p>
+      <MemberProfileForm
+        mode="complete"
+        initialDisplayName=""
+        initialPhone=""
+        initialMethod="venmo"
+        onSave={completeProfile}
+      />
+    </section>
+  );
 }
