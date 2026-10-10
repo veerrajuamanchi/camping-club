@@ -41,6 +41,8 @@ const inputSchemas = {
   admin_configure_trip: z.object({
     tripId: uuid, startsOn: date, endsOn: date, deadlineDate: date.nullable(), deadlineTime: time.nullable(),
     minimumParticipants: z.number().int().min(1).max(100), maxCapacity: z.number().int().min(1).max(100).nullable(),
+    cabinCount: z.number().int().min(1).max(50).nullable().optional(),
+    perCabinCapacity: z.number().int().min(1).max(50).optional(),
     selectedCampsiteId: uuid, cabinBookingStatus: z.enum(["booked", "no_vacancy", "sites_available"]),
     additionalInformation: z.string().max(4000), expectedVersion: z.number().int().positive(), reason,
   }).strict(),
@@ -641,6 +643,15 @@ Deno.serve(async (request) => {
   const { data, error } = await service.rpc(rpcName, rpcArgs as never);
   if (error) {
     return errorResponse(request, databaseStatus(error.code), databaseStatus(error.code) === 500 ? "operation_failed" : "operation_rejected", requestId);
+  }
+  if (action === "admin_configure_trip" && (typeof input.cabinCount !== "undefined" || typeof input.perCabinCapacity !== "undefined")) {
+    const { error: updateError } = await service.from("camping_trips").update({
+      ...(typeof input.cabinCount !== "undefined" && { cabin_count: input.cabinCount }),
+      ...(typeof input.perCabinCapacity !== "undefined" && { per_cabin_capacity: input.perCabinCapacity }),
+    }).eq("id", input.tripId);
+    if (updateError) {
+      return errorResponse(request, databaseStatus(updateError.code), "operation_failed", requestId);
+    }
   }
   try {
     await finish(authUser.id, action, aggregate, key, input, resultId(data));

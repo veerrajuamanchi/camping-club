@@ -110,6 +110,27 @@ describe("TripCalendarPage", () => {
     expect(await screen.findByText("Poll configuration saved.")).toBeInTheDocument();
   });
 
+  it("submits cabinCount and perCabinCapacity in poll configuration", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async () => calendar);
+    render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
+    await screen.findByText("Monthly interest polls");
+
+    const cabinCountInput = screen.getByLabelText("Cabin count");
+    const perCabinInput = screen.getByLabelText("Per-cabin capacity (default 6)");
+
+    expect(cabinCountInput).toHaveValue(null);
+    expect(perCabinInput).toHaveValue(6);
+
+    fireEvent.change(cabinCountInput, { target: { value: "3" } });
+    fireEvent.change(perCabinInput, { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save poll details" }));
+
+    await waitFor(() => expect(api).toHaveBeenCalledWith("admin_configure_trip", expect.objectContaining({
+      tripId: "trip-1", cabinCount: 3, perCabinCapacity: 8,
+    })));
+  });
+
   it("shows ambiguous legacy availability to admins without guessing a booking status", async () => {
     const calendar = makeCalendar();
     calendar.trips[0].cabinBookingStatus = null;
