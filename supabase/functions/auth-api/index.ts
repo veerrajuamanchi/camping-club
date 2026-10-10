@@ -56,10 +56,10 @@ Deno.serve(async (request) => {
       return json(request, 429, { error: "too_many_requests", requestId });
     }
 
-    // Check if already an approved member (via admin_invitation_events or approved access_request)
+    // Check if already an approved member (via admin_invitation_events, approved access_request, or existing active account)
     const { data: isApproved, error: approvedError } = await service.rpc(
       "auth_api_is_approved_member",
-      { p_email_hmac: digest }
+      { p_email_hmac: digest, p_email: input.email }
     );
     if (approvedError) {
       return json(request, 500, { error: "lookup_failed", requestId });

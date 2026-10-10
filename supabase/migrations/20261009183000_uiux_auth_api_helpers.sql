@@ -16,13 +16,13 @@ $$;
 REVOKE ALL ON FUNCTION public.auth_api_check_rate_limit(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.auth_api_check_rate_limit(text) TO service_role;
 
--- Check if email is an approved member (invitation event OR approved access request)
-CREATE OR REPLACE FUNCTION public.auth_api_is_approved_member(p_email_hmac text)
+-- Check if email is an approved member (invitation event, approved access request, or existing active account)
+CREATE OR REPLACE FUNCTION public.auth_api_is_approved_member(p_email_hmac text, p_email text DEFAULT NULL)
 RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = private, public, pg_temp
+SET search_path = private, public, auth, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM private.admin_invitation_events
@@ -32,10 +32,14 @@ AS $$
     UNION ALL
     SELECT 1 FROM private.access_requests
     WHERE email_hmac = p_email_hmac AND status = 'approved'
+    UNION ALL
+    SELECT 1 FROM auth.users u
+    JOIN public.member_profiles mp ON mp.auth_user_id = u.id
+    WHERE (p_email IS NOT NULL AND lower(u.email) = lower(p_email) AND mp.account_status = 'active')
   );
 $$;
-REVOKE ALL ON FUNCTION public.auth_api_is_approved_member(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.auth_api_is_approved_member(text) TO service_role;
+REVOKE ALL ON FUNCTION public.auth_api_is_approved_member(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.auth_api_is_approved_member(text, text) TO service_role;
 
 -- Check if a pending access request exists for this email
 CREATE OR REPLACE FUNCTION public.auth_api_has_pending_request(p_email_hmac text)
