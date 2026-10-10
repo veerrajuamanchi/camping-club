@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { invokeMemberApi } from "../../lib/supabase";
 
 type MemberRow = { member_id: string; display_name: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended"; created_at: string };
-type AccessRequest = { id: string; display_name: string; created_at: string };
+type AccessRequest = { id: string; display_name: string; email?: string | null; created_at: string };
 
 export function AccessRequestsSection() {
   const [requests, setRequests] = useState<AccessRequest[]>([]);
@@ -24,7 +24,7 @@ export function AccessRequestsSection() {
         { requestId: id }
       );
       setRequests((prev) => prev.filter((r) => r.id !== id));
-      setMessage(action === "approve" ? "Request approved." : "Request rejected.");
+      setMessage(action === "approve" ? "Request approved and invitation email sent." : "Request rejected.");
     } catch {
       setMessage("Could not process request. Try again.");
     } finally {
@@ -42,7 +42,10 @@ export function AccessRequestsSection() {
       <ul className="admin-participant-list">
         {requests.map((r) => (
           <li key={r.id}>
-            <span><strong>{r.display_name}</strong> · {new Date(r.created_at).toLocaleDateString()}</span>
+            <span>
+              <strong>{r.display_name}</strong>
+              {r.email ? ` (${r.email})` : ""} · {new Date(r.created_at).toLocaleDateString()}
+            </span>
             <div>
               <button type="button" disabled={busy} onClick={() => void resolve(r.id, "approve")}>Approve</button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => void resolve(r.id, "reject")}>Reject</button>

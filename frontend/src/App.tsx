@@ -6,6 +6,8 @@ import { AcceptInvitation } from "./features/auth/AcceptInvitation";
 import { SignInPage } from "./features/auth/SignInPage";
 import { AdminMembersPage } from "./features/admin/AdminMembersPage";
 import { AdminCampsitesPage } from "./features/admin/AdminCampsitesPage";
+import { AdminScheduleDefaultsPage } from "./features/admin/AdminScheduleDefaultsPage";
+import { AdminConstitutionPage } from "./features/admin/AdminConstitutionPage";
 import { MemberProfileForm, type MemberProfileInput } from "./features/members/MemberProfileForm";
 import { TripCalendarPage } from "./features/trips/TripCalendarPage";
 import { EventDetailsPage } from "./features/trips/EventDetailsPage";
@@ -97,6 +99,8 @@ function AppRoutes() {
                     <hr />
                     <Link to="/admin/campsites">🏕️ Campsite Directory</Link>
                     <Link to="/admin/members">👥 Members & Access</Link>
+                    <Link to="/admin/schedule-defaults">⚙️ Club Schedule Defaults</Link>
+                    <Link to="/admin/constitution">📜 Camping Constitution</Link>
                   </>
                 )}
                 <hr />
@@ -161,6 +165,22 @@ function AppRoutes() {
             element={
               <AccessBoundary state={membership} requiredRole="admin">
                 <AdminCampsitesPage />
+              </AccessBoundary>
+            }
+          />
+          <Route
+            path="/admin/schedule-defaults"
+            element={
+              <AccessBoundary state={membership} requiredRole="admin">
+                <AdminScheduleDefaultsPage />
+              </AccessBoundary>
+            }
+          />
+          <Route
+            path="/admin/constitution"
+            element={
+              <AccessBoundary state={membership} requiredRole="admin">
+                <AdminConstitutionPage />
               </AccessBoundary>
             }
           />

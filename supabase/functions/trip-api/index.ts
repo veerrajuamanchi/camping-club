@@ -456,6 +456,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       ? { position: ownWaitlistEntry.position, status: ownWaitlistEntry.status }
       : undefined,
     cabinBookingStatus: trip.cabin_booking_status,
+    selectedCampsiteId: trip.selected_campsite_id,
     additionalInformation: trip.additional_information,
     version: trip.version,
     campsite: campsite ? {
@@ -465,12 +466,18 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       availabilityUrl: campsite.availability_url,
       directions: campsite.directions,
       cabinCapacity: campsite.cabin_capacity,
+      cabinTypes: campsite.cabin_types,
       reservationInstructions: campsite.reservation_instructions,
+      estimatedRateCents: campsite.estimated_rate_cents,
+      availabilityStatus: campsite.availability_status,
+      availabilitySourceUrl: campsite.availability_source_url,
+      adminNotes: campsite.admin_notes ?? "",
       imageUrl: campsite.image_url,
       campHostName: campsite.camp_host_name,
       campHostPhone: campsite.camp_host_phone,
       campFeatures: campsite.camp_features ?? [],
       cabinInformation: campsite.cabin_information,
+      version: campsite.version,
     } : null,
     currentRuleBundle: bundleResult.data ? {
       id: bundleResult.data.id,

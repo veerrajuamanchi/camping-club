@@ -90,7 +90,7 @@ Deno.serve(async (request) => {
     // Create new access request
     const { data: newId, error: createError } = await service.rpc(
       "auth_api_create_access_request",
-      { p_email_hmac: digest, p_hmac_key_version: keyVersion, p_display_name: input.name }
+      { p_email_hmac: digest, p_hmac_key_version: keyVersion, p_display_name: input.name, p_email: input.email }
     );
     if (createError?.message?.includes("duplicate_access_request")) {
       return json(request, 200, { status: "duplicate_request", requestId });

@@ -8,7 +8,10 @@ type TripDetails = {
   pollStatus: "draft" | "open" | "closed";
   startsOn: string | null;
   endsOn: string | null;
+  pollDeadlineAt?: string | null;
   minimumParticipants?: number;
+  selectedCampsiteId?: string;
+  cabinBookingStatus?: "booked" | "no_vacancy" | "sites_available" | null;
   additionalInformation: string;
   comingCount: number;
   effectiveCapacity: number | null;
@@ -22,6 +25,10 @@ type TripDetails = {
     name: string;
     locationDescription: string;
     availabilityUrl: string | null;
+    availabilityStatus?: string;
+    availabilitySourceUrl?: string | null;
+    estimatedRateCents?: number | null;
+    cabinTypes?: string[];
     directions: string | null;
     cabinCapacity: number | null;
     reservationInstructions: string | null;
@@ -30,6 +37,8 @@ type TripDetails = {
     campHostPhone?: string | null;
     campFeatures?: string[];
     cabinInformation?: string | null;
+    adminNotes?: string;
+    version?: number;
   };
   perCabinCapacity: number;
   cabinCount: number | null;
@@ -71,6 +80,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
   const [waitlistedPosition, setWaitlistedPosition] = useState<number | null>(null);
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
   const [adminRosterMsg, setAdminRosterMsg] = useState<string | null>(null);
+  const [showEditLogistics, setShowEditLogistics] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
@@ -531,23 +541,41 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
 
       {tab === "logistics" && (
         <div className="card">
-          <h2>Logistics</h2>
-          {details.additionalInformation ? (
-            <p>{details.additionalInformation}</p>
-          ) : (
-            <p>Logistics details will be added by the administrator.</p>
-          )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+            <h2 style={{ margin: 0 }}>Logistics &amp; Packing</h2>
+            {isAdmin && (
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ fontSize: "0.85rem", padding: "0.3rem 0.75rem" }}
+                onClick={() => setShowEditLogistics(true)}
+              >
+                ✏️ Edit Logistics &amp; Packing
+              </button>
+            )}
+          </div>
+
+          <div style={{ marginBottom: "1.25rem" }}>
+            <h3>Trip Notes &amp; Packing Recommendations</h3>
+            {details.additionalInformation ? (
+              <p style={{ whiteSpace: "pre-wrap" }}>{details.additionalInformation}</p>
+            ) : (
+              <p style={{ color: "#6b7280" }}>No notes or packing checklist added yet.</p>
+            )}
+          </div>
+
           {details.campsite?.reservationInstructions && (
-            <>
-              <h3>Reservation instructions</h3>
-              <p>{details.campsite.reservationInstructions}</p>
-            </>
+            <div style={{ marginBottom: "1.25rem" }}>
+              <h3>Reservation &amp; Check-In Instructions</h3>
+              <p style={{ whiteSpace: "pre-wrap" }}>{details.campsite.reservationInstructions}</p>
+            </div>
           )}
+
           {details.campsite?.directions && (
-            <>
-              <h3>Directions</h3>
-              <p>{details.campsite.directions}</p>
-            </>
+            <div style={{ marginBottom: "1.25rem" }}>
+              <h3>Driving &amp; Travel Directions</h3>
+              <p style={{ whiteSpace: "pre-wrap" }}>{details.campsite.directions}</p>
+            </div>
           )}
         </div>
       )}
@@ -561,7 +589,135 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
           </p>
         </div>
       )}
+
+      {showEditLogistics && details && (
+        <EditLogisticsModal
+          details={details}
+          api={api}
+          onClose={() => setShowEditLogistics(false)}
+          onRefresh={refresh}
+        />
+      )}
     </section>
+  );
+}
+
+function EditLogisticsModal({
+  details,
+  api,
+  onClose,
+  onRefresh,
+}: {
+  details: TripDetails;
+  api: TripApiType;
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const [information, setInformation] = useState(details.additionalInformation ?? "");
+  const [directions, setDirections] = useState(details.campsite?.directions ?? "");
+  const [instructions, setInstructions] = useState(details.campsite?.reservationInstructions ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api("admin_configure_trip", {
+        tripId: details.tripId,
+        startsOn: details.startsOn ?? "",
+        endsOn: details.endsOn ?? "",
+        deadlineDate: details.pollDeadlineAt ? details.pollDeadlineAt.slice(0, 10) : null,
+        deadlineTime: details.pollDeadlineAt ? details.pollDeadlineAt.slice(11, 16) : null,
+        minimumParticipants: details.minimumParticipants ?? 4,
+        maxCapacity: details.maxCapacity ?? null,
+        cabinCount: details.cabinCount ?? null,
+        perCabinCapacity: details.perCabinCapacity ?? 6,
+        selectedCampsiteId: details.selectedCampsiteId || details.campsite?.campsiteId || "",
+        cabinBookingStatus: details.cabinBookingStatus ?? "booked",
+        additionalInformation: information,
+        expectedVersion: details.version,
+        reason: "Administrator updated trip logistics & packing notes",
+      });
+
+      if (
+        details.campsite &&
+        (directions !== (details.campsite.directions ?? "") ||
+          instructions !== (details.campsite.reservationInstructions ?? ""))
+      ) {
+        await api("admin_update_campsite", {
+          campsiteId: details.campsite.campsiteId,
+          expectedVersion: details.campsite.version ?? 1,
+          name: details.campsite.name,
+          locationDescription: details.campsite.locationDescription,
+          directions: directions || null,
+          reservationInstructions: instructions || null,
+          cabinCapacity: details.campsite.cabinCapacity,
+          cabinTypes: details.campsite.cabinTypes ?? ["cabin"],
+          estimatedRateCents: details.campsite.estimatedRateCents ?? null,
+          availabilityStatus: details.campsite.availabilityStatus ?? "unknown",
+          availabilityUrl: details.campsite.availabilityUrl ?? null,
+          availabilitySourceUrl: details.campsite.availabilitySourceUrl ?? null,
+          availabilityVerifiedAt: null,
+          adminNotes: details.campsite.adminNotes ?? "",
+          reason: "Administrator updated directions and instructions from Logistics tab",
+        });
+      }
+
+      await onRefresh();
+      onClose();
+    } catch {
+      setMsg("Could not save logistics details. Please check all inputs.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>Edit Logistics &amp; Packing</h2>
+        <form className="admin-form" onSubmit={handleSave}>
+          <label>
+            Trip Packing &amp; Logistics Notes
+            <textarea
+              rows={5}
+              placeholder="Packing checklist, equipment items, meeting point, food planning notes..."
+              value={information}
+              onChange={(e) => setInformation(e.target.value)}
+            />
+          </label>
+          {details.campsite && (
+            <>
+              <label>
+                Driving Directions
+                <textarea
+                  rows={3}
+                  placeholder="Directions, highway exits, parking instructions..."
+                  value={directions}
+                  onChange={(e) => setDirections(e.target.value)}
+                />
+              </label>
+              <label>
+                Campsite Reservation &amp; Check-In Instructions
+                <textarea
+                  rows={3}
+                  placeholder="Check-in procedures, gate access code, cabin numbers..."
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                />
+              </label>
+            </>
+          )}
+          {msg && <p role="alert" className="form-error">{msg}</p>}
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+            <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save Logistics & Packing"}</button>
+            <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

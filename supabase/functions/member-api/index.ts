@@ -106,7 +106,7 @@ Deno.serve(async (request) => {
     try { parsedAccessInput = accessRequestActionSchema.parse(body.input); }
     catch { return json(request, 400, { error: "invalid_request", requestId }); }
     const newStatus = action === "approve_access_request" ? "approved" : "rejected";
-    const { error } = await service.rpc("member_api_resolve_access_request", {
+    const { data: approvedEmail, error } = await service.rpc("member_api_resolve_access_request", {
       p_request_id: parsedAccessInput.requestId,
       p_actor_id: member.member_id,
       p_status: newStatus,
@@ -116,7 +116,16 @@ Deno.serve(async (request) => {
     if (error?.message?.includes("request_already_resolved")) return json(request, 409, { error: "request_already_resolved", requestId });
     if (error?.message?.includes("request_not_found")) return json(request, 404, { error: "request_not_found", requestId });
     if (error) return json(request, 500, { error: "request_failed", requestId });
-    return json(request, 200, { resolved: true, requestId });
+
+    if (action === "approve_access_request" && approvedEmail) {
+      try {
+        const redirectTo = `${requiredEnv("WEB_APP_URL").replace(/\/$/, "")}/accept-invitation`;
+        await service.auth.admin.inviteUserByEmail(approvedEmail as string, { redirectTo });
+      } catch (inviteErr) {
+        console.warn("Automated invitation warning (user may already exist):", inviteErr);
+      }
+    }
+    return json(request, 200, { resolved: true, email: approvedEmail, requestId });
   }
 
   let parsedInput: unknown;

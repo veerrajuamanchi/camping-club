@@ -73,7 +73,7 @@ describe("AdminMembersPage - Access Requests", () => {
       expect(mockInvokeMemberApi).toHaveBeenCalledWith("approve_access_request", { requestId: "req-1" });
     });
 
-    expect(await screen.findByText("Request approved.")).toBeInTheDocument();
+    expect(await screen.findByText("Request approved and invitation email sent.")).toBeInTheDocument();
     expect(screen.queryByText("New User")).not.toBeInTheDocument();
     expect(screen.getByText("No pending requests.")).toBeInTheDocument();
   });
