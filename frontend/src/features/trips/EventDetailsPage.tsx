@@ -14,7 +14,7 @@ type TripDetails = {
   spotsRemaining: number | null;
   waitlistCount: number;
   myWaitlistPosition: number | null;
-  myRsvp: null | { response: "coming" | "not_coming"; version: number; acknowledgmentId: string | null; updatedAt: string };
+  myRsvp: null | { response: "coming" | "not_coming"; version: number; acknowledgmentId: string | null; updatedAt: string; acceptedRuleBundle?: { version: number } | null };
   currentRuleBundle: null | { id: string; version: number; contentHash: string; rules: Array<{ stable_key: string; text: string; category?: string; structured_values: Record<string, unknown> }>; createdAt: string };
   campsite: null | { campsiteId: string; name: string; locationDescription: string; availabilityUrl: string | null; directions: string | null; cabinCapacity: number | null; reservationInstructions: string | null };
   perCabinCapacity: number;
@@ -296,7 +296,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
                     )
                 )}
                 {details.myRsvp?.response === "coming" && details.myRsvp.acknowledgmentId && (
-                  <p className="eyebrow">You acknowledged version {details.currentRuleBundle.version}.</p>
+                  <p className="eyebrow">You acknowledged version {details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version}.</p>
                 )}
               </>
             )}
