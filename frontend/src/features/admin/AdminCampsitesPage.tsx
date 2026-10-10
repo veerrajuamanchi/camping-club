@@ -106,21 +106,31 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
     setMessage(null);
     try {
       const featuresArray = campFeatures
-        .split(",")
+        .split(/[\n,]+/)
         .map((f) => f.trim())
         .filter(Boolean);
+
+      let cleanImageUrl = imageUrl.trim();
+      if (cleanImageUrl && !/^https?:\/\//i.test(cleanImageUrl)) {
+        cleanImageUrl = `https://${cleanImageUrl}`;
+      }
+
+      let cleanAvailabilityUrl = availabilityUrl.trim();
+      if (cleanAvailabilityUrl && !/^https?:\/\//i.test(cleanAvailabilityUrl)) {
+        cleanAvailabilityUrl = `https://${cleanAvailabilityUrl}`;
+      }
 
       if (isCreating) {
         await api("admin_create_campsite", {
           name: name.trim(),
           locationDescription: address.trim(),
-          imageUrl: imageUrl.trim() || null,
+          imageUrl: cleanImageUrl || null,
           campHostName: campHostName.trim() || null,
           campHostPhone: campHostPhone.trim() || null,
           campFeatures: featuresArray,
           cabinInformation: cabinInfo.trim() || null,
           directions: directions.trim() || null,
-          availabilityUrl: availabilityUrl.trim() || null,
+          availabilityUrl: cleanAvailabilityUrl || null,
           reason: "Administrator added new campsite",
         });
         setMessage("Campsite created successfully!");
@@ -130,19 +140,19 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
           expectedVersion: editingSite.version,
           name: name.trim(),
           locationDescription: address.trim(),
-          imageUrl: imageUrl.trim() || null,
+          imageUrl: cleanImageUrl || null,
           campHostName: campHostName.trim() || null,
           campHostPhone: campHostPhone.trim() || null,
           campFeatures: featuresArray,
           cabinInformation: cabinInfo.trim() || null,
           directions: directions.trim() || null,
-          availabilityUrl: availabilityUrl.trim() || null,
+          availabilityUrl: cleanAvailabilityUrl || null,
           cabinCapacity: editingSite.cabinCapacity,
           cabinTypes: editingSite.cabinTypes,
           reservationInstructions: editingSite.reservationInstructions,
           estimatedRateCents: editingSite.estimatedRateCents,
           availabilityStatus: editingSite.availabilityStatus,
-          availabilitySourceUrl: editingSite.availabilitySourceUrl,
+          availabilitySourceUrl: editingSite.availabilitySourceUrl || null,
           availabilityVerifiedAt: null,
           adminNotes: editingSite.adminNotes ?? "",
           reason: "Administrator updated campsite",
@@ -235,10 +245,11 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
 
               <label>
                 Camp Features (comma-separated)
-                <input
+                <textarea
                   value={campFeatures}
                   onChange={(e) => setCampFeatures(e.target.value)}
                   placeholder="Fire pits, Showers, River access, Electric hookup"
+                  rows={3}
                 />
               </label>
 
@@ -247,8 +258,8 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
                 <textarea
                   value={cabinInfo}
                   onChange={(e) => setCabinInfo(e.target.value)}
-                  placeholder="e.g. 2 Rustic A-frames, 6 bunk beds each, heating included"
-                  rows={2}
+                  placeholder="e.g. Eight units sleep 6 people each. Full kitchen, heating..."
+                  rows={6}
                 />
               </label>
 

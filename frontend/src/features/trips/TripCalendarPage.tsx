@@ -10,7 +10,10 @@ type Campsite = {
   campsiteId: string; rotationPosition: number; name: string; availabilityUrl: string | null; locationDescription: string;
   directions: string | null; cabinCapacity: number | null; cabinTypes: string[]; reservationInstructions: string | null;
   estimatedRateCents: number | null; availabilityStatus: string; availabilitySourceUrl: string | null;
-  availabilityVerifiedAt: string | null; adminNotes?: string; version: number;
+  availabilityVerifiedAt: string | null; adminNotes?: string;
+  imageUrl?: string | null; campHostName?: string | null; campHostPhone?: string | null;
+  campFeatures?: string[]; cabinInformation?: string | null;
+  version: number;
 };
 export type Trip = {
   tripId: string; monthKey: string; rotationPosition: number; suggestedCampsiteId: string; selectedCampsiteId: string;
