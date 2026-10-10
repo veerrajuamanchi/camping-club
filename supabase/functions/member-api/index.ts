@@ -7,8 +7,12 @@ import { corsHeaders, emailSchema, isOriginAllowed, json, profileSchema, readBod
 const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 const inviteSchema = z.object({ email: emailSchema });
 const membershipSchema = z.object({ memberId: z.string().uuid(), memberRole: z.enum(["member", "admin"]), accountStatus: z.enum(["active", "inactive", "suspended"]), reason: z.string().trim().min(1).max(500) });
+const accessRequestActionSchema = z.object({
+  requestId: z.string().uuid(),
+  adminNote: z.string().max(500).optional(),
+});
 const requestSchema = z.object({
-  action: z.enum(["me", "complete_profile", "update_profile", "invite_member", "list_members", "update_membership"]),
+  action: z.enum(["me", "complete_profile", "update_profile", "invite_member", "list_members", "update_membership", "list_access_requests", "approve_access_request", "reject_access_request"]),
   input: z.unknown().optional(),
 });
 
@@ -87,6 +91,32 @@ Deno.serve(async (request) => {
     const { data, error } = await service.from("member_profiles").select("member_id,display_name,member_role,account_status,created_at").order("display_name");
     if (error) return json(request, 500, { error: "member_list_failed", requestId });
     return json(request, 200, { members: data, requestId });
+  }
+  if (action === "list_access_requests") {
+    if (!member || member.member_role !== "admin" || member.account_status !== "active")
+      return json(request, 403, { error: "administrator_required", requestId });
+    const { data, error } = await service.rpc("member_api_list_pending_requests");
+    if (error) return json(request, 500, { error: "request_list_failed", requestId });
+    return json(request, 200, { requests: data, requestId });
+  }
+  if (action === "approve_access_request" || action === "reject_access_request") {
+    if (!member || member.member_role !== "admin" || member.account_status !== "active")
+      return json(request, 403, { error: "administrator_required", requestId });
+    let parsedAccessInput: z.infer<typeof accessRequestActionSchema>;
+    try { parsedAccessInput = accessRequestActionSchema.parse(body.input); }
+    catch { return json(request, 400, { error: "invalid_request", requestId }); }
+    const newStatus = action === "approve_access_request" ? "approved" : "rejected";
+    const { error } = await service.rpc("member_api_resolve_access_request", {
+      p_request_id: parsedAccessInput.requestId,
+      p_actor_id: member.member_id,
+      p_status: newStatus,
+      p_admin_note: parsedAccessInput.adminNote ?? null,
+    });
+    if (error?.code === "42501") return json(request, 403, { error: "administrator_required", requestId });
+    if (error?.message?.includes("request_already_resolved")) return json(request, 409, { error: "request_already_resolved", requestId });
+    if (error?.message?.includes("request_not_found")) return json(request, 404, { error: "request_not_found", requestId });
+    if (error) return json(request, 500, { error: "request_failed", requestId });
+    return json(request, 200, { resolved: true, requestId });
   }
 
   let parsedInput: unknown;
