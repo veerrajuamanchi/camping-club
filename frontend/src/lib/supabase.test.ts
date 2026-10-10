@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AuthApiError, invokeAuthApi, responseErrorCode, supabase } from "./supabase";
+import { AuthApiError, TripApiError, invokeAuthApi, invokeTripApi, responseErrorCode, supabase } from "./supabase";
 
 describe("responseErrorCode", () => {
   it("reads the string error shape returned by member-api", async () => {
@@ -97,3 +97,82 @@ describe("invokeAuthApi", () => {
       });
   });
 });
+
+describe("invokeTripApi", () => {
+  it("invokes trip-api for get_trip_details with tripId and returns trip details", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const mockTripDetails = {
+      tripId: "11111111-1111-4111-8111-111111111111",
+      monthKey: "2026-12",
+      pollStatus: "open",
+      comingCount: 2,
+      participantEntries: [{ memberId: "m1", displayName: "Alice", response: "coming" }],
+      waitlistEntries: [],
+    };
+    const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValueOnce({
+      data: { data: mockTripDetails },
+      error: null,
+      response: new Response(JSON.stringify({ data: mockTripDetails }), { status: 200 }),
+    });
+
+    const result = await invokeTripApi<typeof mockTripDetails>("get_trip_details", {
+      tripId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(invokeSpy).toHaveBeenCalledWith("trip-api", {
+      body: {
+        action: "get_trip_details",
+        input: { tripId: "11111111-1111-4111-8111-111111111111" },
+      },
+      headers: undefined,
+    });
+    expect(result).toEqual(mockTripDetails);
+  });
+
+  it("handles non-existent trip ID throwing TripApiError with 404 trip_not_found", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const notFoundResponse = new Response(
+      JSON.stringify({ error: { code: "trip_not_found" } }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
+    vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValueOnce({
+      data: null,
+      error: new Error("Not Found"),
+      response: notFoundResponse,
+    });
+
+    try {
+      await invokeTripApi("get_trip_details", { tripId: "99999999-9999-4999-8999-999999999999" });
+      expect.unreachable("should have thrown TripApiError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(TripApiError);
+      const tripErr = err as TripApiError;
+      expect(tripErr.code).toBe("trip_not_found");
+      expect(tripErr.status).toBe(404);
+    }
+  });
+
+  it("handles unexpected errors throwing TripApiError with 500 trip_details_read_failed", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const serverErrorResponse = new Response(
+      JSON.stringify({ error: { code: "trip_details_read_failed" } }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+    vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValueOnce({
+      data: null,
+      error: new Error("Internal Server Error"),
+      response: serverErrorResponse,
+    });
+
+    try {
+      await invokeTripApi("get_trip_details", { tripId: "11111111-1111-4111-8111-111111111111" });
+      expect.unreachable("should have thrown TripApiError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(TripApiError);
+      const tripErr = err as TripApiError;
+      expect(tripErr.code).toBe("trip_details_read_failed");
+      expect(tripErr.status).toBe(500);
+    }
+  });
+});
+

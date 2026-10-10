@@ -11,7 +11,7 @@ const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/);
 const structuredValues = z.record(z.string(), z.unknown());
 const reason = z.string().trim().min(1).max(500);
 const actionNames = [
-  "get_calendar", "get_constitution", "admin_configure_club", "admin_generate_calendar",
+  "get_calendar", "get_constitution", "get_trip_details", "admin_configure_club", "admin_generate_calendar",
   "admin_reorder_campsites", "admin_update_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
 ] as const;
@@ -20,6 +20,7 @@ const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown()
 const inputSchemas = {
   get_calendar: z.object({}).strict(),
   get_constitution: z.object({ tripId: uuid.optional() }).strict(),
+  get_trip_details: z.object({ tripId: uuid }).strict(),
   admin_configure_club: z.object({
     timezone: z.string().trim().min(1).max(100), leadDays: z.number().int().min(1).max(120), closeTime: time.nullable(),
     defaultMinimumParticipants: z.number().int().min(1).max(100), nextRotationPosition: z.number().int().min(1), expectedVersion: z.number().int().positive(),
@@ -277,6 +278,164 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   };
 }
 
+async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
+  const tripResult = await service.from("camping_trips")
+    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,version")
+    .eq("id", tripId)
+    .maybeSingle();
+  if (tripResult.error && tripResult.error.code !== "PGRST116") {
+    checkError(tripResult.error);
+  }
+  if (!tripResult.data) {
+    throw Object.assign(new Error("trip not found"), { code: "22023", status: 404 });
+  }
+  const trip = tripResult.data;
+
+  if (trip.poll_status === "open") {
+    const { error: refreshError } = await service.rpc("phase2_refresh_open_rule_bundles", {
+      p_actor_id: member.member_id,
+      p_trip_ids: [tripId],
+    });
+    checkError(refreshError);
+  }
+
+  const [campsiteResult, bundleResult, rsvpResult, waitlistResult] = await Promise.all([
+    trip.selected_campsite_id
+      ? service.from("campsites")
+          .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,version")
+          .eq("id", trip.selected_campsite_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    service.from("trip_rule_bundles")
+      .select("id,trip_id,version_no,content_hash,rendered_bundle,created_at")
+      .eq("trip_id", tripId)
+      .eq("is_current", true)
+      .maybeSingle(),
+    service.from("trip_rsvps")
+      .select("trip_id,member_id,response,rule_acknowledgment_id,version,updated_at")
+      .eq("trip_id", tripId),
+    service.from("trip_waitlist_entries")
+      .select("id,member_id,position,status,created_at")
+      .eq("trip_id", tripId)
+      .eq("status", "waiting")
+      .order("position"),
+  ]);
+  checkError(campsiteResult.error);
+  checkError(bundleResult.error);
+  checkError(rsvpResult.error);
+  checkError(waitlistResult.error);
+
+  const campsite = campsiteResult.data;
+  const rsvps = rsvpResult.data ?? [];
+  const waitlist = waitlistResult.data ?? [];
+  const memberIds = [...new Set([...rsvps.map((r) => r.member_id), ...waitlist.map((w) => w.member_id)])];
+  const { data: memberRows, error: memberRowsError } = memberIds.length
+    ? await service.from("member_profiles").select("member_id,display_name").in("member_id", memberIds)
+    : { data: [], error: null };
+  checkError(memberRowsError);
+  const nameMap = new Map((memberRows ?? []).map((m) => [m.member_id, m.display_name]));
+
+  const ownRsvp = rsvps.find((r) => r.member_id === member.member_id);
+  const comingCount = rsvps.filter((r) => r.response === "coming").length;
+
+  const participantEntries = rsvps
+    .filter((r) => r.response === "coming")
+    .map((r) => ({
+      memberId: r.member_id,
+      displayName: nameMap.get(r.member_id) ?? "Member",
+      response: r.response,
+    }));
+
+  const waitlistEntries = member.member_role === "admin"
+    ? waitlist.map((w) => ({
+        memberId: w.member_id,
+        displayName: nameMap.get(w.member_id) ?? "Member",
+        position: w.position,
+        createdAt: w.created_at,
+      }))
+    : [];
+
+  const ownWaitlistEntry = waitlist.find((w) => w.member_id === member.member_id);
+
+  let acceptedRuleBundle: Record<string, unknown> | null = null;
+  if (ownRsvp?.rule_acknowledgment_id) {
+    const { data: ack, error: ackErr } = await service.from("trip_rule_acknowledgments")
+      .select("id,bundle_id,content_hash")
+      .eq("id", ownRsvp.rule_acknowledgment_id)
+      .maybeSingle();
+    checkError(ackErr);
+    if (ack?.bundle_id) {
+      const { data: b, error: bErr } = await service.from("trip_rule_bundles")
+        .select("id,version_no,content_hash,rendered_bundle,created_at")
+        .eq("id", ack.bundle_id)
+        .maybeSingle();
+      checkError(bErr);
+      if (b) {
+        acceptedRuleBundle = {
+          id: b.id,
+          version: b.version_no,
+          contentHash: b.content_hash,
+          rules: b.rendered_bundle,
+          createdAt: b.created_at,
+        };
+      }
+    }
+  }
+
+  const effectiveCapacity = trip.max_capacity
+    ?? (trip.cabin_count != null ? trip.cabin_count * (trip.per_cabin_capacity ?? 6) : null);
+
+  return {
+    tripId: trip.id,
+    monthKey: String(trip.month_key).slice(0, 7),
+    pollStatus: trip.poll_status,
+    startsOn: trip.starts_on,
+    endsOn: trip.ends_on,
+    clubTimezone: trip.club_timezone_snapshot,
+    pollDeadlineAt: trip.poll_deadline_at,
+    minimumParticipants: trip.minimum_participants,
+    maxCapacity: trip.max_capacity,
+    perCabinCapacity: trip.per_cabin_capacity ?? 6,
+    cabinCount: trip.cabin_count ?? null,
+    effectiveCapacity,
+    spotsRemaining: effectiveCapacity != null ? Math.max(0, effectiveCapacity - comingCount) : null,
+    comingCount,
+    waitlistCount: waitlist.length,
+    myWaitlistPosition: ownWaitlistEntry?.position ?? null,
+    myWaitlistEntry: ownWaitlistEntry
+      ? { position: ownWaitlistEntry.position, status: ownWaitlistEntry.status }
+      : undefined,
+    cabinBookingStatus: trip.cabin_booking_status,
+    additionalInformation: trip.additional_information,
+    version: trip.version,
+    campsite: campsite ? {
+      campsiteId: campsite.id,
+      name: campsite.name,
+      locationDescription: campsite.location_description,
+      availabilityUrl: campsite.availability_url,
+      directions: campsite.directions,
+      cabinCapacity: campsite.cabin_capacity,
+      reservationInstructions: campsite.reservation_instructions,
+    } : null,
+    currentRuleBundle: bundleResult.data ? {
+      id: bundleResult.data.id,
+      version: bundleResult.data.version_no,
+      contentHash: bundleResult.data.content_hash,
+      rules: (bundleResult.data.rendered_bundle as Array<{ stable_key: string; text: string; structured_values: Record<string, unknown> }>),
+      createdAt: bundleResult.data.created_at,
+    } : null,
+    myRsvp: ownRsvp ? {
+      response: ownRsvp.response,
+      acknowledgmentId: ownRsvp.rule_acknowledgment_id,
+      version: ownRsvp.version,
+      updatedAt: ownRsvp.updated_at,
+      acceptedRuleBundle,
+    } : null,
+    participantEntries,
+    waitlistEntries,
+  };
+}
+
 async function getConstitution(member: Member, tripId?: string): Promise<Record<string, unknown>> {
   const definitionQuery = service.from("rule_definitions").select("id,stable_key,category,scope,trip_id,active,created_at").order("stable_key");
   const { data: allDefinitions, error: definitionsError } = await definitionQuery;
@@ -348,6 +507,17 @@ Deno.serve(async (request) => {
       return json(request, 200, { ...(await getConstitution(member, input.tripId as string | undefined)), requestId });
     }
     catch { return errorResponse(request, 500, "constitution_read_failed", requestId); }
+  }
+  if (action === "get_trip_details") {
+    try {
+      return json(request, 200, { ...(await getTripDetails(member, input.tripId as string)), requestId });
+    } catch (error: unknown) {
+      const err = error as { message?: string; code?: string; status?: number } | null;
+      if (err?.message === "trip not found" || err?.code === "22023" || err?.status === 404) {
+        return errorResponse(request, 404, "trip_not_found", requestId);
+      }
+      return errorResponse(request, 500, "trip_details_read_failed", requestId);
+    }
   }
 
   const keyResult = uuid.safeParse(request.headers.get("Idempotency-Key"));
