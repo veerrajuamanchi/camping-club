@@ -186,7 +186,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const acceptedBundlesById = new Map((acceptedBundlesResult.data ?? []).map((bundle) => [bundle.id, bundle]));
   const memberIds = [...new Set(rsvps.map((row) => row.member_id))];
   const memberProfiles = memberIds.length
-    ? await service.from("member_profiles").select("member_id,display_name").in("member_id", memberIds).eq("account_status", "active")
+    ? await service.from("member_profiles").select("member_id,display_name").in("member_id", memberIds).eq("account_status", "active").eq("account_status", "active")
     : { data: [], error: null };
   checkError(memberProfiles.error);
   const memberRows = memberProfiles.data ?? [];
@@ -330,7 +330,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   const waitlist = waitlistResult.data ?? [];
   const memberIds = [...new Set([...rsvps.map((r) => r.member_id), ...waitlist.map((w) => w.member_id)])];
   const { data: memberRows, error: memberRowsError } = memberIds.length
-    ? await service.from("member_profiles").select("member_id,display_name").in("member_id", memberIds)
+    ? await service.from("member_profiles").select("member_id,display_name").in("member_id", memberIds).eq("account_status", "active")
     : { data: [], error: null };
   checkError(memberRowsError);
   const nameMap = new Map((memberRows ?? []).map((m) => [m.member_id, m.display_name]));
