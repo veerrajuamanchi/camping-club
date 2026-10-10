@@ -438,3 +438,61 @@ input, select, textarea {
   font-size: 0.95rem;
 }
 label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color: #374151; }
+
+/* Auth tabs and mode switcher */
+.auth-tab-group {
+  display: flex;
+  background: #f3f4f6;
+  border-radius: 9999px;
+  padding: 0.25rem;
+  margin-bottom: 1.5rem;
+  gap: 0.25rem;
+}
+.auth-tab-btn {
+  flex: 1;
+  background: transparent;
+  color: #4b5563;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  border: none;
+}
+.auth-tab-btn.active {
+  background: white;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.auth-tab-btn:hover:not(.active) {
+  color: #111827;
+}
+.link-button {
+  background: transparent;
+  border: none;
+  color: #1c2d24;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  font-size: 0.88rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.link-button:hover {
+  opacity: 0.8;
+}
+.auth-error-block {
+  margin: 0.5rem 0;
+}
+.auth-error-block p[role="alert"] {
+  color: #b91c1c;
+  margin: 0 0 0.4rem 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.register-suggestion-btn {
+  display: inline-block;
+  color: #1c2d24;
+  font-weight: 700;
+}
+

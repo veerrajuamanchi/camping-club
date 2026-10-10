@@ -16,7 +16,7 @@ function SignInRoute() {
 
   async function checkAccess(name: string, email: string) {
     const result = (await invokeAuthApi("check_access", { name, email })) as { status: string };
-    return result as { status: "approved_member" | "pending_request" | "new_request_created" | "duplicate_request" };
+    return result as { status: "approved_member" | "pending_request" | "new_request_created" | "duplicate_request" | "not_registered" };
   }
 
   async function sendOtp(email: string) {

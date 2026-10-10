@@ -43,11 +43,10 @@ describe("SignInPage", () => {
     const user = userEvent.setup();
     const { checkAccess, sendOtp, verifyOtp } = renderSignIn(async () => ({ status: "profileRequired" }));
 
-    await user.type(screen.getByLabelText(/name/i), "Admin User");
     await user.type(screen.getByLabelText(/email address/i), "admin@example.test");
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
-    expect(checkAccess).toHaveBeenCalledWith("Admin User", "admin@example.test");
+    expect(checkAccess).toHaveBeenCalledWith("", "admin@example.test");
     expect(sendOtp).toHaveBeenCalledWith("admin@example.test");
 
     await user.type(await screen.findByLabelText(/verification code/i), "123456");
@@ -65,11 +64,10 @@ describe("SignInPage", () => {
       displayName: "Admin",
     }));
 
-    await user.type(screen.getByLabelText(/name/i), "Admin User");
     await user.type(screen.getByLabelText(/email address/i), "admin@example.test");
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
-    expect(checkAccess).toHaveBeenCalledWith("Admin User", "admin@example.test");
+    expect(checkAccess).toHaveBeenCalledWith("", "admin@example.test");
     expect(sendOtp).toHaveBeenCalledWith("admin@example.test");
 
     await user.type(await screen.findByLabelText(/verification code/i), "654321");
@@ -84,9 +82,8 @@ describe("SignInPage", () => {
     const verifyOtp = vi.fn().mockRejectedValue(new Error("Invalid code"));
     renderSignIn(async () => ({ status: "active", role: "member", displayName: "Member" }), { verifyOtp });
 
-    await user.type(screen.getByLabelText(/name/i), "Member User");
     await user.type(screen.getByLabelText(/email address/i), "member@example.test");
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     await user.type(await screen.findByLabelText(/verification code/i), "000000");
     await user.click(screen.getByRole("button", { name: /verify/i }));
@@ -100,9 +97,8 @@ describe("SignInPage", () => {
       throw new Error("Failed to load membership");
     });
 
-    await user.type(screen.getByLabelText(/name/i), "Member User");
     await user.type(screen.getByLabelText(/email address/i), "member@example.test");
-    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     await user.type(await screen.findByLabelText(/verification code/i), "123456");
     await user.click(screen.getByRole("button", { name: /verify/i }));

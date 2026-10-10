@@ -17,7 +17,7 @@ const requestSchema = z
 
 const checkAccessSchema = z
   .object({
-    name: z.string().trim().min(1).max(120),
+    name: z.string().trim().max(120).optional().default(""),
     email: emailSchema,
   })
   .strict();
@@ -79,7 +79,12 @@ Deno.serve(async (request) => {
       return json(request, 500, { error: "lookup_failed", requestId });
     }
     if (isPending) {
-      return json(request, 200, { status: "duplicate_request", requestId });
+      return json(request, 200, { status: "pending_request", requestId });
+    }
+
+    // If no name was provided, this was a login attempt — do not create an access request
+    if (!input.name || input.name.trim().length === 0) {
+      return json(request, 200, { status: "not_registered", requestId });
     }
 
     // Create new access request
