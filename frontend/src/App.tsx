@@ -8,6 +8,7 @@ import { AdminMembersPage } from "./features/admin/AdminMembersPage";
 import { AdminCampsitesPage } from "./features/admin/AdminCampsitesPage";
 import { AdminScheduleDefaultsPage } from "./features/admin/AdminScheduleDefaultsPage";
 import { AdminConstitutionPage } from "./features/admin/AdminConstitutionPage";
+import { MasterResponsibilitiesPage } from "./features/admin/MasterResponsibilitiesPage";
 import { MemberProfileForm, type MemberProfileInput } from "./features/members/MemberProfileForm";
 import { TripCalendarPage } from "./features/trips/TripCalendarPage";
 import { EventDetailsPage } from "./features/trips/EventDetailsPage";
@@ -101,6 +102,7 @@ function AppRoutes() {
                     <Link to="/admin/members">👥 Members & Access</Link>
                     <Link to="/admin/schedule-defaults">⚙️ Club Schedule Defaults</Link>
                     <Link to="/admin/constitution">📜 Camping Constitution</Link>
+                    <Link to="/admin/responsibilities">🛠️ Master Responsibilities</Link>
                   </>
                 )}
                 <hr />
@@ -181,6 +183,14 @@ function AppRoutes() {
             element={
               <AccessBoundary state={membership} requiredRole="admin">
                 <AdminConstitutionPage />
+              </AccessBoundary>
+            }
+          />
+          <Route
+            path="/admin/responsibilities"
+            element={
+              <AccessBoundary state={membership} requiredRole="admin">
+                <MasterResponsibilitiesPage />
               </AccessBoundary>
             }
           />
