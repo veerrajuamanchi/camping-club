@@ -45,7 +45,7 @@ create policy admins_modify_master_responsibilities on public.master_responsibil
     exists (
       select 1 from public.member_profiles
       where member_profiles.member_id = auth.uid()
-        and member_profiles.member_role = 'administrator'
+        and member_profiles.member_role in ('admin', 'administrator')
         and member_profiles.account_status = 'active'
     )
   )
@@ -53,7 +53,7 @@ create policy admins_modify_master_responsibilities on public.master_responsibil
     exists (
       select 1 from public.member_profiles
       where member_profiles.member_id = auth.uid()
-        and member_profiles.member_role = 'administrator'
+        and member_profiles.member_role in ('admin', 'administrator')
         and member_profiles.account_status = 'active'
     )
   );
@@ -81,7 +81,7 @@ declare
   v_record public.master_responsibilities%rowtype;
 begin
   select * into v_actor from public.member_profiles where member_id = p_actor_id;
-  if not found or v_actor.member_role <> 'administrator' or v_actor.account_status <> 'active' then
+  if not found or v_actor.member_role not in ('admin', 'administrator') or v_actor.account_status <> 'active' then
     raise exception 'unauthorized: administrator role required' using errcode = '42501';
   end if;
 
@@ -119,21 +119,18 @@ begin
 
   insert into public.audit_events (
     actor_id,
-    aggregate_type,
-    aggregate_id,
-    event_type,
-    payload
+    actor_kind,
+    entity_type,
+    entity_id,
+    action,
+    reason
   ) values (
     p_actor_id,
+    'admin',
     'master_responsibility',
     v_record.id,
     'master_responsibility_created',
-    jsonb_build_object(
-      'title', v_record.title,
-      'category', v_record.category,
-      'default_capacity', v_record.default_capacity,
-      'workload_weight', v_record.workload_weight
-    )
+    v_record.title
   );
 
   return to_jsonb(v_record);
@@ -164,7 +161,7 @@ declare
   v_record public.master_responsibilities%rowtype;
 begin
   select * into v_actor from public.member_profiles where member_id = p_actor_id;
-  if not found or v_actor.member_role <> 'administrator' or v_actor.account_status <> 'active' then
+  if not found or v_actor.member_role not in ('admin', 'administrator') or v_actor.account_status <> 'active' then
     raise exception 'unauthorized: administrator role required' using errcode = '42501';
   end if;
 
@@ -201,22 +198,18 @@ begin
 
   insert into public.audit_events (
     actor_id,
-    aggregate_type,
-    aggregate_id,
-    event_type,
-    payload
+    actor_kind,
+    entity_type,
+    entity_id,
+    action,
+    reason
   ) values (
     p_actor_id,
+    'admin',
     'master_responsibility',
     v_record.id,
     'master_responsibility_updated',
-    jsonb_build_object(
-      'title', v_record.title,
-      'category', v_record.category,
-      'default_capacity', v_record.default_capacity,
-      'workload_weight', v_record.workload_weight,
-      'active', v_record.active
-    )
+    v_record.title
   );
 
   return to_jsonb(v_record);
