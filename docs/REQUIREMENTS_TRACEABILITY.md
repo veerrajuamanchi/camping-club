@@ -57,7 +57,7 @@
 | PREF-04 | Meal preferences freeze at admin shopping deadline | 4 | LOG-01 |
 | RESP-01 | Responsibilities for Fri night, Sat morning, Sat night, Sun morning; candidate generation & admin matrix | 4, Enh-B | Tasks 4–6; phase12_time_slots_and_duties.sql, AdminTimeSlotManagerModal.test.tsx, EventDetailsPage.test.tsx |
 | RESP-02 | Admin can add tasks such as activity planning; Sunday cleanup capacity may be weighted | 4, Enh-A | Tasks 1–3; phase11_master_responsibilities.sql, MasterResponsibilitiesPage.test.tsx |
-| RESP-03 | Full responsibility slot does not block RSVP; Needs assignment and admin resolution | 4, Enh-C | LOG-02; volunteer claim and quota scheduled in Phase C |
+| RESP-03 | Full responsibility slot does not block RSVP; volunteer claims, concurrency safety, driver credits, and tasks tab | 4, Enh-C | Tasks 8–11; phase13_duty_assignments_and_driver_credits.sql, TripTasksAndMealsTab.test.tsx, EventDetailsPage.test.tsx |
 | LODGE-01 | Bed shortage triggers server-side random draw for admin-entered count | 4 | LOG-05 |
 | LODGE-02 | Lottery records roster/hash, result, actor/time, algorithm/source, rerun reason and mutual exchanges; seed enables replay but is not proof of unbiasedness | 4 | LOG-05/06/07 |
 | EXP-01 | Expense has payer, date, description, category, amount, receipt and participants | 5 | EXP-01/03/06 |

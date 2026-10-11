@@ -16,6 +16,7 @@ const actionNames = [
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
+  "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -136,6 +137,33 @@ const inputSchemas = {
     workloadWeight: z.number().min(0.5).max(5.0).optional(),
     isActive: z.boolean().optional(),
   }).strict(),
+  get_trip_task_matrix: z.object({
+    tripId: uuid,
+  }).strict(),
+  claim_duty: z.object({
+    slotDutyId: uuid,
+    acknowledgeOverlap: z.boolean().optional(),
+  }).strict(),
+  drop_duty: z.object({
+    assignmentId: uuid,
+    reason: z.string().trim().max(500).optional(),
+  }).strict(),
+  admin_assign_duty: z.object({
+    slotDutyId: uuid,
+    memberId: uuid,
+  }).strict(),
+  admin_reassign_duty: z.object({
+    assignmentId: uuid,
+    newMemberId: uuid,
+    reason: z.string().trim().max(500).optional(),
+  }).strict(),
+  admin_set_driver_credit: z.object({
+    tripId: uuid,
+    memberId: uuid,
+    workloadCredit: z.number().min(0.1).max(5.0),
+    status: z.enum(["approved", "revoked"]),
+    notes: z.string().trim().max(500).optional(),
+  }).strict(),
 };
 
 type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended" };
@@ -147,6 +175,7 @@ const adminActions = new Set<Action>([
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
+  "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -154,6 +183,7 @@ const mutatingActions = new Set<Action>([
   "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
   "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
+  "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string): Response {
@@ -169,7 +199,7 @@ function databaseStatus(code: string | undefined): number {
 }
 
 function aggregateId(action: Action, input: Record<string, unknown>, memberId: string): string {
-  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId"]) if (typeof input[key] === "string") return input[key] as string;
+  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId"]) if (typeof input[key] === "string") return input[key] as string;
   return memberId;
 }
 
@@ -697,6 +727,110 @@ Deno.serve(async (request) => {
       return errorResponse(request, 500, "trip_time_slots_read_failed", requestId);
     }
   }
+  if (action === "get_trip_task_matrix") {
+    try {
+      const tripId = input.tripId as string;
+      const [slotsResult, assignmentsResult, creditsResult, quotaResult, attendeesResult] = await Promise.all([
+        service
+          .from("trip_time_slots")
+          .select(`
+            id,
+            trip_id,
+            slot_date,
+            time_block,
+            slot_type,
+            label,
+            is_custom,
+            is_enabled,
+            sort_order,
+            created_at,
+            updated_at,
+            duties:trip_slot_duties(
+              id,
+              time_slot_id,
+              master_responsibility_id,
+              capacity,
+              workload_weight,
+              is_active,
+              created_at,
+              updated_at,
+              responsibility:master_responsibilities(
+                id,
+                title,
+                description,
+                category,
+                default_capacity,
+                workload_weight,
+                active
+              )
+            )
+          `)
+          .eq("trip_id", tripId)
+          .order("slot_date", { ascending: true })
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true }),
+        service
+          .from("trip_duty_assignments")
+          .select(`
+            id,
+            trip_id,
+            slot_duty_id,
+            member_id,
+            status,
+            claimed_at,
+            released_at,
+            release_reason,
+            member:member_profiles!member_id(
+              member_id,
+              display_name
+            )
+          `)
+          .eq("trip_id", tripId)
+          .in("status", ["claimed", "assigned_by_admin"]),
+        service
+          .from("trip_driver_credits")
+          .select("id, trip_id, member_id, workload_credit, status, notes")
+          .eq("trip_id", tripId)
+          .eq("status", "approved"),
+        service.rpc("phase3_get_member_quota_progress", {
+          p_trip_id: tripId,
+          p_member_id: member.member_id,
+        }),
+        service
+          .from("trip_rsvps")
+          .select(`
+            member_id,
+            response,
+            member:member_profiles!member_id(
+              member_id,
+              display_name
+            )
+          `)
+          .eq("trip_id", tripId)
+          .eq("response", "coming"),
+      ]);
+
+      checkError(slotsResult.error);
+      checkError(assignmentsResult.error);
+      checkError(creditsResult.error);
+      checkError(quotaResult.error);
+      checkError(attendeesResult.error);
+
+      return json(request, 200, {
+        timeSlots: slotsResult.data ?? [],
+        activeAssignments: assignmentsResult.data ?? [],
+        driverCredits: creditsResult.data ?? [],
+        myQuotaProgress: quotaResult.data ?? null,
+        confirmedAttendees: (attendeesResult.data ?? []).map((row) => ({
+          memberId: row.member_id,
+          displayName: (row.member as { display_name?: string } | null)?.display_name ?? "Member",
+        })),
+        requestId,
+      });
+    } catch {
+      return errorResponse(request, 500, "trip_task_matrix_read_failed", requestId);
+    }
+  }
 
   const keyResult = uuid.safeParse(request.headers.get("Idempotency-Key"));
   if (mutatingActions.has(action) && !keyResult.success) return errorResponse(request, 400, "idempotency_key_required", requestId);
@@ -885,6 +1019,50 @@ Deno.serve(async (request) => {
         p_capacity: input.capacity ?? null,
         p_workload_weight: input.workloadWeight ?? null,
         p_is_active: input.isActive ?? null,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "claim_duty":
+      rpcName = "phase3_claim_duty";
+      rpcArgs = {
+        p_slot_duty_id: input.slotDutyId,
+        p_actor_id: member.member_id,
+        p_acknowledge_overlap: input.acknowledgeOverlap ?? false,
+      };
+      break;
+    case "drop_duty":
+      rpcName = "phase3_drop_duty";
+      rpcArgs = {
+        p_assignment_id: input.assignmentId,
+        p_actor_id: member.member_id,
+        p_reason: input.reason ?? null,
+      };
+      break;
+    case "admin_assign_duty":
+      rpcName = "phase3_admin_assign_duty";
+      rpcArgs = {
+        p_slot_duty_id: input.slotDutyId,
+        p_member_id: input.memberId,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_reassign_duty":
+      rpcName = "phase3_admin_reassign_duty";
+      rpcArgs = {
+        p_assignment_id: input.assignmentId,
+        p_new_member_id: input.newMemberId,
+        p_actor_id: member.member_id,
+        p_reason: input.reason ?? null,
+      };
+      break;
+    case "admin_set_driver_credit":
+      rpcName = "phase3_admin_set_driver_credit";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_member_id: input.memberId,
+        p_workload_credit: input.workloadCredit,
+        p_status: input.status,
+        p_notes: input.notes ?? null,
         p_actor_id: member.member_id,
       };
       break;

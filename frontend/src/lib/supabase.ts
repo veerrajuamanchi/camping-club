@@ -63,6 +63,7 @@ const tripMutationActions = new Set([
   "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot",
   "admin_add_slot_duty", "admin_update_slot_duty",
+  "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
 ]);
 
 export async function invokeTripApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {

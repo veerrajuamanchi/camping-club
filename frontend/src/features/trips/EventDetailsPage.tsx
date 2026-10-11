@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
+import { useAuth } from "../../app/AuthProvider";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
+import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 
 type TripDetails = {
   tripId: string;
@@ -50,7 +52,7 @@ type TripDetails = {
   version: number;
 };
 
-type Tab = "overview" | "constitution" | "logistics" | "financials";
+type Tab = "overview" | "constitution" | "logistics" | "tasks" | "financials";
 export type TripApiType = <T = unknown>(action: string, input?: unknown) => Promise<T>;
 
 const constitutionGroups: Array<{ label: string; categories: string[] }> = [
@@ -65,11 +67,18 @@ function monthName(monthKey: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
-type Props = { isAdmin: boolean; api?: TripApiType };
+type Props = { isAdmin: boolean; currentMemberId?: string; api?: TripApiType };
 const defaultApi: TripApiType = (action, input) => invokeTripApi(action, input);
 
-export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
+export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }: Props) {
   const { tripId } = useParams<{ tripId: string }>();
+  let authProfileMemberId = currentMemberId;
+  try {
+    const auth = useAuth();
+    authProfileMemberId = auth?.profile?.memberId ?? currentMemberId;
+  } catch {
+    // AuthProvider not present (e.g. isolated component unit tests)
+  }
   const [details, setDetails] = useState<TripDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -313,7 +322,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
       </div>
 
       <div className="event-tabs" role="tablist" aria-label="Trip sections">
-        {(["overview", "constitution", "logistics", "financials"] as Tab[]).map((t) => (
+        {(["overview", "constitution", "logistics", "tasks", "financials"] as Tab[]).map((t) => (
           <button
             key={t}
             role="tab"
@@ -324,6 +333,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
             {t === "overview" && "Overview & attendees"}
             {t === "constitution" && "Camping Constitution"}
             {t === "logistics" && "Logistics & Packing"}
+            {t === "tasks" && "Tasks & Meals"}
             {t === "financials" && "Financials"}
           </button>
         ))}
@@ -600,6 +610,16 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
             update.
           </p>
         </div>
+      )}
+
+      {tab === "tasks" && (
+        <TripTasksAndMealsTab
+          tripId={details.tripId}
+          isConfirmedAttendee={isComing}
+          isAdmin={isAdmin}
+          currentMemberId={authProfileMemberId}
+          api={api}
+        />
       )}
 
       {showEditLogistics && details && (
