@@ -55,9 +55,9 @@
 | PREF-02 | Coffee/tea choice separately Sat/Sun, includes neither/no preference | 4 | Preference validation test |
 | PREF-03 | Vegetarian/non-vegetarian default and per-meal overrides/not eating | 4 | LOG-01 |
 | PREF-04 | Meal preferences freeze at admin shopping deadline | 4 | LOG-01 |
-| RESP-01 | Responsibilities for Fri night, Sat morning, Sat night, Sun morning; first-come assignment | 4 | LOG-02/03 |
-| RESP-02 | Admin can add tasks such as activity planning; Sunday cleanup capacity may be weighted | 4 | Task CRUD/workload tests |
-| RESP-03 | Full responsibility slot does not block RSVP; Needs assignment and admin resolution | 4 | LOG-02 |
+| RESP-01 | Responsibilities for Fri night, Sat morning, Sat night, Sun morning; first-come assignment | 4, Enh-B | LOG-02/03; time-slot matrix scheduled in Phase B |
+| RESP-02 | Admin can add tasks such as activity planning; Sunday cleanup capacity may be weighted | 4, Enh-A | Task CRUD/workload tests; phase11_master_responsibilities.sql, MasterResponsibilitiesPage.test.tsx |
+| RESP-03 | Full responsibility slot does not block RSVP; Needs assignment and admin resolution | 4, Enh-C | LOG-02; volunteer claim and quota scheduled in Phase C |
 | LODGE-01 | Bed shortage triggers server-side random draw for admin-entered count | 4 | LOG-05 |
 | LODGE-02 | Lottery records roster/hash, result, actor/time, algorithm/source, rerun reason and mutual exchanges; seed enables replay but is not proof of unbiasedness | 4 | LOG-05/06/07 |
 | EXP-01 | Expense has payer, date, description, category, amount, receipt and participants | 5 | EXP-01/03/06 |
