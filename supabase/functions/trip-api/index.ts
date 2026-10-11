@@ -14,7 +14,7 @@ const actionNames = [
   "get_calendar", "get_constitution", "get_trip_details", "admin_configure_club", "admin_generate_calendar",
   "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
-  "admin_promote_from_waitlist",
+  "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -89,6 +89,23 @@ const inputSchemas = {
   }).strict(),
   request_withdrawal: z.object({ tripId: uuid, reason }).strict(),
   admin_promote_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason }).strict(),
+  admin_list_master_responsibilities: z.object({ includeInactive: z.boolean().optional() }).strict(),
+  admin_create_master_responsibility: z.object({
+    title: z.string().trim().min(3).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.enum(["meal_prep", "cooking", "cleanup", "activities", "transport", "other"]),
+    defaultCapacity: z.number().int().min(1).max(20),
+    workloadWeight: z.number().min(0.5).max(5.0),
+  }).strict(),
+  admin_update_master_responsibility: z.object({
+    id: uuid,
+    title: z.string().trim().min(3).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.enum(["meal_prep", "cooking", "cleanup", "activities", "transport", "other"]),
+    defaultCapacity: z.number().int().min(1).max(20),
+    workloadWeight: z.number().min(0.5).max(5.0),
+    active: z.boolean().optional(),
+  }).strict(),
 };
 
 type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended" };
@@ -98,12 +115,13 @@ type Action = typeof actionNames[number];
 const adminActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
-  "admin_promote_from_waitlist",
+  "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
   "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
+  "admin_create_master_responsibility", "admin_update_master_responsibility",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string): Response {
@@ -587,6 +605,19 @@ Deno.serve(async (request) => {
       return errorResponse(request, 500, "trip_details_read_failed", requestId);
     }
   }
+  if (action === "admin_list_master_responsibilities") {
+    try {
+      let query = service.from("master_responsibilities").select("*").order("category", { ascending: true }).order("title", { ascending: true });
+      if (!input.includeInactive) {
+        query = query.eq("active", true);
+      }
+      const { data, error } = await query;
+      checkError(error);
+      return json(request, 200, { responsibilities: data ?? [], requestId });
+    } catch {
+      return errorResponse(request, 500, "master_responsibilities_read_failed", requestId);
+    }
+  }
 
   const keyResult = uuid.safeParse(request.headers.get("Idempotency-Key"));
   if (mutatingActions.has(action) && !keyResult.success) return errorResponse(request, 400, "idempotency_key_required", requestId);
@@ -706,6 +737,30 @@ Deno.serve(async (request) => {
       }
       return json(request, 200, { promoted: true, requestId });
     }
+    case "admin_create_master_responsibility":
+      rpcName = "phase3_admin_create_master_responsibility";
+      rpcArgs = {
+        p_title: input.title,
+        p_description: input.description ?? null,
+        p_category: input.category,
+        p_default_capacity: input.defaultCapacity,
+        p_workload_weight: input.workloadWeight,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_update_master_responsibility":
+      rpcName = "phase3_admin_update_master_responsibility";
+      rpcArgs = {
+        p_id: input.id,
+        p_title: input.title,
+        p_description: input.description ?? null,
+        p_category: input.category,
+        p_default_capacity: input.defaultCapacity,
+        p_workload_weight: input.workloadWeight,
+        p_active: input.active ?? true,
+        p_actor_id: member.member_id,
+      };
+      break;
     default: return errorResponse(request, 400, "unsupported_operation", requestId);
   }
 
