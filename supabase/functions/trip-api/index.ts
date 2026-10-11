@@ -11,10 +11,11 @@ const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/);
 const structuredValues = z.record(z.string(), z.unknown());
 const reason = z.string().trim().min(1).max(500);
 const actionNames = [
-  "get_calendar", "get_constitution", "get_trip_details", "admin_configure_club", "admin_generate_calendar",
+  "get_calendar", "get_constitution", "get_trip_details", "get_trip_time_slots", "admin_configure_club", "admin_generate_calendar",
   "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
-  "admin_promote_from_waitlist",
+  "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
+  "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -22,6 +23,7 @@ const inputSchemas = {
   get_calendar: z.object({}).strict(),
   get_constitution: z.object({ tripId: uuid.optional() }).strict(),
   get_trip_details: z.object({ tripId: uuid }).strict(),
+  get_trip_time_slots: z.object({ tripId: uuid }).strict(),
   admin_configure_club: z.object({
     timezone: z.string().trim().min(1).max(100), leadDays: z.number().int().min(1).max(120), closeTime: time.nullable(),
     defaultMinimumParticipants: z.number().int().min(1).max(100), nextRotationPosition: z.number().int().min(1), expectedVersion: z.number().int().positive(),
@@ -89,6 +91,51 @@ const inputSchemas = {
   }).strict(),
   request_withdrawal: z.object({ tripId: uuid, reason }).strict(),
   admin_promote_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason }).strict(),
+  admin_list_master_responsibilities: z.object({ includeInactive: z.boolean().optional() }).strict(),
+  admin_create_master_responsibility: z.object({
+    title: z.string().trim().min(3).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.enum(["meal_prep", "cooking", "cleanup", "activities", "transport", "other"]),
+    defaultCapacity: z.number().int().min(1).max(20),
+    workloadWeight: z.number().min(0.5).max(5.0),
+  }).strict(),
+  admin_update_master_responsibility: z.object({
+    id: uuid,
+    title: z.string().trim().min(3).max(100),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.enum(["meal_prep", "cooking", "cleanup", "activities", "transport", "other"]),
+    defaultCapacity: z.number().int().min(1).max(20),
+    workloadWeight: z.number().min(0.5).max(5.0),
+    active: z.boolean().optional(),
+  }).strict(),
+  admin_generate_candidate_slots: z.object({
+    tripId: uuid,
+    regenerate: z.boolean().optional(),
+  }).strict(),
+  admin_configure_time_slot: z.object({
+    slotId: uuid,
+    label: z.string().trim().min(2).max(100).optional(),
+    isEnabled: z.boolean().optional(),
+  }).strict(),
+  admin_create_custom_time_slot: z.object({
+    tripId: uuid,
+    slotDate: date,
+    timeBlock: z.string().trim().min(2).max(50),
+    slotType: z.enum(["meal", "chore", "activity", "general"]),
+    label: z.string().trim().min(2).max(100),
+  }).strict(),
+  admin_add_slot_duty: z.object({
+    timeSlotId: uuid,
+    masterResponsibilityId: uuid,
+    capacity: z.number().int().min(1).max(20),
+    workloadWeight: z.number().min(0.5).max(5.0),
+  }).strict(),
+  admin_update_slot_duty: z.object({
+    slotDutyId: uuid,
+    capacity: z.number().int().min(1).max(20).optional(),
+    workloadWeight: z.number().min(0.5).max(5.0).optional(),
+    isActive: z.boolean().optional(),
+  }).strict(),
 };
 
 type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended" };
@@ -98,12 +145,15 @@ type Action = typeof actionNames[number];
 const adminActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
-  "admin_promote_from_waitlist",
+  "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
+  "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
   "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
+  "admin_create_master_responsibility", "admin_update_master_responsibility",
+  "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string): Response {
@@ -114,11 +164,12 @@ function databaseStatus(code: string | undefined): number {
   if (code === "42501") return 403;
   if (code === "40001" || code === "23505") return 409;
   if (code === "22023" || code === "22P02" || code === "23514" || code === "P0001") return 400;
+  if (code === "P0002") return 404;
   return 500;
 }
 
 function aggregateId(action: Action, input: Record<string, unknown>, memberId: string): string {
-  for (const key of ["tripId", "campsiteId", "memberId"]) if (typeof input[key] === "string") return input[key] as string;
+  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId"]) if (typeof input[key] === "string") return input[key] as string;
   return memberId;
 }
 
@@ -587,6 +638,65 @@ Deno.serve(async (request) => {
       return errorResponse(request, 500, "trip_details_read_failed", requestId);
     }
   }
+  if (action === "admin_list_master_responsibilities") {
+    try {
+      let query = service.from("master_responsibilities").select("*").order("category", { ascending: true }).order("title", { ascending: true });
+      if (!input.includeInactive) {
+        query = query.eq("active", true);
+      }
+      const { data, error } = await query;
+      checkError(error);
+      return json(request, 200, { responsibilities: data ?? [], requestId });
+    } catch {
+      return errorResponse(request, 500, "master_responsibilities_read_failed", requestId);
+    }
+  }
+  if (action === "get_trip_time_slots") {
+    try {
+      const { data, error } = await service
+        .from("trip_time_slots")
+        .select(`
+          id,
+          trip_id,
+          slot_date,
+          time_block,
+          slot_type,
+          label,
+          is_custom,
+          is_enabled,
+          sort_order,
+          created_at,
+          updated_at,
+          duties:trip_slot_duties(
+            id,
+            time_slot_id,
+            master_responsibility_id,
+            capacity,
+            workload_weight,
+            is_active,
+            created_at,
+            updated_at,
+            responsibility:master_responsibilities(
+              id,
+              title,
+              description,
+              category,
+              default_capacity,
+              workload_weight,
+              active
+            )
+          )
+        `)
+        .eq("trip_id", input.tripId)
+        .order("slot_date", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      checkError(error);
+      return json(request, 200, { timeSlots: data ?? [], requestId });
+    } catch {
+      return errorResponse(request, 500, "trip_time_slots_read_failed", requestId);
+    }
+  }
 
   const keyResult = uuid.safeParse(request.headers.get("Idempotency-Key"));
   if (mutatingActions.has(action) && !keyResult.success) return errorResponse(request, 400, "idempotency_key_required", requestId);
@@ -706,6 +816,78 @@ Deno.serve(async (request) => {
       }
       return json(request, 200, { promoted: true, requestId });
     }
+    case "admin_create_master_responsibility":
+      rpcName = "phase3_admin_create_master_responsibility";
+      rpcArgs = {
+        p_title: input.title,
+        p_description: input.description ?? null,
+        p_category: input.category,
+        p_default_capacity: input.defaultCapacity,
+        p_workload_weight: input.workloadWeight,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_update_master_responsibility":
+      rpcName = "phase3_admin_update_master_responsibility";
+      rpcArgs = {
+        p_id: input.id,
+        p_title: input.title,
+        p_description: input.description ?? null,
+        p_category: input.category,
+        p_default_capacity: input.defaultCapacity,
+        p_workload_weight: input.workloadWeight,
+        p_active: input.active ?? true,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_generate_candidate_slots":
+      rpcName = "phase3_generate_candidate_time_slots";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_actor_id: member.member_id,
+        p_regenerate: input.regenerate ?? false,
+      };
+      break;
+    case "admin_configure_time_slot":
+      rpcName = "phase3_admin_configure_time_slot";
+      rpcArgs = {
+        p_slot_id: input.slotId,
+        p_label: input.label ?? null,
+        p_is_enabled: input.isEnabled ?? null,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_create_custom_time_slot":
+      rpcName = "phase3_admin_create_custom_time_slot";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_slot_date: input.slotDate,
+        p_time_block: input.timeBlock,
+        p_slot_type: input.slotType,
+        p_label: input.label,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_add_slot_duty":
+      rpcName = "phase3_admin_add_slot_duty";
+      rpcArgs = {
+        p_time_slot_id: input.timeSlotId,
+        p_master_responsibility_id: input.masterResponsibilityId,
+        p_capacity: input.capacity,
+        p_workload_weight: input.workloadWeight,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_update_slot_duty":
+      rpcName = "phase3_admin_update_slot_duty";
+      rpcArgs = {
+        p_slot_duty_id: input.slotDutyId,
+        p_capacity: input.capacity ?? null,
+        p_workload_weight: input.workloadWeight ?? null,
+        p_is_active: input.isActive ?? null,
+        p_actor_id: member.member_id,
+      };
+      break;
     default: return errorResponse(request, 400, "unsupported_operation", requestId);
   }
 

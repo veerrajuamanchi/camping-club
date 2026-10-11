@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
+import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
 
 type TripDetails = {
   tripId: string;
@@ -50,7 +51,7 @@ type TripDetails = {
 };
 
 type Tab = "overview" | "constitution" | "logistics" | "financials";
-type TripApiType = <T = unknown>(action: string, input?: unknown) => Promise<T>;
+export type TripApiType = <T = unknown>(action: string, input?: unknown) => Promise<T>;
 
 const constitutionGroups: Array<{ label: string; categories: string[] }> = [
   { label: "Travel & Cabin", categories: ["transport", "cabin"] },
@@ -81,6 +82,7 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
   const [adminRosterMsg, setAdminRosterMsg] = useState<string | null>(null);
   const [showEditLogistics, setShowEditLogistics] = useState(false);
+  const [showTimeSlotsModal, setShowTimeSlotsModal] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
@@ -246,6 +248,16 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
             {isNotComing && <span className="status-badge-not-going">Not going</span>}
             {details.myWaitlistPosition && (
               <span className="status-badge-not-going">Waitlist #{details.myWaitlistPosition}</span>
+            )}
+            {isAdmin && (
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", marginLeft: "auto" }}
+                onClick={() => setShowTimeSlotsModal(true)}
+              >
+                🍽️ Manage Meals &amp; Chores
+              </button>
             )}
           </div>
         </div>
@@ -596,6 +608,17 @@ export function EventDetailsPage({ isAdmin, api = defaultApi }: Props) {
           api={api}
           onClose={() => setShowEditLogistics(false)}
           onRefresh={refresh}
+        />
+      )}
+
+      {showTimeSlotsModal && details && (
+        <AdminTimeSlotManagerModal
+          tripId={details.tripId}
+          tripStartsOn={details.startsOn}
+          tripEndsOn={details.endsOn}
+          api={api}
+          onClose={() => setShowTimeSlotsModal(false)}
+          onRefreshParent={refresh}
         />
       )}
     </section>

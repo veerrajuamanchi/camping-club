@@ -357,5 +357,38 @@ describe("EventDetailsPage", () => {
       await screen.findByText("Could not promote member. Refresh and try again.")
     ).toBeInTheDocument();
   });
+
+  it("displays Manage Meals & Chores button for admins and opens modal on click", async () => {
+    const user = userEvent.setup();
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "get_trip_time_slots") return Promise.resolve({ timeSlots: [] });
+      if (action === "admin_list_master_responsibilities") return Promise.resolve({ responsibilities: [] });
+      return Promise.resolve({});
+    });
+
+    renderPage(tripData, true, apiMock);
+    await screen.findByText("December Camping");
+
+    const manageBtn = screen.getByRole("button", { name: "🍽️ Manage Meals & Chores" });
+    expect(manageBtn).toBeInTheDocument();
+
+    await user.click(manageBtn);
+    expect(await screen.findByRole("dialog", { name: "Manage Meal & Chore Slots" })).toBeInTheDocument();
+  });
+
+  it("does not display Manage Meals & Chores button for non-admins", async () => {
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      return Promise.resolve({});
+    });
+
+    renderPage(tripData, false, apiMock);
+    await screen.findByText("December Camping");
+
+    expect(screen.queryByRole("button", { name: "🍽️ Manage Meals & Chores" })).not.toBeInTheDocument();
+  });
 });
 

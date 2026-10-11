@@ -220,5 +220,47 @@ describe("invokeTripApi", () => {
       headers: { "Idempotency-Key": expect.any(String) },
     });
   });
+
+  it("attaches Idempotency-Key header for admin_create_master_responsibility and admin_update_master_responsibility", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValue({
+      data: { data: { success: true } },
+      error: null,
+      response: new Response(JSON.stringify({ data: { success: true } }), { status: 200 }),
+    });
+
+    await invokeTripApi("admin_create_master_responsibility", { title: "Test Task" }, "create-key");
+    expect(invokeSpy).toHaveBeenLastCalledWith("trip-api", {
+      body: { action: "admin_create_master_responsibility", input: { title: "Test Task" } },
+      headers: { "Idempotency-Key": "create-key" },
+    });
+
+    await invokeTripApi("admin_update_master_responsibility", { id: "11111111-1111-4111-8111-111111111111", title: "Updated" }, "update-key");
+    expect(invokeSpy).toHaveBeenLastCalledWith("trip-api", {
+      body: { action: "admin_update_master_responsibility", input: { id: "11111111-1111-4111-8111-111111111111", title: "Updated" } },
+      headers: { "Idempotency-Key": "update-key" },
+    });
+  });
+
+  it("attaches Idempotency-Key header for Phase B slot management actions", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValue({
+      data: { data: { success: true } },
+      error: null,
+      response: new Response(JSON.stringify({ data: { success: true } }), { status: 200 }),
+    });
+
+    await invokeTripApi("admin_generate_candidate_slots", { tripId: "11111111-1111-4111-8111-111111111111" }, "gen-key");
+    expect(invokeSpy).toHaveBeenLastCalledWith("trip-api", {
+      body: { action: "admin_generate_candidate_slots", input: { tripId: "11111111-1111-4111-8111-111111111111" } },
+      headers: { "Idempotency-Key": "gen-key" },
+    });
+
+    await invokeTripApi("admin_configure_time_slot", { slotId: "22222222-2222-4222-8222-222222222222", isEnabled: false }, "config-key");
+    expect(invokeSpy).toHaveBeenLastCalledWith("trip-api", {
+      body: { action: "admin_configure_time_slot", input: { slotId: "22222222-2222-4222-8222-222222222222", isEnabled: false } },
+      headers: { "Idempotency-Key": "config-key" },
+    });
+  });
 });
 
