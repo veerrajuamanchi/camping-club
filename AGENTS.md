@@ -109,3 +109,19 @@ Use the installed Supabase CLI’s current --help output rather than guessing co
 - Do not make hidden changes to financial terms, refund treatment, retention, minimum-count definition, access rules or approved tech.
 - Use the decision register in docs/IMPLEMENTATION_PLAN.md. If a choice is unresolved, preserve state for admin review and block the affected transition rather than inventing a policy.
 - If the current request conflicts with the approved plan, ask the owner to update the plan before implementing the conflict.
+
+## 10. Mandatory browser QA certification gate
+
+- Passing unit, component, build, and database tests is necessary but NEVER sufficient to certify a feature or release.
+- Every release and user-facing feature MUST pass the automated Playwright browser acceptance suite (`npm run test:e2e`) across:
+  1. Desktop Chromium
+  2. iPhone-sized Mobile WebKit
+  3. Android-sized Mobile Chromium
+- For every editable form, browser acceptance tests must verify that submitted values persist to PostgreSQL and remain completely intact after a full browser reload (`page.reload()`).
+- Acceptance tests must use realistic data containing spaces, parentheses, hyphens, query strings, and formatting.
+- Never certify a feature or report completion when an API call returns success but durable database persistence or card reload fails.
+- Mobile viewports must verify absence of horizontal scroll overflow (`scrollWidth <= innerWidth`), usable modal interactions, and accessible touch targets.
+- Failures must capture screenshots, video recordings, console logs, and browser traces.
+- Execution must run sequentially (`workers: 1`) to ensure stability on 8 GB Apple Silicon environments.
+- A final manual smoke check on a physical iPhone is recommended prior to production deployment.
+

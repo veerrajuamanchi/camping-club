@@ -175,7 +175,17 @@ try {
   check(update.status === 200, `Member profile update failed (${update.status}).`);
   const updateResult = await update.json();
   check(!JSON.stringify(updateResult).includes(updateInput.paymentIdentifier), "Profile API response revealed the payment identifier.");
-  const storedIdentifier = execFileSync("psql", [status.DB_URL, "-X", "-A", "-t", "-c", `select encode(i.identifier_ciphertext,'hex') || ':' || encode(i.nonce,'hex') || ':' || i.encryption_key_version from private.member_payment_identifiers i join public.member_payment_methods m on m.id=i.payment_method_id where m.member_id='${profiles[0].member_id}'`], { encoding: "utf8" }).trim();
+  const identifierSql = `select encode(i.identifier_ciphertext,'hex') || ':' || encode(i.nonce,'hex') || ':' || i.encryption_key_version from private.member_payment_identifiers i join public.member_payment_methods m on m.id=i.payment_method_id where m.member_id='${profiles[0].member_id}'`;
+  let storedIdentifier;
+  try {
+    storedIdentifier = execFileSync("psql", [status.DB_URL, "-X", "-A", "-t", "-c", identifierSql], { encoding: "utf8" }).trim();
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      storedIdentifier = execFileSync("docker", ["exec", "-i", "supabase_db_camping-club-phase1", "psql", "-U", "postgres", "-d", "postgres", "-X", "-A", "-t", "-c", identifierSql], { encoding: "utf8" }).trim();
+    } else {
+      throw err;
+    }
+  }
   const [ciphertextHex, nonceHex, encryptionVersion] = storedIdentifier.split(":");
   check(ciphertextHex?.length >= 34 && !ciphertextHex.includes(Buffer.from(updateInput.paymentIdentifier).toString("hex")) && nonceHex?.length === 24 && encryptionVersion === "local-test-v1", "Payment identifier was not stored as authenticated ciphertext with a fresh nonce and key version.");
   const replay = await edge("update_profile", memberToken, updateInput, updateKey);

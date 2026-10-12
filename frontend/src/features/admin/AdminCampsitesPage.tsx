@@ -235,7 +235,8 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
               <label>
                 Image URL
                 <input
-                  type="url"
+                  type="text"
+                  inputMode="url"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
                   placeholder="https://example.com/photo.jpg"
@@ -278,14 +279,25 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
                   value={cabinInfo}
                   onChange={(e) => setCabinInfo(e.target.value)}
                   placeholder="e.g. Eight units sleep 6 people each. Full kitchen, heating..."
-                  rows={6}
+                  rows={4}
+                />
+              </label>
+
+              <label>
+                Directions
+                <textarea
+                  value={directions}
+                  onChange={(e) => setDirections(e.target.value)}
+                  placeholder="Driving directions to campsite..."
+                  rows={2}
                 />
               </label>
 
               <label>
                 Reservation / Website URL
                 <input
-                  type="url"
+                  type="text"
+                  inputMode="url"
                   value={availabilityUrl}
                   onChange={(e) => setAvailabilityUrl(e.target.value)}
                   placeholder="https://parks.ca.gov/..."
@@ -371,7 +383,32 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
 
             {(site.campHostName || site.campHostPhone) && (
               <p style={{ margin: 0, fontSize: "0.9rem", color: "#374151" }}>
-                <strong>Camp Host:</strong> {site.campHostName || "Host"} {site.campHostPhone ? `· ${site.campHostPhone}` : ""}
+                <strong>Camp Host:</strong> {site.campHostName || "Host"}{site.campHostPhone ? ` · ${site.campHostPhone}` : ""}
+              </p>
+            )}
+
+            {site.availabilityUrl && (
+              <p style={{ margin: 0, fontSize: "0.9rem" }}>
+                <strong>Website:</strong>{" "}
+                <a
+                  href={site.availabilityUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "#2563eb",
+                    textDecoration: "underline",
+                    wordBreak: "break-all",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {site.availabilityUrl} ↗
+                </a>
+              </p>
+            )}
+
+            {site.directions && (
+              <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
+                <strong>Directions:</strong> {site.directions}
               </p>
             )}
 

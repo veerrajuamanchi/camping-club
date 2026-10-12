@@ -765,6 +765,11 @@ function EditLogisticsModal({
           availabilityUrl: details.campsite.availabilityUrl ?? null,
           availabilitySourceUrl: details.campsite.availabilitySourceUrl ?? null,
           availabilityVerifiedAt: null,
+          imageUrl: details.campsite.imageUrl ?? null,
+          campHostName: details.campsite.campHostName ?? null,
+          campHostPhone: details.campsite.campHostPhone ?? null,
+          campFeatures: details.campsite.campFeatures ?? [],
+          cabinInformation: details.campsite.cabinInformation ?? null,
           adminNotes: details.campsite.adminNotes ?? "",
           reason: "Administrator updated directions and instructions from Logistics tab",
         });

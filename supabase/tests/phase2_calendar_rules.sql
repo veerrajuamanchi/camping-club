@@ -66,7 +66,7 @@ create temporary table phase2_timed_bundle_fixture(trip_id uuid,initial_bundle u
 insert into public.rule_definitions(id,stable_key,category,scope,created_by)
 values('71000000-0000-4000-8000-000000000001','timed-rule','conduct','general','21000000-0000-4000-8000-000000000003');
 insert into public.rule_versions(id,definition_id,version_no,human_text,structured_values,effective_from,expires_at,created_by)
-values('72000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000001',1,'This rule is temporarily effective.','{}',clock_timestamp()+interval '2 seconds',clock_timestamp()+interval '4 seconds','21000000-0000-4000-8000-000000000003');
+values('72000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000001',1,'This rule is temporarily effective.','{}',clock_timestamp()+interval '2 seconds',clock_timestamp()+interval '5 seconds','21000000-0000-4000-8000-000000000003');
 with target as (select id from public.camping_trips order by month_key offset 1 limit 1)
 update public.camping_trips set poll_status='open',starts_on=current_date+30,ends_on=current_date+32,
   club_timezone_snapshot='America/Los_Angeles',poll_deadline_at=clock_timestamp()+interval '20 days'
@@ -81,7 +81,7 @@ select public.phase2_refresh_open_rule_bundles('21000000-0000-4000-8000-00000000
 select public.phase2_refresh_open_rule_bundles('21000000-0000-4000-8000-000000000001'::uuid,array[(select trip_id from phase2_timed_bundle_fixture)]);
 select is((select b.version_no from public.trip_rule_bundles b join phase2_timed_bundle_fixture f on f.trip_id=b.trip_id where b.is_current),(select initial_version from phase2_timed_bundle_fixture),'unchanged rule refresh reuses the current immutable bundle version');
 select is((select count(*)::integer from public.trip_rule_bundles b join phase2_timed_bundle_fixture f on f.trip_id=b.trip_id cross join lateral jsonb_array_elements(b.rendered_bundle) r where b.is_current and r->>'stable_key'='timed-rule'),0,'future-effective rule is excluded before its boundary');
-select pg_sleep(2.1);
+select pg_sleep(2.5);
 select throws_ok($$select public.phase2_admin_record_interest('21000000-0000-4000-8000-000000000003',(select trip_id from phase2_timed_bundle_fixture),'21000000-0000-4000-8000-000000000002','coming',0,'Late addition test','81000000-0000-4000-8000-000000000003')$$,'P0001','member must personally acknowledge the current rule bundle','administrator late entry rejects acknowledgment of the superseded rule bundle');
 select throws_ok($$select public.phase2_submit_rsvp('11000000-0000-4000-8000-000000000002',(select trip_id from phase2_timed_bundle_fixture),'coming',(select initial_bundle from phase2_timed_bundle_fixture),(select content_hash from public.trip_rule_bundles where id=(select initial_bundle from phase2_timed_bundle_fixture)),0,'81000000-0000-4000-8000-000000000001')$$,'22023','current Camping Constitution acknowledgment required','Coming submission rejects the pre-effective rule bundle');
 select public.phase2_refresh_open_rule_bundles('21000000-0000-4000-8000-000000000001'::uuid,array[(select trip_id from phase2_timed_bundle_fixture)]);
@@ -90,7 +90,7 @@ update phase2_timed_bundle_fixture set effective_bundle=(select id from public.t
 insert into public.trip_rule_acknowledgments(id,trip_id,member_id,bundle_id,content_hash,statement_version,request_id)
 select '41000000-0000-4000-8000-000000000003',f.trip_id,'21000000-0000-4000-8000-000000000002',b.id,b.content_hash,'coming-v1','51000000-0000-4000-8000-000000000003'
 from phase2_timed_bundle_fixture f join public.trip_rule_bundles b on b.id=f.effective_bundle;
-select pg_sleep(2.1);
+select pg_sleep(3.0);
 select throws_ok($$select public.phase2_admin_record_interest('21000000-0000-4000-8000-000000000003',(select trip_id from phase2_timed_bundle_fixture),'21000000-0000-4000-8000-000000000002','coming',0,'Late addition test','81000000-0000-4000-8000-000000000004')$$,'P0001','member must personally acknowledge the current rule bundle','administrator late entry rejects an expired rule-bundle acknowledgment');
 select throws_ok($$select public.phase2_submit_rsvp('11000000-0000-4000-8000-000000000002',(select trip_id from phase2_timed_bundle_fixture),'coming',(select effective_bundle from phase2_timed_bundle_fixture),(select content_hash from public.trip_rule_bundles where id=(select effective_bundle from phase2_timed_bundle_fixture)),0,'81000000-0000-4000-8000-000000000002')$$,'22023','current Camping Constitution acknowledgment required','Coming submission rejects the expired rule bundle');
 select public.phase2_refresh_open_rule_bundles('21000000-0000-4000-8000-000000000001'::uuid,array[(select trip_id from phase2_timed_bundle_fixture)]);

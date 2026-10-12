@@ -33,7 +33,7 @@ const inputSchemas = {
   admin_reorder_campsites: z.object({ order: z.array(uuid).min(7), nextRotationPosition: z.number().int().min(1), reason }).strict(),
   admin_create_campsite: z.object({
     name: z.string().trim().min(1).max(120),
-    availabilityUrl: z.string().url().startsWith("https://").nullable().optional(),
+    availabilityUrl: z.string().trim().url().nullable().optional(),
     locationDescription: z.string().max(2000),
     directions: z.string().max(8000).nullable().optional(),
     cabinCapacity: z.number().int().positive().nullable().optional(),
