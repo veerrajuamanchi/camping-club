@@ -52,6 +52,9 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
   const [cabinInfo, setCabinInfo] = useState("");
   const [directions, setDirections] = useState("");
   const [availabilityUrl, setAvailabilityUrl] = useState("");
+  const [availabilityStatus, setAvailabilityStatus] = useState<string>("available");
+
+  const [modalError, setModalError] = useState<string | null>(null);
 
   async function loadCampsites() {
     setLoading(true);
@@ -78,10 +81,12 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
     setImageUrl(site.imageUrl ?? "");
     setCampHostName(site.campHostName ?? "");
     setCampHostPhone(site.campHostPhone ?? "");
-    setCampFeatures((site.campFeatures ?? []).join(", "));
+    setCampFeatures((site.campFeatures ?? []).join("\n"));
     setCabinInfo(site.cabinInformation ?? "");
     setDirections(site.directions ?? "");
     setAvailabilityUrl(site.availabilityUrl ?? "");
+    setAvailabilityStatus(site.availabilityStatus || "available");
+    setModalError(null);
     setMessage(null);
   }
 
@@ -97,16 +102,18 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
     setCabinInfo("");
     setDirections("");
     setAvailabilityUrl("");
+    setAvailabilityStatus("available");
+    setModalError(null);
     setMessage(null);
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setMessage(null);
+    setModalError(null);
     try {
       const featuresArray = campFeatures
-        .split(/[\n,]+/)
+        .split("\n")
         .map((f) => f.trim())
         .filter(Boolean);
 
@@ -131,6 +138,7 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
           cabinInformation: cabinInfo.trim() || null,
           directions: directions.trim() || null,
           availabilityUrl: cleanAvailabilityUrl || null,
+          availabilityStatus: availabilityStatus as any,
           reason: "Administrator added new campsite",
         });
         setMessage("Campsite created successfully!");
@@ -151,7 +159,7 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
           cabinTypes: editingSite.cabinTypes,
           reservationInstructions: editingSite.reservationInstructions,
           estimatedRateCents: editingSite.estimatedRateCents,
-          availabilityStatus: editingSite.availabilityStatus,
+          availabilityStatus: availabilityStatus as any,
           availabilitySourceUrl: editingSite.availabilitySourceUrl || null,
           availabilityVerifiedAt: null,
           adminNotes: editingSite.adminNotes ?? "",
@@ -163,7 +171,17 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
       setEditingSite(null);
       await loadCampsites();
     } catch (err) {
-      setMessage(err instanceof TripApiError ? "Could not save campsite. Verify input values." : "Operation failed.");
+      if (err instanceof TripApiError) {
+        if (err.status === 409) {
+          setModalError("This campsite record was updated by another administrator. Please refresh and try again.");
+        } else if (err.status === 403) {
+          setModalError("Permission denied. Administrator access is required.");
+        } else {
+          setModalError("Could not save campsite. Verify input values.");
+        }
+      } else {
+        setModalError("Operation failed. Please check network connection and try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -196,6 +214,7 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
         <div className="modal-overlay">
           <div className="modal-card">
             <h2>{isCreating ? "Add New Campsite" : `Edit ${editingSite?.name}`}</h2>
+            {modalError && <p role="alert" className="form-error" style={{ marginBottom: "1rem" }}>{modalError}</p>}
             <form onSubmit={(e) => void handleSave(e)}>
               <label>
                 Campsite Name *
@@ -244,12 +263,12 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
               </div>
 
               <label>
-                Camp Features (comma-separated)
+                Camp Features (one per line)
                 <textarea
                   value={campFeatures}
                   onChange={(e) => setCampFeatures(e.target.value)}
-                  placeholder="Fire pits, Showers, River access, Electric hookup"
-                  rows={3}
+                  placeholder={"Community propane grill\nLaundry room\nPlayground"}
+                  rows={4}
                 />
               </label>
 
@@ -271,6 +290,20 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
                   onChange={(e) => setAvailabilityUrl(e.target.value)}
                   placeholder="https://parks.ca.gov/..."
                 />
+              </label>
+
+              <label>
+                Site Availability &amp; Booking Status
+                <select
+                  value={availabilityStatus}
+                  onChange={(e) => setAvailabilityStatus(e.target.value)}
+                >
+                  <option value="available">Available (Active in Rotation)</option>
+                  <option value="limited">Limited</option>
+                  <option value="unavailable">Unavailable / Missed Lottery (Disabled)</option>
+                  <option value="manual_confirmation">Manual Confirmation</option>
+                  <option value="unknown">Unknown</option>
+                </select>
               </label>
 
               <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
@@ -298,11 +331,34 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
         {campsites.map((site) => (
           <div key={site.campsiteId} className="card" style={{ display: "grid", gap: "0.75rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{site.name}</h2>
-                <p style={{ margin: "0.2rem 0", color: "#4b5563" }}>
-                  <strong>Campsite Address:</strong> {site.locationDescription || "None listed"}
-                </p>
+              <div style={{ display: "flex", gap: "0.85rem", alignItems: "flex-start" }}>
+                {site.imageUrl && (
+                  <img
+                    src={site.imageUrl}
+                    alt={site.name}
+                    style={{ width: "75px", height: "75px", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: "8px", border: "1px solid #e5e7eb", flexShrink: 0 }}
+                  />
+                )}
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{site.name}</h2>
+                    <span
+                      style={{
+                        fontSize: "0.75rem",
+                        padding: "0.15rem 0.5rem",
+                        borderRadius: "9999px",
+                        fontWeight: 600,
+                        background: site.availabilityStatus === "unavailable" ? "#fee2e2" : "#f0fdf4",
+                        color: site.availabilityStatus === "unavailable" ? "#991b1b" : "#166534",
+                      }}
+                    >
+                      {site.availabilityStatus === "unavailable" ? "Unavailable / Lottery Missed" : (site.availabilityStatus || "Available")}
+                    </span>
+                  </div>
+                  <p style={{ margin: "0.2rem 0", color: "#4b5563" }}>
+                    <strong>Campsite Address:</strong> {site.locationDescription || "None listed"}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
@@ -312,14 +368,6 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
                 ✏️ Edit
               </button>
             </div>
-
-            {site.imageUrl && (
-              <img
-                src={site.imageUrl}
-                alt={site.name}
-                style={{ width: "100%", maxHeight: "200px", objectFit: "cover", borderRadius: "8px" }}
-              />
-            )}
 
             {(site.campHostName || site.campHostPhone) && (
               <p style={{ margin: 0, fontSize: "0.9rem", color: "#374151" }}>

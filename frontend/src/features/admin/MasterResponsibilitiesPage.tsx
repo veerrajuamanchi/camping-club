@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { invokeTripApi } from "../../lib/supabase";
+import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import type { TripApi } from "../trips/TripCalendarPage";
 
 const defaultApi: TripApi = (action, input, key) => invokeTripApi(action, input, key);
@@ -88,7 +88,26 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
+    const cleanTitle = title.trim();
+    if (cleanTitle.length < 3) {
+      setError("Title must be at least 3 characters long.");
+      return;
+    }
+    if (cleanTitle.length > 100) {
+      setError("Title cannot exceed 100 characters.");
+      return;
+    }
+    const capNum = Number(defaultCapacity);
+    if (!Number.isInteger(capNum) || capNum < 1 || capNum > 20) {
+      setError("Default capacity must be an integer between 1 and 20.");
+      return;
+    }
+    const weightNum = Number(workloadWeight);
+    if (isNaN(weightNum) || weightNum < 0.5 || weightNum > 5.0) {
+      setError("Workload weight must be between 0.5 and 5.0.");
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -96,26 +115,36 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
       if (editingItem) {
         await api("admin_update_master_responsibility", {
           id: editingItem.id,
-          title: title.trim(),
+          title: cleanTitle,
           description: description.trim() || null,
           category,
-          defaultCapacity: Number(defaultCapacity) || 1,
-          workloadWeight: Number(workloadWeight) || 1.0,
+          defaultCapacity: capNum,
+          workloadWeight: weightNum,
           active: editingItem.active,
         });
       } else {
         await api("admin_create_master_responsibility", {
-          title: title.trim(),
+          title: cleanTitle,
           description: description.trim() || null,
           category,
-          defaultCapacity: Number(defaultCapacity) || 1,
-          workloadWeight: Number(workloadWeight) || 1.0,
+          defaultCapacity: capNum,
+          workloadWeight: weightNum,
         });
       }
       setModalOpen(false);
       await load();
-    } catch {
-      setError("Could not save responsibility. Verify title length and fields.");
+    } catch (err) {
+      if (err instanceof TripApiError) {
+        if (err.status === 409) {
+          setError("This responsibility was modified by another administrator. Please refresh and try again.");
+        } else if (err.status === 403) {
+          setError("Permission denied. Administrator access is required.");
+        } else {
+          setError("Could not save responsibility. Verify title length (3–100 chars), capacity (1–20), and workload weight (0.5–5.0).");
+        }
+      } else {
+        setError("Operation failed. Please check network connection and try again.");
+      }
     } finally {
       setSaving(false);
     }
@@ -308,6 +337,7 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
         <div className="modal-backdrop">
           <div className="modal-card" style={{ maxWidth: "480px" }}>
             <h3>{editingItem ? "Edit Master Responsibility" : "Add Master Responsibility"}</h3>
+            {error && <p className="form-error" role="alert" style={{ marginBottom: "12px" }}>{error}</p>}
             <form onSubmit={handleSave} className="form-vertical" style={{ marginTop: "16px" }}>
               <label>
                 Title *

@@ -94,7 +94,7 @@ describe("AdminCampsitesPage", () => {
     await user.type(screen.getByLabelText("Image URL"), "https://example.com/wishon.jpg");
     await user.type(screen.getByLabelText("Camp Host Name"), "Jane Smith");
     await user.type(screen.getByLabelText("Camp Host Phone"), "555-9876");
-    await user.type(screen.getByLabelText("Camp Features (comma-separated)"), "Showers, Boating");
+    await user.type(screen.getByLabelText("Camp Features (one per line)"), "Showers\nBoating");
     await user.type(screen.getByLabelText("Cabin Information"), "Rustic bunkhouse");
 
     await user.click(screen.getByRole("button", { name: "Create Campsite" }));

@@ -161,14 +161,22 @@ function TripEditModal({
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const isClosed = trip?.pollStatus === "closed";
+  const [reopenPoll, setReopenPoll] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!bookingStatus) { setMsg("Select a Cabin Booking Status before saving."); return; }
+    if (reopenPoll && !reopenReason.trim()) {
+      setMsg("Please provide an audited reason for extending the registration deadline and reopening the poll.");
+      return;
+    }
     setBusy(true);
     setMsg(null);
     try {
       const effectiveDeadline = deadline || (startsOn ? datePlusDays(startsOn, -(calendar?.clubConfiguration.defaultPollLeadDays ?? 35)) : "");
-      await api("admin_configure_trip", {
+      const configRes = await api<{ version: number }>("admin_configure_trip", {
         tripId: trip.tripId,
         startsOn,
         endsOn,
@@ -182,8 +190,21 @@ function TripEditModal({
         cabinBookingStatus: bookingStatus,
         additionalInformation: information,
         expectedVersion: trip.version,
-        reason: "Administrator configured trip from calendar card",
+        reason: reopenPoll
+          ? `Administrator extended registration deadline: ${reopenReason.trim()}`
+          : "Administrator configured trip from calendar card",
       });
+
+      if (reopenPoll) {
+        const nextVersion = configRes?.version ?? (trip.version + 1);
+        await api("admin_set_poll_status", {
+          tripId: trip.tripId,
+          pollStatus: "open",
+          expectedVersion: nextVersion,
+          reason: `Administrator reopened poll after extending deadline: ${reopenReason.trim()}`,
+        });
+      }
+
       await onRefresh();
       onClose();
     } catch (err) {
@@ -234,6 +255,30 @@ function TripEditModal({
           <label>Trip notes & information
             <textarea value={information} onChange={(e) => setInformation(e.target.value)} />
           </label>
+          {isClosed && (
+            <div style={{ background: "#fef3c7", padding: "0.75rem", borderRadius: "6px", border: "1px solid #fde68a", margin: "0.5rem 0" }}>
+              <label className="checkbox-label" style={{ fontWeight: 600, color: "#92400e" }}>
+                <input
+                  type="checkbox"
+                  checked={reopenPoll}
+                  onChange={(e) => setReopenPoll(e.target.checked)}
+                />
+                Extend registration deadline &amp; Reopen Poll
+              </label>
+              {reopenPoll && (
+                <label style={{ marginTop: "0.5rem", display: "block" }}>
+                  Audited Reopening Reason *
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Extended registration by 5 days per committee request"
+                    value={reopenReason}
+                    onChange={(e) => setReopenReason(e.target.value)}
+                  />
+                </label>
+              )}
+            </div>
+          )}
           {msg && <p role="alert" className="form-error">{msg}</p>}
           <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
             <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
@@ -337,19 +382,53 @@ function EventCard({
 
   const [showEditModal, setShowEditModal] = useState(false);
 
+  const eventStatusLabel = isDraft
+    ? "Pending"
+    : trip.pollStatus === "open"
+      ? (trip.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
+      : (trip.pollStatus === "closed" ? "Confirmed" : "Pending");
+
+  const formattedDeadlinePST = trip.pollDeadlineAt
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }).format(new Date(trip.pollDeadlineAt))
+    : null;
+
   return (
     <article className="event-card-container" aria-label={`Trip ${dateLabel}`}>
       <div className="event-card-header">
-        <div>
-          <p className="eyebrow">{monthName(trip.monthKey)}</p>
-          <h2 className="event-card-name">
-            {trip.additionalInformation || `${monthName(trip.monthKey)} Camping`}
-          </h2>
-          {campsite && (
-            <p className="event-card-campsite">
-              {campsite.name}{campsite.locationDescription ? ` · ${campsite.locationDescription}` : ""}
-            </p>
+        <div style={{ display: "flex", gap: "0.85rem", alignItems: "flex-start" }}>
+          {campsite?.imageUrl && (
+            <img
+              src={campsite.imageUrl}
+              alt={campsite.name}
+              style={{
+                width: "75px",
+                height: "75px",
+                aspectRatio: "1 / 1",
+                objectFit: "cover",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                flexShrink: 0,
+              }}
+            />
           )}
+          <div>
+            <p className="eyebrow">{monthName(trip.monthKey)}</p>
+            <h2 className="event-card-name">
+              {trip.additionalInformation || `${monthName(trip.monthKey)} Camping`}
+            </h2>
+            {campsite && (
+              <p className="event-card-campsite">
+                {campsite.name}{campsite.locationDescription ? ` · ${campsite.locationDescription}` : ""}
+              </p>
+            )}
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           {isAdmin && (
@@ -363,30 +442,42 @@ function EventCard({
             </button>
           )}
           <span className={`event-status-pill status-${isDraft ? "upcoming" : trip.pollStatus}`}>
-            {isDraft ? "Upcoming" : trip.pollStatus}
+            Event Status: {eventStatusLabel}
           </span>
         </div>
       </div>
 
       <div className="event-card-date-row">
         <span>📅</span>
-        <span>{dateLabel}</span>
+        <span>{dateLabel} {trip.startsOn ? "(Pacific Time)" : ""}</span>
+        {formattedDeadlinePST && (
+          <span style={{ fontSize: "0.82rem", color: "#6b7280", marginLeft: "0.5rem" }}>
+            · Deadline: {formattedDeadlinePST}
+          </span>
+        )}
       </div>
 
-      <div className="metrics-grid">
+      <div style={{ display: "grid", gap: "0.5rem", margin: "0.75rem 0", background: "#f9fafb", padding: "0.75rem", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
         <div>
-          <p className="metric-value">{trip.cabinCount ?? "—"}</p>
-          <p className="metric-label">Cabins booked</p>
+          <strong style={{ display: "block", fontSize: "0.8rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em" }}>
+            Cabin Booking
+          </strong>
+          <span style={{ fontSize: "0.9rem", color: "#111827" }}>
+            • {trip.cabinCount ?? 0} Cabins Booked | Capacity: {trip.effectiveCapacity ?? (trip.cabinCount ? trip.cabinCount * trip.perCabinCapacity : "—")}
+          </span>
+          {trip.cabinCount != null && <span className="sr-only">{trip.cabinCount} cabins booked</span>}
+          {trip.effectiveCapacity != null && <span className="sr-only">Capacity: {trip.effectiveCapacity}</span>}
         </div>
         <div>
-          <p className="metric-value">{trip.spotsRemaining ?? "—"}</p>
-          <p className="metric-label">Spots left</p>
+          <strong style={{ display: "block", fontSize: "0.8rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em" }}>
+            Attendance &amp; RSVP
+          </strong>
+          <span style={{ fontSize: "0.9rem", color: "#111827" }}>
+            • {trip.comingCount} Confirmed | {trip.spotsRemaining ?? 0} Spots Remaining
+          </span>
+          <span className="sr-only">{trip.comingCount} confirmed</span>
           {trip.spotsRemaining != null && <span className="sr-only">{trip.spotsRemaining} spots remaining</span>}
-        </div>
-        <div>
-          <p className="metric-value">{trip.waitlistCount}</p>
-          <p className="metric-label">Waitlist</p>
-          <span className="sr-only">{trip.waitlistCount} on waitlist</span>
+          {trip.waitlistCount > 0 && <span className="sr-only">{trip.waitlistCount} on waitlist</span>}
         </div>
       </div>
 
@@ -432,7 +523,8 @@ function EventCard({
       )}
 
       <div className="event-card-footer">
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          <span style={{ fontSize: "0.82rem", color: "#6b7280" }}>RSVP:</span>
           {isComing && <span className="status-badge-going status-chip status-coming">Going</span>}
           {isNotComing && <span className="status-badge-not-going status-chip status-not_coming">Not Going</span>}
           {trip.myWaitlistPosition && (

@@ -198,8 +198,8 @@ describe("TripCalendarPage", () => {
       comingCount: 4, myRsvp: null,
     }]);
     render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
-    expect(await screen.findByText(/8 spots remaining/i)).toBeInTheDocument();
-    expect(screen.getByText(/3 on waitlist/i)).toBeInTheDocument();
+    expect(await screen.findByText(/4 Confirmed \| 8 Spots Remaining/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 Cabins Booked \| Capacity: 12/i)).toBeInTheDocument();
   });
 
   it("displays correct RSVP status badge for going, not going, waitlisted, and no response", async () => {

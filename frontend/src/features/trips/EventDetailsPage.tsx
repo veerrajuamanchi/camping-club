@@ -239,6 +239,24 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     ? `${details.campsite.name}${details.campsite.locationDescription ? ` · ${details.campsite.locationDescription}` : ""}`
     : "TBA";
 
+  const eventStatusLabel = isDraft
+    ? "Pending"
+    : details.pollStatus === "open"
+      ? (details.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
+      : (details.pollStatus === "closed" ? "Confirmed" : "Pending");
+
+  const formattedDeadlinePST = details.pollDeadlineAt
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }).format(new Date(details.pollDeadlineAt))
+    : null;
+
   return (
     <section className="event-details">
       <Link to="/" className="back-link">
@@ -251,7 +269,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           <p className="hero-subtitle">{campsiteLocation}</p>
           <div className="hero-badges">
             <span className={`event-status-pill status-${isDraft ? "upcoming" : details.pollStatus}`}>
-              {isDraft ? "Upcoming" : details.pollStatus}
+              Event Status: {eventStatusLabel}
+            </span>
+            <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
+              RSVP: {rsvpStatusLabel}
             </span>
             {isComing && <span className="status-badge-going">You're going</span>}
             {isNotComing && <span className="status-badge-not-going">Not going</span>}
@@ -275,12 +296,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           {!isDraft && details.startsOn && details.endsOn ? (
             <div className="hero-info-item">
               <span>📅</span>
-              <strong>{details.startsOn} – {details.endsOn}</strong>
+              <strong>{details.startsOn} – {details.endsOn} (Pacific Time)</strong>
             </div>
           ) : (
             <div className="hero-info-item">
               <span>📅</span>
               <strong>Dates TBA</strong>
+            </div>
+          )}
+          {formattedDeadlinePST && (
+            <div className="hero-info-item">
+              <span>⏰</span>
+              <span>Registration deadline: {formattedDeadlinePST}</span>
             </div>
           )}
           {details.campsite?.locationDescription && (
@@ -349,7 +376,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                   <img
                     src={details.campsite.imageUrl}
                     alt={details.campsite.name}
-                    style={{ width: "100%", maxHeight: "280px", objectFit: "cover", borderRadius: "12px" }}
+                    style={{ width: "150px", height: "150px", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: "12px", border: "1px solid #e5e7eb" }}
                   />
                 </div>
               )}
@@ -394,13 +421,48 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
 
           <div className="card">
             <h2>RSVP & Attendance</h2>
-            <div className="event-card-meta">
-              {details.cabinCount != null && <span>{details.cabinCount} cabins booked</span>}
-              {details.effectiveCapacity != null && <span>Capacity: {details.effectiveCapacity}</span>}
-              <span>{details.comingCount} confirmed</span>
-              {details.spotsRemaining != null && <span>{details.spotsRemaining} spots remaining</span>}
-              {details.waitlistCount > 0 && <span>{details.waitlistCount} on waitlist</span>}
+            <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem", background: "#f9fafb", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
+              <div>
+                <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
+                  Cabin Booking
+                </strong>
+                <span style={{ fontSize: "0.95rem", color: "#111827" }}>
+                  • {details.cabinCount ?? 0} Cabins Booked | Capacity: {details.effectiveCapacity ?? (details.cabinCount ? details.cabinCount * details.perCabinCapacity : "—")}
+                </span>
+                {details.cabinCount != null && (
+                  <span className="sr-only">{details.cabinCount} cabins booked</span>
+                )}
+                {details.effectiveCapacity != null && (
+                  <span className="sr-only">Capacity: {details.effectiveCapacity}</span>
+                )}
+              </div>
+              <div>
+                <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
+                  Attendance &amp; RSVP
+                </strong>
+                <span style={{ fontSize: "0.95rem", color: "#111827" }}>
+                  • {details.comingCount} Confirmed | {details.spotsRemaining ?? 0} Spots Remaining
+                </span>
+                <span className="sr-only">{details.comingCount} confirmed</span>
+                {details.spotsRemaining != null && (
+                  <span className="sr-only">{details.spotsRemaining} spots remaining</span>
+                )}
+                {details.waitlistCount > 0 && (
+                  <span style={{ display: "block", fontSize: "0.85rem", color: "#6b7280", marginTop: "0.2rem" }}>
+                    ({details.waitlistCount} on waitlist)
+                  </span>
+                )}
+              </div>
+              <div>
+                <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
+                  Deposit Obligation
+                </strong>
+                <span style={{ fontSize: "0.9rem", color: "#4b5563" }}>
+                  • $50 deposit per attendee due upon confirmation · <em>Payment tracking coming soon</em>
+                </span>
+              </div>
             </div>
+
             <p>
               Your status: <strong>{rsvpStatusLabel}</strong>
             </p>
