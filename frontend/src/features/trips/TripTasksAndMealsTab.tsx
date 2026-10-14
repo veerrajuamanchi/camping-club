@@ -44,6 +44,7 @@ type Props = {
   isAdmin: boolean;
   currentMemberId?: string;
   api: TripApiType;
+  onDutyChanged?: () => Promise<void> | void;
 };
 
 export function TripTasksAndMealsTab({
@@ -52,6 +53,7 @@ export function TripTasksAndMealsTab({
   isAdmin,
   currentMemberId,
   api,
+  onDutyChanged,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -123,6 +125,7 @@ export function TripTasksAndMealsTab({
         setOverlapDuty(null);
         setSuccessMsg("Successfully volunteered for this responsibility!");
         await loadData();
+        void onDutyChanged?.();
       } catch (err: unknown) {
         const error = err as { code?: string; message?: string };
         if (error.code === "23514") {
@@ -149,6 +152,7 @@ export function TripTasksAndMealsTab({
         await api("drop_duty", { assignmentId, reason: "Member dropped from UI" });
         setSuccessMsg("Responsibility dropped successfully.");
         await loadData();
+        void onDutyChanged?.();
       } catch {
         setErrorMsg("Failed to drop responsibility.");
       }
@@ -171,6 +175,7 @@ export function TripTasksAndMealsTab({
         setSelectedMemberToAssign("");
         setSuccessMsg("Member assigned successfully.");
         await loadData();
+        void onDutyChanged?.();
       } catch (err: unknown) {
         const error = err as { code?: string; message?: string };
         if (error.code === "23514") {

@@ -93,14 +93,28 @@ test.describe("Trip Management, Constitution Acknowledgment, and RSVP Persistenc
     // Submit Going RSVP
     await memberPage.getByRole("button", { name: "Confirm Going" }).click();
 
+    // Verify Option A celebration modal appears with duty signup prompt
+    const dutyModal = memberPage.locator(".modal-overlay");
+    await expect(dutyModal).toBeVisible();
+    await expect(dutyModal.getByRole("heading", { name: /You're Going to.*! 🎉/i })).toBeVisible();
+    await expect(dutyModal.getByText(/camping duties/i)).toBeVisible();
+
+    // Dismiss modal to inspect Overview tab
+    await dutyModal.getByRole("button", { name: "I'll choose later" }).click();
+    await expect(dutyModal).toBeHidden();
+
     // Verify Going status and member in attendees list
     await expect(memberPage.locator(".status-badge-going")).toBeVisible();
-    await expect(memberPage.getByText(memberUser.displayName)).toBeVisible();
+    await expect(memberPage.getByText(memberUser.displayName).first()).toBeVisible();
+
+    // Verify persistent duty badge (incomplete: 0 of 2)
+    await expect(memberPage.getByRole("button", { name: /⚠️ Duties: 0 of 2 selected/i })).toBeVisible();
 
     // 4. Full page reload verification
     await memberPage.reload();
     await expect(memberPage.locator(".status-badge-going")).toBeVisible();
-    await expect(memberPage.getByText(memberUser.displayName)).toBeVisible();
+    await expect(memberPage.getByText(memberUser.displayName).first()).toBeVisible();
+    await expect(memberPage.getByRole("button", { name: /⚠️ Duties: 0 of 2 selected/i })).toBeVisible();
 
     // 5. Change RSVP to "Not Going"
     const notGoingBtn = memberPage.getByRole("button", { name: "Not Going" });

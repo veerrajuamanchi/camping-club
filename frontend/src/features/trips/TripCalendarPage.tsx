@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { formatZonedDateTimeLocal } from "../../domain/calendar";
+import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 
 type Rule = { stable_key: string; text: string; structured_values: Record<string, unknown> };
 type Bundle = { id: string; version: number; contentHash: string; rules: Rule[]; createdAt: string };
@@ -27,6 +28,7 @@ export type Trip = {
   waitlistCount: number; myWaitlistPosition: number | null;
   pollStatus: "draft" | "open" | "closed";
   title?: string | null; eventStatus?: EventStatus; campingType?: CampingType;
+  taskQuotaTarget?: number; myDutyCount?: number;
   additionalInformation: string; cabinBookingStatus: CabinBookingStatus | null;
   legacyCabinAvailabilityStatus?: string | null; version: number; comingCount: number;
   tripDecision: "none"; currentRuleBundle: Bundle | null;
@@ -286,6 +288,7 @@ function EventCard({
   isAdmin,
   api,
   onRefresh,
+  onRsvpConfirmed,
 }: {
   trip: Trip;
   campsite: Campsite | undefined;
@@ -293,6 +296,7 @@ function EventCard({
   isAdmin: boolean;
   api: TripApi;
   onRefresh: () => Promise<void>;
+  onRsvpConfirmed?: (trip: Trip) => void;
 }) {
   const [choice, setChoice] = useState<"coming" | "not_coming" | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -336,6 +340,9 @@ function EventCard({
         setWaitlistedPosition(null);
       }
       await onRefresh();
+      if (choice === "coming" && !result?.waitlisted) {
+        onRsvpConfirmed?.(trip);
+      }
       setChoice(null);
       setAcknowledged(false);
     } catch {
@@ -554,7 +561,7 @@ function EventCard({
       )}
 
       <div className="event-card-footer">
-        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
           <span style={{ fontSize: "0.82rem", color: "#6b7280" }}>RSVP:</span>
           {isComing && <span className="status-badge-going status-chip status-coming">Going</span>}
           {isNotComing && <span className="status-badge-not-going status-chip status-not_coming">Not Going</span>}
@@ -563,6 +570,38 @@ function EventCard({
           )}
           {!isComing && !isNotComing && !trip.myWaitlistPosition && (
             <span className="status-chip status-none">No response</span>
+          )}
+          {isComing && (
+            (trip.myDutyCount ?? 0) >= (trip.taskQuotaTarget ?? 2) ? (
+              <span
+                className="badge-pill"
+                style={{
+                  background: "#dcfce7",
+                  color: "#166534",
+                  fontWeight: 600,
+                  fontSize: "0.78rem",
+                }}
+              >
+                ✓ Duties: {trip.myDutyCount ?? 0}/{trip.taskQuotaTarget ?? 2}
+              </span>
+            ) : (
+              <Link
+                to={`/trips/${trip.tripId}?tab=tasks`}
+                className="badge-pill"
+                style={{
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  fontWeight: 600,
+                  fontSize: "0.78rem",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.25rem",
+                }}
+              >
+                ⚠️ Duties: {trip.myDutyCount ?? 0} of {trip.taskQuotaTarget ?? 2} selected · Choose Duties &rarr;
+              </Link>
+            )
           )}
         </div>
         <Link to={`/trips/${trip.tripId}`} className="view-details-link">
@@ -874,10 +913,12 @@ export function sortTrips(a: Trip, b: Trip): number {
 }
 
 export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
+  const navigate = useNavigate();
   const [calendar, setCalendar] = useState<Calendar | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [dutyPromptTrip, setDutyPromptTrip] = useState<Trip | null>(null);
 
   async function refresh() {
     setError(null);
@@ -933,9 +974,23 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
                 isAdmin={isAdmin}
                 api={api}
                 onRefresh={refresh}
+                onRsvpConfirmed={(confirmedTrip) => setDutyPromptTrip(confirmedTrip)}
               />
             ))}
         </div>
+      )}
+
+      {dutyPromptTrip && (
+        <PostRsvpDutyModal
+          tripTitle={dutyPromptTrip.title || dutyPromptTrip.additionalInformation || `${monthName(dutyPromptTrip.monthKey)} Camping`}
+          quotaTarget={dutyPromptTrip.taskQuotaTarget ?? 2}
+          onChooseDuties={() => {
+            const targetTripId = dutyPromptTrip.tripId;
+            setDutyPromptTrip(null);
+            navigate(`/trips/${targetTripId}?tab=tasks`);
+          }}
+          onClose={() => setDutyPromptTrip(null)}
+        />
       )}
 
       {showAddCustomModal && calendar && (

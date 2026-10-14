@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useAuth } from "../../app/AuthProvider";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
 import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
+import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 
 type TripDetails = {
   tripId: string;
@@ -11,6 +12,8 @@ type TripDetails = {
   title?: string | null;
   eventStatus?: "tentative" | "confirmed" | "cancelled";
   campingType?: "cabin" | "tent" | "rv" | "boat";
+  taskQuotaTarget?: number;
+  myDutyCount?: number;
   pollStatus: "draft" | "open" | "closed";
   startsOn: string | null;
   endsOn: string | null;
@@ -104,7 +107,31 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const [details, setDetails] = useState<TripDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get("tab") as Tab | null;
+  const validTabs: Tab[] = ["overview", "constitution", "logistics", "tasks", "financials"];
+  const [tab, setTabState] = useState<Tab>(urlTab && validTabs.includes(urlTab) ? urlTab : "overview");
+
+  useEffect(() => {
+    const currentQueryTab = searchParams.get("tab") as Tab | null;
+    if (currentQueryTab && validTabs.includes(currentQueryTab) && currentQueryTab !== tab) {
+      setTabState(currentQueryTab);
+    }
+  }, [searchParams]);
+
+  const setTab = (newTab: Tab) => {
+    setTabState(newTab);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (newTab === "overview") {
+        next.delete("tab");
+      } else {
+        next.set("tab", newTab);
+      }
+      return next;
+    }, { replace: true });
+  };
+
   const [rsvpChoice, setRsvpChoice] = useState<"coming" | "not_coming" | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [rsvpBusy, setRsvpBusy] = useState(false);
@@ -115,6 +142,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const [showEditLogistics, setShowEditLogistics] = useState(false);
   const [showEditEventModal, setShowEditEventModal] = useState(false);
   const [showTimeSlotsModal, setShowTimeSlotsModal] = useState(false);
+  const [showDutyPromptModal, setShowDutyPromptModal] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
@@ -168,6 +196,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         setWaitlistedPosition(null);
       }
       await refresh();
+      if (rsvpChoice === "coming" && !result?.waitlisted) {
+        setShowDutyPromptModal(true);
+      }
       setRsvpChoice(null);
       setAcknowledged(false);
     } catch {
@@ -335,6 +366,35 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
               RSVP: {rsvpStatusLabel}
             </span>
             {isComing && <span className="status-badge-going">You're going</span>}
+            {isComing && (
+              (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2) ? (
+                <span
+                  className="badge-pill"
+                  style={{ background: "#dcfce7", color: "#166534", fontWeight: 600, fontSize: "0.82rem" }}
+                >
+                  ✓ Duties: {details.myDutyCount ?? 0}/{details.taskQuotaTarget ?? 2}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setTab("tasks")}
+                  className="badge-pill"
+                  style={{
+                    background: "#fef3c7",
+                    color: "#92400e",
+                    fontWeight: 600,
+                    fontSize: "0.82rem",
+                    border: "1px solid #fde68a",
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.25rem",
+                  }}
+                >
+                  ⚠️ Duties: {details.myDutyCount ?? 0} of {details.taskQuotaTarget ?? 2} selected · Choose Duties &rarr;
+                </button>
+              )
+            )}
             {isNotComing && <span className="status-badge-not-going">Not going</span>}
             {details.myWaitlistPosition && (
               <span className="status-badge-not-going">Waitlist #{details.myWaitlistPosition}</span>
@@ -514,6 +574,24 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
             <p>
               Your status: <strong>{rsvpStatusLabel}</strong>
             </p>
+
+            {isComing && (
+              (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2) ? (
+                <div style={{ margin: "0.75rem 0", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.88rem", color: "#166534" }}>
+                  ✓ <strong>Duties Quota Complete:</strong> You have selected {details.myDutyCount} of {details.taskQuotaTarget ?? 2} camping duties.{" "}
+                  <button type="button" onClick={() => setTab("tasks")} style={{ background: "none", border: "none", color: "#15803d", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit", fontWeight: 600 }}>
+                    View or change your duties in Tasks &amp; Meals &rarr;
+                  </button>
+                </div>
+              ) : (
+                <div style={{ margin: "0.75rem 0", background: "#fef3c7", border: "1px solid #fde68a", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.88rem", color: "#92400e" }}>
+                  ⚠️ <strong>Action Needed:</strong> You have selected {details.myDutyCount ?? 0} of {details.taskQuotaTarget ?? 2} camping duties. Every attendee helps keep the trip smooth!{" "}
+                  <button type="button" onClick={() => setTab("tasks")} style={{ background: "none", border: "none", color: "#b45309", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit", fontWeight: 700 }}>
+                    Choose your duties now &rarr;
+                  </button>
+                </div>
+              )
+            )}
 
             {!isDraft && isOpen && (
               <div className="response-actions">
@@ -729,6 +807,19 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           isAdmin={isAdmin}
           currentMemberId={authProfileMemberId}
           api={api}
+          onDutyChanged={refresh}
+        />
+      )}
+
+      {showDutyPromptModal && (
+        <PostRsvpDutyModal
+          tripTitle={tripTitle}
+          quotaTarget={details.taskQuotaTarget ?? 2}
+          onChooseDuties={() => {
+            setShowDutyPromptModal(false);
+            setTab("tasks");
+          }}
+          onClose={() => setShowDutyPromptModal(false)}
         />
       )}
 

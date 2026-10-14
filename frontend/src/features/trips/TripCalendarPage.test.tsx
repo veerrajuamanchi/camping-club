@@ -364,5 +364,92 @@ describe("TripCalendarPage", () => {
 
     expect(await screen.findByText("trip not found or already deleted")).toBeInTheDocument();
   });
+
+  it("triggers celebration modal when confirming Going and allows clicking Choose My Duties Now", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async (action: string) => {
+      if (action === "submit_rsvp") {
+        return { response: "coming", version: 1 };
+      }
+      return calendar;
+    });
+
+    render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
+    await screen.findByText(/January 2027/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Going" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /I have read and agree/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
+
+    expect(await screen.findByRole("heading", { name: /You're Going to January 2027 Camping! 🎉/i })).toBeInTheDocument();
+    expect(screen.getByText(/camping duties/i)).toBeInTheDocument();
+
+    const chooseDutiesBtn = screen.getByRole("button", { name: /Choose My Duties Now/i });
+    expect(chooseDutiesBtn).toBeInTheDocument();
+
+    fireEvent.click(chooseDutiesBtn);
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /You're Going to January 2027 Camping! 🎉/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("allows dismissing celebration modal with I'll choose later", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async (action: string) => {
+      if (action === "submit_rsvp") {
+        return { response: "coming", version: 1 };
+      }
+      return calendar;
+    });
+
+    render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
+    await screen.findByText(/January 2027/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Going" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /I have read and agree/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
+
+    expect(await screen.findByRole("heading", { name: /You're Going to January 2027 Camping! 🎉/i })).toBeInTheDocument();
+
+    const laterBtn = screen.getByRole("button", { name: /I'll choose later/i });
+    fireEvent.click(laterBtn);
+    expect(screen.queryByRole("heading", { name: /You're Going to January 2027 Camping! 🎉/i })).not.toBeInTheDocument();
+  });
+
+  it("shows amber duty badge when user is going with incomplete duties and green badge when fulfilled", async () => {
+    const calendar = makeCalendar();
+    calendar.trips[0].myRsvp = {
+      response: "coming",
+      acknowledgmentId: "ack-1",
+      version: 1,
+      updatedAt: "2026-10-14T00:00:00Z",
+    };
+    calendar.trips[0].myDutyCount = 1;
+    calendar.trips[0].taskQuotaTarget = 2;
+
+    const api = vi.fn(async () => calendar);
+    render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
+    await screen.findByText(/January 2027/);
+
+    const dutiesLink = screen.getByRole("link", { name: /⚠️ Duties: 1 of 2 selected · Choose Duties →/i });
+    expect(dutiesLink).toBeInTheDocument();
+    expect(dutiesLink).toHaveAttribute("href", "/trips/trip-1?tab=tasks");
+  });
+
+  it("shows green badge when user duty quota is fulfilled", async () => {
+    const fulfilledCalendar = makeCalendar();
+    fulfilledCalendar.trips[0].myRsvp = {
+      response: "coming",
+      acknowledgmentId: "ack-1",
+      version: 1,
+      updatedAt: "2026-10-14T00:00:00Z",
+    };
+    fulfilledCalendar.trips[0].myDutyCount = 2;
+    fulfilledCalendar.trips[0].taskQuotaTarget = 2;
+
+    const apiFulfilled = vi.fn(async () => fulfilledCalendar);
+    render(<TripCalendarPage isAdmin={false} api={apiFulfilled as unknown as TripApi} />);
+    expect(await screen.findByText("✓ Duties: 2/2")).toBeInTheDocument();
+  });
 });
 

@@ -305,7 +305,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
     service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,active,version").eq("active", true).order("rotation_position"),
-    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
+    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,task_quota_target,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
@@ -315,11 +315,17 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
     const { error } = await service.rpc("phase2_refresh_open_rule_bundles", { p_actor_id: member.member_id, p_trip_ids: openTripIds });
     checkError(error);
   }
-  const [bundleResult, rsvpResult] = tripIds.length ? await Promise.all([
+  const [bundleResult, rsvpResult, dutyAssignmentsResult] = tripIds.length ? await Promise.all([
     service.from("trip_rule_bundles").select("id,trip_id,version_no,content_hash,rendered_bundle,created_at").in("trip_id", tripIds).eq("is_current", true),
     service.from("trip_rsvps").select("trip_id,member_id,response,rule_acknowledgment_id,version,updated_at").in("trip_id", tripIds),
-  ]) : [{ data: [], error: null }, { data: [], error: null }];
-  checkError(bundleResult.error); checkError(rsvpResult.error);
+    service.from("trip_duty_assignments").select("trip_id").in("trip_id", tripIds).eq("member_id", member.member_id).in("status", ["claimed", "assigned_by_admin"]),
+  ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+  checkError(bundleResult.error); checkError(rsvpResult.error); checkError(dutyAssignmentsResult.error);
+
+  const dutyCountsByTrip = new Map<string, number>();
+  for (const row of dutyAssignmentsResult.data ?? []) {
+    dutyCountsByTrip.set(row.trip_id, (dutyCountsByTrip.get(row.trip_id) ?? 0) + 1);
+  }
   const [waitlistCountResult, ownWaitlistResult] = tripIds.length ? await Promise.all([
     service
       .from("trip_waitlist_entries")
@@ -447,6 +453,8 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
         title: trip.title ?? null,
         eventStatus: trip.event_status ?? "tentative",
         campingType: trip.camping_type ?? "cabin",
+        taskQuotaTarget: (trip as any).task_quota_target ?? 2,
+        myDutyCount: dutyCountsByTrip.get(trip.id) ?? 0,
         additionalInformation: trip.additional_information, cabinBookingStatus: trip.cabin_booking_status,
         legacyCabinAvailabilityStatus: member.member_role === "admin" ? trip.cabin_availability_status : undefined,
         version: trip.version, comingCount: counts.get(trip.id) ?? 0, tripDecision: "none",
@@ -463,7 +471,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
 
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
   const tripResult = await service.from("camping_trips")
-    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,camping_type,deleted_at,version")
+    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,camping_type,task_quota_target,deleted_at,version")
     .eq("id", tripId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -483,7 +491,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     checkError(refreshError);
   }
 
-  const [campsiteResult, bundleResult, rsvpResult, waitlistResult] = await Promise.all([
+  const [campsiteResult, bundleResult, rsvpResult, waitlistResult, dutiesResult] = await Promise.all([
     trip.selected_campsite_id
       ? service.from("campsites")
           .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,version")
@@ -503,11 +511,17 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       .eq("trip_id", tripId)
       .eq("status", "waiting")
       .order("position"),
+    service.from("trip_duty_assignments")
+      .select("id", { count: "exact", head: true })
+      .eq("trip_id", tripId)
+      .eq("member_id", member.member_id)
+      .in("status", ["claimed", "assigned_by_admin"]),
   ]);
   checkError(campsiteResult.error);
   checkError(bundleResult.error);
   checkError(rsvpResult.error);
   checkError(waitlistResult.error);
+  checkError(dutiesResult.error);
 
   const campsite = campsiteResult.data;
   const rsvps = rsvpResult.data ?? [];
@@ -596,6 +610,8 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     title: trip.title ?? null,
     eventStatus: trip.event_status ?? "tentative",
     campingType: trip.camping_type ?? "cabin",
+    taskQuotaTarget: (trip as any).task_quota_target ?? 2,
+    myDutyCount: dutiesResult.count ?? 0,
     pollStatus: trip.poll_status,
     startsOn: trip.starts_on,
     endsOn: trip.ends_on,

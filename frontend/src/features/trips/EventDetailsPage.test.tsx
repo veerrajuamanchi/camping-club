@@ -68,11 +68,13 @@ function renderPage(
   apiMock = vi.fn().mockImplementation((action: string) => {
     if (action === "get_trip_details") return Promise.resolve(uiData);
     if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+    if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
     return Promise.resolve({});
-  })
+  }),
+  initialRoute = "/trips/trip-1"
 ) {
   const result = render(
-    <MemoryRouter initialEntries={["/trips/trip-1"]}>
+    <MemoryRouter initialEntries={[initialRoute]}>
       <Routes>
         <Route path="/trips/:tripId" element={<EventDetailsPage isAdmin={isAdmin} api={apiMock} />} />
       </Routes>
@@ -389,6 +391,83 @@ describe("EventDetailsPage", () => {
     await screen.findByText("December Camping");
 
     expect(screen.queryByRole("button", { name: "🍽️ Manage Meals & Chores" })).not.toBeInTheDocument();
+  });
+
+  it("opens directly to Tasks & Meals tab when URL has ?tab=tasks", async () => {
+    renderPage(tripData, false, undefined, "/trips/trip-1?tab=tasks");
+    expect(await screen.findByRole("heading", { name: "Your Trip Responsibility Progress" })).toBeInTheDocument();
+  });
+
+  it("prompts user with celebration modal on confirming Going and switches to Tasks tab on Choose My Duties Now", async () => {
+    const user = userEvent.setup();
+    const goingTripData = {
+      ...tripData,
+      myRsvp: { response: "coming" as const, version: 1, acknowledgmentId: "ack-1", updatedAt: "2026-10-14T00:00:00Z" },
+    };
+
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "submit_rsvp") return Promise.resolve({ response: "coming", version: 1 });
+      if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+      return Promise.resolve({});
+    });
+
+    renderPage(tripData, false, apiMock);
+    await screen.findByText("December Camping");
+
+    const goingBtn = screen.getByRole("button", { name: "Going" });
+    await user.click(goingBtn);
+
+    const checkbox = screen.getByRole("checkbox", { name: /I have read and agree/i });
+    await user.click(checkbox);
+
+    // Mock refresh to return going status
+    apiMock.mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(goingTripData);
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+      return Promise.resolve({});
+    });
+
+    const confirmBtn = screen.getByRole("button", { name: "Confirm Going" });
+    await user.click(confirmBtn);
+
+    expect(await screen.findByRole("heading", { name: /You're Going to December Camping! 🎉/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/camping duties/i).length).toBeGreaterThanOrEqual(1);
+
+    const chooseDutiesBtn = screen.getByRole("button", { name: /Choose My Duties Now/i });
+    await user.click(chooseDutiesBtn);
+
+    // Modal closes and switches to Tasks tab
+    expect(screen.queryByRole("heading", { name: /You're Going to December Camping! 🎉/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Your Trip Responsibility Progress" })).toBeInTheDocument();
+  });
+
+  it("displays persistent duty badge and overview banner for incomplete duties and complete duties", async () => {
+    const user = userEvent.setup();
+    const incompleteTripData = {
+      ...tripData,
+      taskQuotaTarget: 2,
+      myDutyCount: 1,
+      myRsvp: { response: "coming" as const, version: 1, acknowledgmentId: "ack-1", updatedAt: "2026-10-14T00:00:00Z" },
+    };
+
+    renderPage(incompleteTripData, false);
+    await screen.findByText("December Camping");
+
+    // Hero badge
+    const dutyBadgeBtn = screen.getByRole("button", { name: /⚠️ Duties: 1 of 2 selected · Choose Duties →/i });
+    expect(dutyBadgeBtn).toBeInTheDocument();
+
+    // Overview banner
+    expect(screen.getByText(/Action Needed:/i)).toBeInTheDocument();
+    expect(screen.getByText(/You have selected 1 of 2 camping duties/i)).toBeInTheDocument();
+
+    // Clicking the overview link switches to tasks tab
+    const chooseDutiesLink = screen.getByRole("button", { name: /Choose your duties now →/i });
+    await user.click(chooseDutiesLink);
+    expect(await screen.findByRole("heading", { name: "Your Trip Responsibility Progress" })).toBeInTheDocument();
   });
 });
 
