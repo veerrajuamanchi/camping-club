@@ -208,7 +208,18 @@ describe("TripCalendarPage", () => {
     }]);
     render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
     expect(await screen.findByText(/4 Confirmed \| 8 Spots Remaining/i)).toBeInTheDocument();
-    expect(screen.getByText(/2 Cabin Sites Booked \| Capacity: 12/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 Cabin sites \(Booked\) \| Capacity: 12/i)).toBeInTheDocument();
+  });
+
+  it("displays pending sites available booking status on card", async () => {
+    const calendar = buildCalendar([{
+      tripId: "t1", pollStatus: "open", startsOn: "2026-12-05", endsOn: "2026-12-07",
+      perCabinCapacity: 6, cabinCount: 2, effectiveCapacity: 12,
+      spotsRemaining: 8, waitlistCount: 0, myWaitlistPosition: null,
+      comingCount: 4, myRsvp: null, cabinBookingStatus: "pending",
+    }]);
+    render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
+    expect(await screen.findByText(/2 Cabin sites \(Pending Sites available\) \| Capacity: 12/i)).toBeInTheDocument();
   });
 
   it("displays correct RSVP status badge for going, not going, waitlisted, and no response", async () => {

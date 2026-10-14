@@ -5,6 +5,7 @@ import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
 import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
+import { formatCabinBookingStatus } from "./TripCalendarPage";
 
 type TripDetails = {
   tripId: string;
@@ -457,7 +458,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           <div className="hero-info-item">
             <span>🏕️</span>
             <span>
-              {details.cabinCount != null ? `${details.cabinCount} ${campingTypeLabel.toLowerCase()} sites · ` : ""}
+              {details.cabinCount != null ? `${details.cabinCount} ${campingTypeLabel.toLowerCase()} ${details.cabinCount === 1 ? "site" : "sites"} (${formatCabinBookingStatus(details.cabinBookingStatus)}) · ` : ""}
               {details.perCabinCapacity} people per site
               {details.effectiveCapacity != null ? ` (${details.effectiveCapacity} total spots)` : ""}
             </span>

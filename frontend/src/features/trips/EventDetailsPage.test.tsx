@@ -469,5 +469,21 @@ describe("EventDetailsPage", () => {
     await user.click(chooseDutiesLink);
     expect(await screen.findByRole("heading", { name: "Your Trip Responsibility Progress" })).toBeInTheDocument();
   });
+
+  it("displays cabin sites count and booking status in brackets in hero", async () => {
+    const bookingTripData = {
+      ...tripData,
+      cabinCount: 2,
+      perCabinCapacity: 8,
+      effectiveCapacity: 16,
+      campingType: "cabin" as const,
+      cabinBookingStatus: "pending" as const,
+    };
+
+    renderPage(bookingTripData, false);
+    await screen.findByText("December Camping");
+
+    expect(screen.getByText(/2 cabin sites \(Pending Sites available\) · 8 people per site \(16 total spots\)/i)).toBeInTheDocument();
+  });
 });
 

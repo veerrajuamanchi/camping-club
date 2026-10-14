@@ -49,6 +49,12 @@ const cabinBookingStatuses: Array<{ value: CabinBookingStatus; label: string }> 
   { value: "booked", label: "Booked" },
   { value: "pending", label: "Pending (sites available)" },
 ];
+
+export function formatCabinBookingStatus(status: CabinBookingStatus | string | null | undefined): string {
+  if (status === "booked") return "Booked";
+  if (status === "no_vacancy") return "No Vacancy";
+  return "Pending Sites available";
+}
 const eventStatuses: Array<{ value: EventStatus; label: string }> = [
   { value: "tentative", label: "Tentative" },
   { value: "confirmed", label: "Confirmed" },
@@ -506,7 +512,7 @@ function EventCard({
             {campingTypeLabel} Booking
           </strong>
           <span style={{ fontSize: "0.9rem", color: "#111827" }}>
-            • {trip.cabinCount ?? 0} {campingTypeLabel} Sites Booked | Capacity: {trip.effectiveCapacity ?? (trip.cabinCount ? trip.cabinCount * trip.perCabinCapacity : "—")}
+            • {trip.cabinCount ?? 0} {campingTypeLabel} {trip.cabinCount === 1 ? "site" : "sites"} ({formatCabinBookingStatus(trip.cabinBookingStatus)}) | Capacity: {trip.effectiveCapacity ?? (trip.cabinCount ? trip.cabinCount * trip.perCabinCapacity : "—")}
           </span>
         </div>
         <div>
