@@ -73,15 +73,21 @@ describe("TripCalendarPage", () => {
     await screen.findByText(/January 2027/);
 
     fireEvent.click(screen.getByRole("button", { name: "+ Add Custom Camping" }));
-    expect(await screen.findByText("Add / Configure Custom Camping")).toBeInTheDocument();
+    expect(await screen.findByText("Add Custom Camping Event")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Event Name/i), { target: { value: "Winter Cabin Getaway" } });
+    fireEvent.change(screen.getByLabelText(/Trip start date/i), { target: { value: "2027-01-15" } });
+    fireEvent.change(screen.getByLabelText(/Trip end date/i), { target: { value: "2027-01-17" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save Custom Camping" }));
 
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith(
-        "admin_configure_trip",
+        "admin_create_custom_trip",
         expect.objectContaining({
-          tripId: "trip-1",
+          title: "Winter Cabin Getaway",
+          startsOn: "2027-01-15",
+          endsOn: "2027-01-17",
         })
       )
     );
@@ -96,13 +102,13 @@ describe("TripCalendarPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "✏️ Edit" }));
     expect(await screen.findByText(/Edit January 2027 Camping/)).toBeInTheDocument();
 
-    const bookingStatus = screen.getByLabelText("Cabin booking status");
+    const bookingStatus = screen.getByLabelText("Cabin Booking Status");
     fireEvent.change(bookingStatus, { target: { value: "booked" } });
 
-    const cabinCountInput = screen.getByLabelText("Cabin count");
+    const cabinCountInput = screen.getByLabelText("Camping Type Sites Count");
     fireEvent.change(cabinCountInput, { target: { value: "3" } });
 
-    const perCabinInput = screen.getByLabelText("Per-cabin capacity");
+    const perCabinInput = screen.getByLabelText("Camping Type Site Capacity");
     fireEvent.change(perCabinInput, { target: { value: "8" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -120,20 +126,22 @@ describe("TripCalendarPage", () => {
     );
   });
 
-  it("shows ambiguous legacy availability to admins in edit modal", async () => {
+  it("allows admin to delete a camping event", async () => {
     const calendar = makeCalendar();
-    calendar.trips[0].cabinBookingStatus = null;
-    calendar.trips[0].legacyCabinAvailabilityStatus = "limited";
     const api = vi.fn(async () => calendar);
+    window.confirm = vi.fn(() => true);
     render(<TripCalendarPage isAdmin api={api as unknown as TripApi} />);
     await screen.findByText(/January 2027/);
 
-    fireEvent.click(screen.getByRole("button", { name: "✏️ Edit" }));
-    expect(
-      await screen.findByText(
-        "Previous availability value: limited. Choose a booking status; this older value was not converted automatically."
+    fireEvent.click(screen.getByRole("button", { name: "🗑️ Delete" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "admin_delete_trip",
+        expect.objectContaining({
+          tripId: "trip-1",
+        })
       )
-    ).toBeInTheDocument();
+    );
   });
 
   it("explains when another administrator changed the trip before this save", async () => {
@@ -199,7 +207,7 @@ describe("TripCalendarPage", () => {
     }]);
     render(<TripCalendarPage isAdmin={false} api={mockApi(calendar)} />);
     expect(await screen.findByText(/4 Confirmed \| 8 Spots Remaining/i)).toBeInTheDocument();
-    expect(screen.getByText(/2 Cabins Booked \| Capacity: 12/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 Cabin Sites Booked \| Capacity: 12/i)).toBeInTheDocument();
   });
 
   it("displays correct RSVP status badge for going, not going, waitlisted, and no response", async () => {

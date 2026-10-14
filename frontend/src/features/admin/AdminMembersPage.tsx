@@ -70,16 +70,37 @@ export function AdminMembersPage() {
 
   async function invite(event: FormEvent) {
     event.preventDefault(); setBusy(true); setNotice("");
-    try { await invokeMemberApi("invite_member", { email }); setEmail(""); setNotice("Invitation sent."); }
-    catch { setNotice("Invitation could not be sent."); }
-    finally { setBusy(false); }
+    try {
+      await invokeMemberApi("invite_member", { email });
+      setEmail("");
+      setNotice("Invitation sent.");
+    } catch (err: any) {
+      const errStr = String(err?.message ?? err?.code ?? "").toLowerCase();
+      if (errStr.includes("already") || errStr.includes("exists") || err?.status === 409) {
+        setNotice("This member already exists.");
+      } else {
+        setNotice("Invitation could not be sent.");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
   async function update(row: MemberRow, field: "memberRole" | "accountStatus", value: string) {
     const input = { memberId: row.member_id, memberRole: field === "memberRole" ? value : row.member_role, accountStatus: field === "accountStatus" ? value : row.account_status, reason: "Administrator membership maintenance" };
     setBusy(true);
-    try { await invokeMemberApi("update_membership", input); await load(); setNotice("Membership updated and audited."); }
-    catch { setNotice("Membership could not be updated."); }
-    finally { setBusy(false); }
+    try {
+      await invokeMemberApi("update_membership", input);
+      await load();
+      if (field === "memberRole") {
+        setNotice(`Role updated: ${row.display_name} is now ${value === "admin" ? "an Administrator" : "a Member"}. Change recorded in audit log.`);
+      } else {
+        setNotice(`Access status updated: ${row.display_name} is now ${value}.`);
+      }
+    } catch {
+      setNotice("Membership could not be updated.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return <section className="stack">
@@ -89,7 +110,7 @@ export function AdminMembersPage() {
     </div>
     {notice && <p role="status">{notice}</p>}
     <div className="card"><h2>Club members</h2><div className="member-list">{members.map((row) => <article className="member-row" key={row.member_id}>
-      <strong>{row.display_name}</strong><span>{row.member_role}</span>
+      <div><strong>{row.display_name}</strong> <span style={{ color: "#94a3b8", margin: "0 6px" }}>·</span> <span className="badge-pill" style={{ textTransform: "capitalize", fontSize: "0.8rem" }}>{row.member_role}</span></div>
       <label>Access<select disabled={busy} value={row.account_status} onChange={(event) => void update(row, "accountStatus", event.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></label>
       <label>Role<select disabled={busy} value={row.member_role} onChange={(event) => void update(row, "memberRole", event.target.value)}><option value="member">Member</option><option value="admin">Administrator</option></select></label>
     </article>)}</div></div>

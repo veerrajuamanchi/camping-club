@@ -28,22 +28,4 @@ describe("AdminScheduleDefaultsPage", () => {
       )
     );
   });
-
-  it("replenishes the 12-month calendar horizon", async () => {
-    const calendar = makeCalendar();
-    const api = vi.fn(async () => calendar);
-    render(<AdminScheduleDefaultsPage api={api as any} />);
-
-    expect(await screen.findByText("Calendar Horizon")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Replenish calendar through 12 months ahead" }));
-
-    await waitFor(() =>
-      expect(api).toHaveBeenCalledWith(
-        "admin_generate_calendar",
-        expect.objectContaining({
-          throughMonth: expect.any(String),
-        })
-      )
-    );
-  });
 });

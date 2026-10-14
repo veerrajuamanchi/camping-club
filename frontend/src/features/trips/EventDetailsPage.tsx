@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useAuth } from "../../app/AuthProvider";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
@@ -8,13 +8,16 @@ import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 type TripDetails = {
   tripId: string;
   monthKey: string;
+  title?: string | null;
+  eventStatus?: "tentative" | "confirmed" | "cancelled";
+  campingType?: "cabin" | "tent" | "rv" | "boat";
   pollStatus: "draft" | "open" | "closed";
   startsOn: string | null;
   endsOn: string | null;
   pollDeadlineAt?: string | null;
   minimumParticipants?: number;
   selectedCampsiteId?: string;
-  cabinBookingStatus?: "booked" | "no_vacancy" | "sites_available" | null;
+  cabinBookingStatus?: "booked" | "no_vacancy" | "sites_available" | "pending" | null;
   additionalInformation: string;
   comingCount: number;
   effectiveCapacity: number | null;
@@ -62,6 +65,24 @@ const constitutionGroups: Array<{ label: string; categories: string[] }> = [
   { label: "Packing & Meals", categories: ["meals", "custom"] },
 ];
 
+const campingTypes = [
+  { value: "cabin", label: "Cabin" },
+  { value: "tent", label: "Tent" },
+  { value: "rv", label: "RV" },
+  { value: "boat", label: "Boat" },
+];
+
+const eventStatuses = [
+  { value: "tentative", label: "Tentative" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const cabinBookingStatuses = [
+  { value: "booked", label: "Booked" },
+  { value: "pending", label: "Pending (sites available)" },
+];
+
 function monthName(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
   return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
@@ -72,6 +93,7 @@ const defaultApi: TripApiType = (action, input) => invokeTripApi(action, input);
 
 export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }: Props) {
   const { tripId } = useParams<{ tripId: string }>();
+  const navigate = useNavigate();
   let authProfileMemberId = currentMemberId;
   try {
     const auth = useAuth();
@@ -91,6 +113,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
   const [adminRosterMsg, setAdminRosterMsg] = useState<string | null>(null);
   const [showEditLogistics, setShowEditLogistics] = useState(false);
+  const [showEditEventModal, setShowEditEventModal] = useState(false);
   const [showTimeSlotsModal, setShowTimeSlotsModal] = useState(false);
 
   async function refresh() {
@@ -144,13 +167,33 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       } else {
         setWaitlistedPosition(null);
       }
+      await refresh();
       setRsvpChoice(null);
       setAcknowledged(false);
-      await refresh();
     } catch {
       setRsvpError("Response could not be saved. Refresh and try again.");
     } finally {
       setRsvpBusy(false);
+    }
+  }
+
+  async function handleDeleteEvent() {
+    if (!details) return;
+    const name = details.title || `${monthName(details.monthKey)} Camping`;
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${name}"? This action removes the event and will not recreate it.`
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      await api("admin_delete_trip", {
+        tripId: details.tripId,
+        reason: `Administrator deleted event: ${name}`,
+      });
+      navigate("/");
+    } catch {
+      setError("Could not delete this camping event.");
+      setLoading(false);
     }
   }
 
@@ -234,16 +277,22 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     }),
   }));
 
-  const tripTitle = details.additionalInformation || `${monthName(details.monthKey)} Camping`;
+  const tripTitle = details.title || details.additionalInformation || `${monthName(details.monthKey)} Camping`;
   const campsiteLocation = details.campsite
     ? `${details.campsite.name}${details.campsite.locationDescription ? ` · ${details.campsite.locationDescription}` : ""}`
     : "TBA";
 
-  const eventStatusLabel = isDraft
-    ? "Pending"
-    : details.pollStatus === "open"
-      ? (details.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
-      : (details.pollStatus === "closed" ? "Confirmed" : "Pending");
+  const eventStatusLabel = details.eventStatus === "confirmed"
+    ? "Confirmed"
+    : details.eventStatus === "cancelled"
+      ? "Cancelled"
+      : details.eventStatus === "tentative"
+        ? "Tentative"
+        : (isDraft
+          ? "Pending"
+          : details.pollStatus === "open"
+            ? (details.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
+            : (details.pollStatus === "closed" ? "Confirmed" : "Pending"));
 
   const formattedDeadlinePST = details.pollDeadlineAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -257,6 +306,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       }).format(new Date(details.pollDeadlineAt))
     : null;
 
+  const campingTypeLabel = details.campingType
+    ? details.campingType.charAt(0).toUpperCase() + details.campingType.slice(1)
+    : "Cabin";
+
   return (
     <section className="event-details">
       <Link to="/" className="back-link">
@@ -268,7 +321,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           <h1 className="hero-title">{tripTitle}</h1>
           <p className="hero-subtitle">{campsiteLocation}</p>
           <div className="hero-badges">
-            <span className={`event-status-pill status-${isDraft ? "upcoming" : details.pollStatus}`}>
+            <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
+              🏕️ {campingTypeLabel}
+            </span>
+            <span className={`event-status-pill status-${details.eventStatus === "confirmed" ? "confirmed" : details.eventStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : details.pollStatus}`}>
               Event Status: {eventStatusLabel}
             </span>
             <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
@@ -280,20 +336,38 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
               <span className="status-badge-not-going">Waitlist #{details.myWaitlistPosition}</span>
             )}
             {isAdmin && (
-              <button
-                type="button"
-                className="secondary-button"
-                style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", marginLeft: "auto" }}
-                onClick={() => setShowTimeSlotsModal(true)}
-              >
-                🍽️ Manage Meals &amp; Chores
-              </button>
+              <div style={{ display: "flex", gap: "0.4rem", marginLeft: "auto", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem" }}
+                  onClick={() => setShowEditEventModal(true)}
+                >
+                  ✏️ Edit Event
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem" }}
+                  onClick={() => setShowTimeSlotsModal(true)}
+                >
+                  🍽️ Manage Meals &amp; Chores
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", color: "#dc2626", borderColor: "#fca5a5" }}
+                  onClick={() => void handleDeleteEvent()}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
             )}
           </div>
         </div>
 
         <div className="hero-info-list">
-          {!isDraft && details.startsOn && details.endsOn ? (
+          {details.startsOn && details.endsOn ? (
             <div className="hero-info-item">
               <span>📅</span>
               <strong>{details.startsOn} – {details.endsOn} (Pacific Time)</strong>
@@ -319,10 +393,11 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           <div className="hero-info-item">
             <span>🏕️</span>
             <span>
-              {details.cabinCount != null ? `${details.cabinCount} cabins · ` : ""}
-              {details.perCabinCapacity} people per cabin
+              {details.cabinCount != null ? `${details.cabinCount} ${campingTypeLabel.toLowerCase()} sites · ` : ""}
+              {details.perCabinCapacity} people per site
               {details.effectiveCapacity != null ? ` (${details.effectiveCapacity} total spots)` : ""}
             </span>
+            {details.effectiveCapacity != null && <span className="sr-only">Capacity: {details.effectiveCapacity}</span>}
           </div>
           {details.minimumParticipants != null && (
             <div className="hero-info-item">
@@ -336,10 +411,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           <div className="metric-box-card">
             <p className="metric-value">{details.comingCount}</p>
             <p className="metric-label">Going</p>
+            <span className="sr-only">{details.comingCount} confirmed</span>
           </div>
           <div className="metric-box-card">
             <p className="metric-value">{details.spotsRemaining ?? "—"}</p>
             <p className="metric-label">Spots left</p>
+            {details.spotsRemaining != null && <span className="sr-only">{details.spotsRemaining} spots remaining</span>}
           </div>
           <div className="metric-box-card">
             <p className="metric-value">{details.waitlistCount}</p>
@@ -421,46 +498,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
 
           <div className="card">
             <h2>RSVP & Attendance</h2>
-            <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem", background: "#f9fafb", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
-              <div>
-                <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
-                  Cabin Booking
-                </strong>
-                <span style={{ fontSize: "0.95rem", color: "#111827" }}>
-                  • {details.cabinCount ?? 0} Cabins Booked | Capacity: {details.effectiveCapacity ?? (details.cabinCount ? details.cabinCount * details.perCabinCapacity : "—")}
-                </span>
-                {details.cabinCount != null && (
-                  <span className="sr-only">{details.cabinCount} cabins booked</span>
-                )}
-                {details.effectiveCapacity != null && (
-                  <span className="sr-only">Capacity: {details.effectiveCapacity}</span>
-                )}
-              </div>
-              <div>
-                <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
-                  Attendance &amp; RSVP
-                </strong>
-                <span style={{ fontSize: "0.95rem", color: "#111827" }}>
-                  • {details.comingCount} Confirmed | {details.spotsRemaining ?? 0} Spots Remaining
-                </span>
-                <span className="sr-only">{details.comingCount} confirmed</span>
-                {details.spotsRemaining != null && (
-                  <span className="sr-only">{details.spotsRemaining} spots remaining</span>
-                )}
-                {details.waitlistCount > 0 && (
-                  <span style={{ display: "block", fontSize: "0.85rem", color: "#6b7280", marginTop: "0.2rem" }}>
-                    ({details.waitlistCount} on waitlist)
-                  </span>
-                )}
-              </div>
-              <div>
-                <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
-                  Deposit Obligation
-                </strong>
-                <span style={{ fontSize: "0.9rem", color: "#4b5563" }}>
-                  • $50 deposit per attendee due upon confirmation · <em>Payment tracking coming soon</em>
-                </span>
-              </div>
+            <div style={{ marginBottom: "1rem", background: "#f9fafb", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
+              <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
+                Deposit Obligation
+              </strong>
+              <span style={{ fontSize: "0.9rem", color: "#4b5563" }}>
+                • $50 deposit per attendee due upon confirmation · <em>Payment tracking coming soon</em>
+              </span>
             </div>
 
             <p>
@@ -693,6 +737,15 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         />
       )}
 
+      {showEditEventModal && details && (
+        <EditTripDetailsModal
+          details={details}
+          api={api}
+          onClose={() => setShowEditEventModal(false)}
+          onRefresh={refresh}
+        />
+      )}
+
       {showTimeSlotsModal && details && (
         <AdminTimeSlotManagerModal
           tripId={details.tripId}
@@ -704,6 +757,160 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         />
       )}
     </section>
+  );
+}
+
+function EditTripDetailsModal({
+  details,
+  api,
+  onClose,
+  onRefresh,
+}: {
+  details: TripDetails;
+  api: TripApiType;
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const [title, setTitle] = useState(details.title ?? "");
+  const [startsOn, setStartsOn] = useState(details.startsOn ?? "");
+  const [endsOn, setEndsOn] = useState(details.endsOn ?? "");
+  const [deadline, setDeadline] = useState(details.pollDeadlineAt ? details.pollDeadlineAt.slice(0, 10) : "");
+  const [deadlineTime, setDeadlineTime] = useState(details.pollDeadlineAt ? details.pollDeadlineAt.slice(11, 16) : "18:00");
+  const [minimum, setMinimum] = useState(details.minimumParticipants ?? 4);
+  const [capacity, setCapacity] = useState(details.maxCapacity?.toString() ?? "");
+  const [cabinCount, setCabinCount] = useState(details.cabinCount?.toString() ?? "");
+  const [perCabinCapacity, setPerCabinCapacity] = useState(details.perCabinCapacity?.toString() ?? "6");
+  const [campingType, setCampingType] = useState<"cabin" | "tent" | "rv" | "boat">(details.campingType ?? "cabin");
+  const [eventStatus, setEventStatus] = useState<"tentative" | "confirmed" | "cancelled">(details.eventStatus ?? "tentative");
+  const [bookingStatus, setBookingStatus] = useState<"booked" | "pending">(details.cabinBookingStatus === "booked" ? "booked" : "pending");
+  const [information, setInformation] = useState(details.additionalInformation ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  function handleStartsOnChange(val: string) {
+    setStartsOn(val);
+    if (!endsOn || endsOn < val) {
+      setEndsOn(val);
+    }
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api("admin_configure_trip", {
+        tripId: details.tripId,
+        startsOn,
+        endsOn,
+        deadlineDate: deadline || null,
+        deadlineTime: deadlineTime || null,
+        minimumParticipants: Number(minimum),
+        maxCapacity: capacity ? Number(capacity) : null,
+        cabinCount: cabinCount ? Number(cabinCount) : null,
+        perCabinCapacity: perCabinCapacity ? Number(perCabinCapacity) : 6,
+        selectedCampsiteId: details.selectedCampsiteId || details.campsite?.campsiteId || "",
+        cabinBookingStatus: bookingStatus,
+        additionalInformation: information,
+        title: title.trim() || null,
+        eventStatus,
+        campingType,
+        expectedVersion: details.version,
+        reason: "Administrator configured trip from event details page",
+      });
+      await onRefresh();
+      onClose();
+    } catch {
+      setMsg("Could not save trip configuration. Please check all inputs.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>Edit {title || `${monthName(details.monthKey)} Camping`}</h2>
+        <form className="admin-form" onSubmit={handleSave}>
+          <label>
+            Event Name
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={`${monthName(details.monthKey)} Camping`}
+            />
+          </label>
+          <div className="form-grid">
+            <label>
+              Trip start
+              <input type="date" required value={startsOn} onChange={(e) => handleStartsOnChange(e.target.value)} />
+            </label>
+            <label>
+              Trip end
+              <input type="date" required min={startsOn || undefined} value={endsOn} onChange={(e) => setEndsOn(e.target.value)} />
+            </label>
+            <label>
+              Camping Type
+              <select value={campingType} onChange={(e) => setCampingType(e.target.value as any)}>
+                {campingTypes.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Event Status
+              <select value={eventStatus} onChange={(e) => setEventStatus(e.target.value as any)}>
+                {eventStatuses.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Camping Type Sites Count
+              <input type="number" min="1" max="50" value={cabinCount} onChange={(e) => setCabinCount(e.target.value)} />
+            </label>
+            <label>
+              Camping Type Site Capacity
+              <input type="number" min="1" max="50" value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} />
+            </label>
+            <label>
+              Registration deadline date
+              <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </label>
+            <label>
+              Deadline time
+              <input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
+            </label>
+            <label>
+              Minimum participants
+              <input type="number" min="1" max="100" required value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} />
+            </label>
+            <label>
+              Max capacity (optional)
+              <input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+            </label>
+          </div>
+          <label>
+            Cabin Booking Status
+            <select required value={bookingStatus} onChange={(e) => setBookingStatus(e.target.value as any)}>
+              {cabinBookingStatuses.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Trip notes &amp; information
+            <textarea value={information} onChange={(e) => setInformation(e.target.value)} />
+          </label>
+          {msg && <p role="alert" className="form-error">{msg}</p>}
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+            <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save changes"}</button>
+            <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

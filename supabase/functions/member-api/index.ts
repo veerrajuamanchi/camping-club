@@ -186,7 +186,16 @@ Deno.serve(async (request) => {
       const input = parsedInput as z.infer<typeof inviteSchema>;
       const redirectTo = `${requiredEnv("WEB_APP_URL").replace(/\/$/, "")}/accept-invitation`;
       const { data: invitation, error: authInviteError } = await service.auth.admin.inviteUserByEmail(input.email, { redirectTo });
-      if (authInviteError || !invitation.user) return json(request, 400, { error: "invitation_failed", requestId });
+      if (authInviteError || !invitation.user) {
+        const isExisting =
+          authInviteError?.message?.toLowerCase().includes("already") ||
+          authInviteError?.code === "email_exists" ||
+          (authInviteError as any)?.status === 422;
+        if (isExisting) {
+          return json(request, 409, { error: "member_already_exists", message: "This member already exists.", requestId });
+        }
+        return json(request, 400, { error: "invitation_failed", message: authInviteError?.message || "invitation_failed", requestId });
+      }
       const { data: invitationId, error } = await service.rpc("phase1_create_invitation", {
         p_email_hmac: await emailDigest(input.email), p_actor_id: member!.member_id, p_auth_invite_id: invitation.user.id,
         p_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),

@@ -15,15 +15,15 @@ export type ApiMember = {
 };
 
 export class MemberApiError extends Error {
-  constructor(readonly code?: string) {
-    super("The request could not be completed.");
+  constructor(readonly code?: string, readonly status?: number, message?: string) {
+    super(message ?? "The request could not be completed.");
     this.name = "MemberApiError";
   }
 }
 
 export class TripApiError extends Error {
-  constructor(readonly code?: string, readonly status?: number) {
-    super("The trip request could not be completed.");
+  constructor(readonly code?: string, readonly status?: number, message?: string) {
+    super(message ?? "The trip request could not be completed.");
     this.name = "TripApiError";
   }
 }
@@ -51,8 +51,12 @@ export async function invokeMemberApi<T>(action: string, input?: unknown, idempo
   const body = { action, input };
   const headers = !["me", "list_members"].includes(action) ? { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() } : undefined;
   const { data, error, response } = await supabase.functions.invoke("member-api", { body, headers });
-  if (error) throw new MemberApiError(await responseErrorCode(response));
-  if (data?.error) throw new MemberApiError(typeof data.error.code === "string" ? data.error.code : undefined);
+  if (error || data?.error) {
+    const responseCode = await responseErrorCode(response);
+    const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
+    const msg = typeof data?.message === "string" ? data.message : (error?.message || undefined);
+    throw new MemberApiError(responseCode ?? payloadCode, response?.status, msg);
+  }
   return data?.data as T;
 }
 
@@ -64,6 +68,7 @@ const tripMutationActions = new Set([
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot",
   "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
+  "admin_delete_trip", "admin_create_custom_trip",
 ]);
 
 export async function invokeTripApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {
@@ -75,7 +80,8 @@ export async function invokeTripApi<T>(action: string, input?: unknown, idempote
   if (error || data?.error) {
     const responseCode = await responseErrorCode(response);
     const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
-    throw new TripApiError(responseCode ?? payloadCode, response?.status);
+    const msg = typeof data?.message === "string" ? data.message : (error?.message || undefined);
+    throw new TripApiError(responseCode ?? payloadCode, response?.status, msg);
   }
   return data?.data as T;
 }

@@ -140,10 +140,14 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
         } else if (err.status === 403) {
           setError("Permission denied. Administrator access is required.");
         } else {
-          setError("Could not save responsibility. Verify title length (3–100 chars), capacity (1–20), and workload weight (0.5–5.0).");
+          setError(
+            err.message && err.message !== "The trip request could not be completed."
+              ? err.message
+              : "Could not save responsibility. Verify title length (3–100 chars), capacity (1–20), and workload weight (0.5–5.0)."
+          );
         }
       } else {
-        setError("Operation failed. Please check network connection and try again.");
+        setError((err as any)?.message || "Operation failed. Please check network connection and try again.");
       }
     } finally {
       setSaving(false);

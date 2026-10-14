@@ -155,10 +155,10 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
           cabinInformation: cabinInfo.trim() || null,
           directions: directions.trim() || null,
           availabilityUrl: cleanAvailabilityUrl || null,
-          cabinCapacity: editingSite.cabinCapacity,
-          cabinTypes: editingSite.cabinTypes,
-          reservationInstructions: editingSite.reservationInstructions,
-          estimatedRateCents: editingSite.estimatedRateCents,
+          cabinCapacity: editingSite.cabinCapacity ?? null,
+          cabinTypes: editingSite.cabinTypes ?? [],
+          reservationInstructions: editingSite.reservationInstructions ?? null,
+          estimatedRateCents: editingSite.estimatedRateCents ?? null,
           availabilityStatus: availabilityStatus as any,
           availabilitySourceUrl: editingSite.availabilitySourceUrl || null,
           availabilityVerifiedAt: null,
@@ -177,10 +177,14 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
         } else if (err.status === 403) {
           setModalError("Permission denied. Administrator access is required.");
         } else {
-          setModalError("Could not save campsite. Verify input values.");
+          setModalError(
+            err.message && err.message !== "The trip request could not be completed."
+              ? err.message
+              : "Could not save campsite. Verify input values."
+          );
         }
       } else {
-        setModalError("Operation failed. Please check network connection and try again.");
+        setModalError((err as any)?.message || "Operation failed. Please check network connection and try again.");
       }
     } finally {
       setBusy(false);

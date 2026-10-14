@@ -5,7 +5,10 @@ import { formatZonedDateTimeLocal } from "../../domain/calendar";
 
 type Rule = { stable_key: string; text: string; structured_values: Record<string, unknown> };
 type Bundle = { id: string; version: number; contentHash: string; rules: Rule[]; createdAt: string };
-type CabinBookingStatus = "booked" | "no_vacancy" | "sites_available";
+export type CabinBookingStatus = "booked" | "pending" | "sites_available" | "no_vacancy";
+export type EventStatus = "tentative" | "confirmed" | "cancelled";
+export type CampingType = "cabin" | "tent" | "rv" | "boat";
+
 type Campsite = {
   campsiteId: string; rotationPosition: number; name: string; availabilityUrl: string | null; locationDescription: string;
   directions: string | null; cabinCapacity: number | null; cabinTypes: string[]; reservationInstructions: string | null;
@@ -23,6 +26,7 @@ export type Trip = {
   effectiveCapacity: number | null; spotsRemaining: number | null;
   waitlistCount: number; myWaitlistPosition: number | null;
   pollStatus: "draft" | "open" | "closed";
+  title?: string | null; eventStatus?: EventStatus; campingType?: CampingType;
   additionalInformation: string; cabinBookingStatus: CabinBookingStatus | null;
   legacyCabinAvailabilityStatus?: string | null; version: number; comingCount: number;
   tripDecision: "none"; currentRuleBundle: Bundle | null;
@@ -41,8 +45,18 @@ type Props = { isAdmin: boolean; api?: TripApi };
 const defaultApi: TripApi = (action, input, key) => invokeTripApi(action, input, key);
 const cabinBookingStatuses: Array<{ value: CabinBookingStatus; label: string }> = [
   { value: "booked", label: "Booked" },
-  { value: "no_vacancy", label: "No vacancy" },
-  { value: "sites_available", label: "Sites available" },
+  { value: "pending", label: "Pending (sites available)" },
+];
+const eventStatuses: Array<{ value: EventStatus; label: string }> = [
+  { value: "tentative", label: "Tentative" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+const campingTypes: Array<{ value: CampingType; label: string }> = [
+  { value: "cabin", label: "Cabin" },
+  { value: "tent", label: "Tent" },
+  { value: "rv", label: "RV" },
+  { value: "boat", label: "Boat" },
 ];
 
 function monthName(monthKey: string): string {
@@ -58,79 +72,6 @@ function datePlusDays(date: string, days: number): string {
 
 function ErrorText({ value }: { value: string | null }) {
   return value ? <p role="alert" className="form-error">{value}</p> : null;
-}
-
-function AdminTripPanel({
-  trip,
-  calendar,
-  api,
-  onRefresh,
-}: {
-  trip: Trip;
-  calendar?: Calendar;
-  api: TripApi;
-  onRefresh: () => Promise<void>;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  async function setPollStatus(pollStatus: "open" | "closed") {
-    if (pollStatus === "open" && !trip.clubTimezone && !calendar?.clubConfiguration.timezone) {
-      setMessage("Set the club timezone in Club-wide settings before opening this poll.");
-      return;
-    }
-    setBusy(true);
-    setMessage(null);
-    try {
-      await api("admin_set_poll_status", {
-        tripId: trip.tripId,
-        pollStatus,
-        expectedVersion: trip.version,
-        reason: `Administrator ${pollStatus} interest poll`,
-      });
-      await onRefresh();
-      setMessage(`Interest poll ${pollStatus}. No trip decision was made.`);
-    } catch {
-      setMessage("Could not change the poll. Confirm it has dates, a future deadline, and an applicable rule bundle.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const tripWithdrawals = (calendar?.withdrawalRequests ?? []).filter((r) => r.tripId === trip.tripId);
-
-  return (
-    <div className="admin-trip-panel stack">
-      <div className="poll-actions">
-        <span className={`status-chip status-${trip.pollStatus}`}>{trip.pollStatus}</span>
-        {trip.pollStatus === "open" ? (
-          <button type="button" className="secondary-button" disabled={busy} onClick={() => void setPollStatus("closed")}>
-            Close poll
-          </button>
-        ) : (
-          <button type="button" disabled={busy} onClick={() => void setPollStatus("open")}>
-            Open poll
-          </button>
-        )}
-        <span>{trip.comingCount} Coming responses</span>
-      </div>
-      {tripWithdrawals.length > 0 && (
-        <section className="late-entry">
-          <h3>Pending withdrawal requests</h3>
-          <p>Requests remain pending and do not alter a Coming response while the owner policy is unresolved.</p>
-          <ul>
-            {tripWithdrawals.map((r) => (
-              <li key={r.requestId}>
-                <strong>{r.displayName}</strong> · {new Date(r.createdAt).toLocaleString()}
-                <p>{r.reason}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {message && <p role="status">{message}</p>}
-    </div>
-  );
 }
 
 function TripEditModal({
@@ -149,14 +90,19 @@ function TripEditModal({
   const deadlineLocal = formatZonedDateTimeLocal(trip?.pollDeadlineAt ?? null, trip?.clubTimezone ?? calendar?.clubConfiguration.timezone ?? null);
   const [deadline, setDeadline] = useState(deadlineLocal.slice(0, 10));
   const [deadlineTime, setDeadlineTime] = useState(deadlineLocal.slice(11, 16) || calendar?.clubConfiguration.defaultPollCloseTime?.slice(0, 5) || "18:00");
+  const [title, setTitle] = useState(trip?.title ?? "");
   const [startsOn, setStartsOn] = useState(trip?.startsOn ?? "");
   const [endsOn, setEndsOn] = useState(trip?.endsOn ?? "");
   const [minimum, setMinimum] = useState(trip?.minimumParticipants ?? calendar?.clubConfiguration.defaultMinimumParticipants ?? 4);
   const [capacity, setCapacity] = useState(trip?.maxCapacity?.toString() ?? "");
   const [cabinCount, setCabinCount] = useState(trip?.cabinCount?.toString() ?? "");
   const [perCabinCapacity, setPerCabinCapacity] = useState(trip?.perCabinCapacity?.toString() ?? "6");
+  const [campingType, setCampingType] = useState<CampingType>(trip?.campingType ?? "cabin");
+  const [eventStatus, setEventStatus] = useState<EventStatus>(trip?.eventStatus ?? "tentative");
   const [siteId, setSiteId] = useState(trip?.selectedCampsiteId ?? "");
-  const [bookingStatus, setBookingStatus] = useState<CabinBookingStatus | "">(trip?.cabinBookingStatus ?? "booked");
+  const [bookingStatus, setBookingStatus] = useState<CabinBookingStatus | "">(
+    trip?.cabinBookingStatus === "booked" ? "booked" : "pending"
+  );
   const [information, setInformation] = useState(trip?.additionalInformation ?? "");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,6 +110,13 @@ function TripEditModal({
   const isClosed = trip?.pollStatus === "closed";
   const [reopenPoll, setReopenPoll] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
+
+  function handleStartsOnChange(newStarts: string) {
+    setStartsOn(newStarts);
+    if (!endsOn || endsOn < newStarts) {
+      setEndsOn(newStarts);
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -189,6 +142,9 @@ function TripEditModal({
         selectedCampsiteId: siteId,
         cabinBookingStatus: bookingStatus,
         additionalInformation: information,
+        title: title.trim() || null,
+        eventStatus,
+        campingType,
         expectedVersion: trip.version,
         reason: reopenPoll
           ? `Administrator extended registration deadline: ${reopenReason.trim()}`
@@ -221,17 +177,55 @@ function TripEditModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <h2>Edit {monthName(trip.monthKey)} Camping</h2>
+        <h2>Edit {trip.title || `${monthName(trip.monthKey)} Camping`}</h2>
         <form className="admin-form" onSubmit={handleSave}>
+          <label>Event Name
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={`${monthName(trip.monthKey)} Camping`}
+            />
+          </label>
           <div className="form-grid">
-            <label>Trip start<input type="date" required value={startsOn} onChange={(e) => setStartsOn(e.target.value)} /></label>
-            <label>Trip end<input type="date" required value={endsOn} onChange={(e) => setEndsOn(e.target.value)} /></label>
-            <label>Registration deadline date<input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
-            <label>Deadline time<input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} /></label>
-            <label>Minimum participants<input type="number" min="1" max="100" required value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} /></label>
-            <label>Max capacity (optional)<input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} /></label>
-            <label>Cabin count<input type="number" min="1" max="50" value={cabinCount} onChange={(e) => setCabinCount(e.target.value)} /></label>
-            <label>Per-cabin capacity<input type="number" min="1" max="50" value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} /></label>
+            <label>Trip start
+              <input type="date" required value={startsOn} onChange={(e) => handleStartsOnChange(e.target.value)} />
+            </label>
+            <label>Trip end
+              <input type="date" required min={startsOn || undefined} value={endsOn} onChange={(e) => setEndsOn(e.target.value)} />
+            </label>
+            <label>Camping Type
+              <select value={campingType} onChange={(e) => setCampingType(e.target.value as CampingType)}>
+                {campingTypes.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>Event Status
+              <select value={eventStatus} onChange={(e) => setEventStatus(e.target.value as EventStatus)}>
+                {eventStatuses.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>Camping Type Sites Count
+              <input type="number" min="1" max="50" value={cabinCount} onChange={(e) => setCabinCount(e.target.value)} />
+            </label>
+            <label>Camping Type Site Capacity
+              <input type="number" min="1" max="50" value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} />
+            </label>
+            <label>Registration deadline date
+              <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </label>
+            <label>Deadline time
+              <input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
+            </label>
+            <label>Minimum participants
+              <input type="number" min="1" max="100" required value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} />
+            </label>
+            <label>Max capacity (optional)
+              <input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+            </label>
           </div>
           <label>Selected campsite
             <select value={siteId} onChange={(e) => setSiteId(e.target.value)}>
@@ -240,18 +234,13 @@ function TripEditModal({
               ))}
             </select>
           </label>
-          <label>Cabin booking status
+          <label>Cabin Booking Status
             <select required value={bookingStatus} onChange={(e) => setBookingStatus(e.target.value as CabinBookingStatus)}>
               {cabinBookingStatuses.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
           </label>
-          {trip.legacyCabinAvailabilityStatus && !trip.cabinBookingStatus && (
-            <p role="status">
-              Previous availability value: {trip.legacyCabinAvailabilityStatus}. Choose a booking status; this older value was not converted automatically.
-            </p>
-          )}
           <label>Trip notes & information
             <textarea value={information} onChange={(e) => setInformation(e.target.value)} />
           </label>
@@ -309,7 +298,6 @@ function EventCard({
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [withdrawalReason, setWithdrawalReason] = useState("");
   const [withdrawalMessage, setWithdrawalMessage] = useState<string | null>(null);
   const [waitlistedPosition, setWaitlistedPosition] = useState<number | null>(null);
@@ -323,7 +311,7 @@ function EventCard({
   const isNotComing = trip.myRsvp?.response === "not_coming";
   const needsAcknowledgment = choice === "coming" && !isComing;
 
-  const dateLabel = isDraft || !trip.startsOn || !trip.endsOn ? "Dates TBA" : `${trip.startsOn} – ${trip.endsOn}`;
+  const dateLabel = !trip.startsOn || !trip.endsOn ? "Dates TBA" : `${trip.startsOn} – ${trip.endsOn}`;
 
   async function submit() {
     if (!choice) return;
@@ -347,11 +335,32 @@ function EventCard({
       } else {
         setWaitlistedPosition(null);
       }
+      await onRefresh();
       setChoice(null);
       setAcknowledged(false);
-      await onRefresh();
     } catch {
       setError("Response could not be saved. The poll may have changed — refresh and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteTrip() {
+    const tripDisplayName = trip.title || `${monthName(trip.monthKey)} Camping`;
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${tripDisplayName}"? This action removes the event and will not recreate it.`
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api("admin_delete_trip", {
+        tripId: trip.tripId,
+        reason: `Administrator deleted trip: ${tripDisplayName}`,
+      });
+      await onRefresh();
+    } catch {
+      setError("Could not delete this camping event.");
     } finally {
       setBusy(false);
     }
@@ -382,11 +391,17 @@ function EventCard({
 
   const [showEditModal, setShowEditModal] = useState(false);
 
-  const eventStatusLabel = isDraft
-    ? "Pending"
-    : trip.pollStatus === "open"
-      ? (trip.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
-      : (trip.pollStatus === "closed" ? "Confirmed" : "Pending");
+  const eventStatusLabel = trip.eventStatus === "confirmed"
+    ? "Confirmed"
+    : trip.eventStatus === "cancelled"
+      ? "Cancelled"
+      : trip.eventStatus === "tentative"
+        ? "Tentative"
+        : (isDraft
+          ? "Pending"
+          : trip.pollStatus === "open"
+            ? (trip.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
+            : (trip.pollStatus === "closed" ? "Confirmed" : "Pending"));
 
   const formattedDeadlinePST = trip.pollDeadlineAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -398,6 +413,10 @@ function EventCard({
         timeZoneName: "short",
       }).format(new Date(trip.pollDeadlineAt))
     : null;
+
+  const campingTypeLabel = trip.campingType
+    ? trip.campingType.charAt(0).toUpperCase() + trip.campingType.slice(1)
+    : "Cabin";
 
   return (
     <article className="event-card-container" aria-label={`Trip ${dateLabel}`}>
@@ -421,7 +440,7 @@ function EventCard({
           <div>
             <p className="eyebrow">{monthName(trip.monthKey)}</p>
             <h2 className="event-card-name">
-              {trip.additionalInformation || `${monthName(trip.monthKey)} Camping`}
+              {trip.title || trip.additionalInformation || `${monthName(trip.monthKey)} Camping`}
             </h2>
             {campsite && (
               <p className="event-card-campsite">
@@ -430,18 +449,32 @@ function EventCard({
             )}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           {isAdmin && (
-            <button
-              type="button"
-              className="secondary-button"
-              style={{ padding: "0.2rem 0.55rem", fontSize: "0.78rem" }}
-              onClick={() => setShowEditModal(true)}
-            >
-              ✏️ Edit
-            </button>
+            <div style={{ display: "flex", gap: "0.35rem" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ padding: "0.2rem 0.55rem", fontSize: "0.78rem" }}
+                onClick={() => setShowEditModal(true)}
+              >
+                ✏️ Edit
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ padding: "0.2rem 0.55rem", fontSize: "0.78rem", color: "#dc2626", borderColor: "#fca5a5" }}
+                disabled={busy}
+                onClick={() => void handleDeleteTrip()}
+              >
+                🗑️ Delete
+              </button>
+            </div>
           )}
-          <span className={`event-status-pill status-${isDraft ? "upcoming" : trip.pollStatus}`}>
+          <span className="badge-pill" style={{ fontSize: "0.78rem", background: "#f3f4f6", color: "#374151" }}>
+            🏕️ {campingTypeLabel}
+          </span>
+          <span className={`event-status-pill status-${trip.eventStatus === "confirmed" ? "confirmed" : trip.eventStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : trip.pollStatus}`}>
             Event Status: {eventStatusLabel}
           </span>
         </div>
@@ -460,12 +493,12 @@ function EventCard({
       <div style={{ display: "grid", gap: "0.5rem", margin: "0.75rem 0", background: "#f9fafb", padding: "0.75rem", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
         <div>
           <strong style={{ display: "block", fontSize: "0.8rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em" }}>
-            Cabin Booking
+            {campingTypeLabel} Booking
           </strong>
           <span style={{ fontSize: "0.9rem", color: "#111827" }}>
-            • {trip.cabinCount ?? 0} Cabins Booked | Capacity: {trip.effectiveCapacity ?? (trip.cabinCount ? trip.cabinCount * trip.perCabinCapacity : "—")}
+            • {trip.cabinCount ?? 0} {campingTypeLabel} Sites Booked | Capacity: {trip.effectiveCapacity ?? (trip.cabinCount ? trip.cabinCount * trip.perCabinCapacity : "—")}
           </span>
-          {trip.cabinCount != null && <span className="sr-only">{trip.cabinCount} cabins booked</span>}
+          {trip.cabinCount != null && <span className="sr-only">{trip.cabinCount} sites booked</span>}
           {trip.effectiveCapacity != null && <span className="sr-only">Capacity: {trip.effectiveCapacity}</span>}
         </div>
         <div>
@@ -637,15 +670,6 @@ function EventCard({
           onRefresh={onRefresh}
         />
       )}
-
-      {isAdmin && (
-        <details className="admin-panel" onToggle={(e) => setShowAdminPanel((e.target as HTMLDetailsElement).open)}>
-          <summary>Admin controls</summary>
-          {showAdminPanel && (
-            <AdminTripPanel trip={trip} calendar={calendar} api={api} onRefresh={onRefresh} />
-          )}
-        </details>
-      )}
     </article>
   );
 }
@@ -661,60 +685,71 @@ function AddCustomCampingModal({
   onClose: () => void;
   onRefresh: () => Promise<void>;
 }) {
-  const [selectedTripId, setSelectedTripId] = useState(
-    calendar.trips.find((t) => t.pollStatus === "draft")?.tripId ?? calendar.trips[0]?.tripId ?? ""
-  );
-  const trip = calendar.trips.find((t) => t.tripId === selectedTripId) ?? calendar.trips[0];
-  const [startsOn, setStartsOn] = useState(trip?.startsOn ?? "");
-  const [endsOn, setEndsOn] = useState(trip?.endsOn ?? "");
-  const [siteId, setSiteId] = useState(trip?.selectedCampsiteId || calendar.campsites[0]?.campsiteId || "");
-  const [cabinCount, setCabinCount] = useState(trip?.cabinCount?.toString() ?? "2");
-  const [perCabinCapacity, setPerCabinCapacity] = useState(trip?.perCabinCapacity?.toString() ?? "6");
-  const [bookingStatus, setBookingStatus] = useState<CabinBookingStatus>("booked");
+  const [title, setTitle] = useState("");
+  const [startsOn, setStartsOn] = useState("");
+  const [endsOn, setEndsOn] = useState("");
+  const [campingType, setCampingType] = useState<CampingType>("cabin");
+  const [eventStatus, setEventStatus] = useState<EventStatus>("tentative");
+  const [bookingStatus, setBookingStatus] = useState<CabinBookingStatus>("pending");
+  const [sitesCount, setSitesCount] = useState("2");
+  const [siteCapacity, setSiteCapacity] = useState("6");
+  const [siteId, setSiteId] = useState(calendar.campsites[0]?.campsiteId || "");
   const [minimum, setMinimum] = useState(4);
-  const [information, setInformation] = useState(trip?.additionalInformation ?? "");
+  const [information, setInformation] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!trip) return;
-    setStartsOn(trip.startsOn ?? "");
-    setEndsOn(trip.endsOn ?? "");
-    setSiteId(trip.selectedCampsiteId || calendar.campsites[0]?.campsiteId || "");
-    setCabinCount(trip.cabinCount?.toString() ?? "2");
-    setPerCabinCapacity(trip.perCabinCapacity?.toString() ?? "6");
-    setBookingStatus(trip.cabinBookingStatus ?? "booked");
-    setMinimum(trip.minimumParticipants ?? 4);
-    setInformation(trip.additionalInformation ?? "");
-  }, [selectedTripId, trip, calendar.campsites]);
+  function handleStartsOnChange(val: string) {
+    setStartsOn(val);
+    if (!endsOn || endsOn < val) {
+      setEndsOn(val);
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!trip) return;
+    if (!title.trim()) {
+      setMsg("Please enter an event name.");
+      return;
+    }
+    if (!startsOn || !endsOn) {
+      setMsg("Please provide start and end dates.");
+      return;
+    }
+    if (endsOn < startsOn) {
+      setMsg("Trip end date cannot be earlier than start date.");
+      return;
+    }
+    if (!siteId) {
+      setMsg("Please select a campsite.");
+      return;
+    }
     setBusy(true);
     setMsg(null);
     try {
       const deadlineDate = startsOn ? datePlusDays(startsOn, -(calendar.clubConfiguration.defaultPollLeadDays ?? 35)) : null;
-      await api("admin_configure_trip", {
-        tripId: trip.tripId,
+      await api("admin_create_custom_trip", {
+        title: title.trim(),
         startsOn,
         endsOn,
+        selectedCampsiteId: siteId,
+        campingType,
+        sitesCount: Number(sitesCount) || 2,
+        siteCapacity: Number(siteCapacity) || 6,
+        eventStatus,
+        cabinBookingStatus: bookingStatus,
+        bookingStatus,
+        minimumParticipants: Number(minimum) || 4,
+        maxCapacity: null,
         deadlineDate,
         deadlineTime: calendar.clubConfiguration.defaultPollCloseTime?.slice(0, 5) || "18:00",
-        minimumParticipants: Number(minimum),
-        maxCapacity: null,
-        cabinCount: cabinCount ? Number(cabinCount) : null,
-        perCabinCapacity: perCabinCapacity ? Number(perCabinCapacity) : 6,
-        selectedCampsiteId: siteId,
-        cabinBookingStatus: bookingStatus,
         additionalInformation: information,
-        expectedVersion: trip.version,
-        reason: "Administrator configured custom camping trip",
+        reason: "Administrator created custom camping event",
       });
       await onRefresh();
       onClose();
-    } catch {
-      setMsg("Could not save camping trip. Please check inputs.");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Could not save custom camping trip. Please check inputs.");
     } finally {
       setBusy(false);
     }
@@ -723,37 +758,57 @@ function AddCustomCampingModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-        <h2>Add / Configure Custom Camping</h2>
+        <h2>Add Custom Camping Event</h2>
         <p style={{ color: "#6b7280", fontSize: "0.9rem" }}>
-          Select an upcoming month and set the dates, campsite, and cabin details.
+          Create a new camping trip with custom event dates, campsite, and booking status.
         </p>
         <form className="admin-form" onSubmit={handleSave}>
           <label>
-            Select month
-            <select value={selectedTripId} onChange={(e) => setSelectedTripId(e.target.value)}>
-              {calendar.trips.map((t) => (
-                <option key={t.tripId} value={t.tripId}>
-                  {monthName(t.monthKey)} {t.pollStatus === "draft" ? "(Draft / Unscheduled)" : `(${t.startsOn ?? "No dates"})`}
-                </option>
-              ))}
-            </select>
+            Event Name *
+            <input
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Winter Cabin Getaway, Spring Lake Camp"
+            />
           </label>
           <div className="form-grid">
             <label>
-              Trip start date
-              <input type="date" required value={startsOn} onChange={(e) => setStartsOn(e.target.value)} />
+              Trip start date *
+              <input type="date" required value={startsOn} onChange={(e) => handleStartsOnChange(e.target.value)} />
             </label>
             <label>
-              Trip end date
-              <input type="date" required value={endsOn} onChange={(e) => setEndsOn(e.target.value)} />
+              Trip end date *
+              <input type="date" required min={startsOn || undefined} value={endsOn} onChange={(e) => setEndsOn(e.target.value)} />
             </label>
             <label>
-              Cabin count
-              <input type="number" min="1" max="50" required value={cabinCount} onChange={(e) => setCabinCount(e.target.value)} />
+              Camping Type
+              <select value={campingType} onChange={(e) => setCampingType(e.target.value as CampingType)}>
+                {campingTypes.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
             </label>
             <label>
-              Per-cabin capacity
-              <input type="number" min="1" max="50" required value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} />
+              Event Status
+              <select value={eventStatus} onChange={(e) => setEventStatus(e.target.value as EventStatus)}>
+                {eventStatuses.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Camping Type Sites Count
+              <input type="number" min="1" max="50" required value={sitesCount} onChange={(e) => setSitesCount(e.target.value)} />
+            </label>
+            <label>
+              Camping Type Site Capacity
+              <input type="number" min="1" max="50" required value={siteCapacity} onChange={(e) => setSiteCapacity(e.target.value)} />
+            </label>
+            <label>
+              Minimum participants
+              <input type="number" min="1" max="100" required value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} />
             </label>
           </div>
           <label>
@@ -765,7 +820,7 @@ function AddCustomCampingModal({
             </select>
           </label>
           <label>
-            Cabin booking status
+            Cabin Booking Status
             <select required value={bookingStatus} onChange={(e) => setBookingStatus(e.target.value as CabinBookingStatus)}>
               {cabinBookingStatuses.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
@@ -773,7 +828,7 @@ function AddCustomCampingModal({
             </select>
           </label>
           <label>
-            Trip title &amp; notes
+            Trip notes &amp; information
             <textarea
               placeholder="Custom trip notes, location details, special instructions..."
               value={information}

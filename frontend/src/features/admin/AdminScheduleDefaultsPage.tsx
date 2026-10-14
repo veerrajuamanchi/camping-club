@@ -62,23 +62,6 @@ export function AdminScheduleDefaultsPage({ api = defaultApi }: { api?: TripApi 
     }
   }
 
-  async function extendCalendar() {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const month = new Date();
-      month.setUTCDate(1);
-      month.setUTCMonth(month.getUTCMonth() + 12);
-      await api("admin_generate_calendar", { throughMonth: month.toISOString().slice(0, 7) });
-      await load();
-      setMessage("Rolling calendar horizon replenished through 12 months ahead.");
-    } catch {
-      setMessage("Could not extend the rolling calendar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (loading) return <p role="status">Loading schedule defaults…</p>;
 
   return (
@@ -151,23 +134,6 @@ export function AdminScheduleDefaultsPage({ api = defaultApi }: { api?: TripApi 
           </div>
           <button disabled={busy}>{busy ? "Saving…" : "Save schedule defaults"}</button>
         </form>
-
-        <hr style={{ margin: "1.5rem 0" }} />
-
-        <div>
-          <h3>Calendar Horizon</h3>
-          <p>
-            Replenish the calendar forward so the club always has an upcoming 12-month schedule available.
-          </p>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={busy}
-            onClick={() => void extendCalendar()}
-          >
-            {busy ? "Extending…" : "Replenish calendar through 12 months ahead"}
-          </button>
-        </div>
 
         {message && <p role="status" style={{ marginTop: "1rem" }}>{message}</p>}
       </div>

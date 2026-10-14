@@ -105,14 +105,16 @@ test.describe("Campsite Management and Field Persistence", () => {
     await expect(page.getByRole("heading", { name: /^Edit / })).toBeVisible();
 
     const updatedAddress = "100 Del Monte Blvd, Monterey, CA 93940";
-    const updatedHostName = "Ranger Michael Chang (Updated)";
-    const updatedHostPhone = "+1 (831) 555-0199";
-    const updatedFeatures = "Solar power, Hot showers, Bear boxes (heavy-duty)";
+    const updatedHostName = "Bob Kerlin";
+    const updatedHostPhone = "(831) 373-7007";
+    const updatedImageUrl = "https://www.psea.info/wp-content/uploads/2021/06/Del-Monte-cabins570x380.jpg";
+    const updatedFeatures = "Community propane grill\nCommunity charcoal barbecue Charcoal is not provided.\nLaundry room\nWi-fi (limited)\nPlayground\nHorseshoe pit\nLibrary of books and DVDs";
     const updatedCabinInfo = "Updated: 4 units with electric heating and kitchenettes";
     const updatedDirections = "Updated driving directions: Gate code #4821";
     const updatedWebsite = "https://parks.ca.gov/campsite?id=992&season=fall";
 
     await page.getByLabel("Campsite Address *").fill(updatedAddress);
+    await page.getByLabel("Image URL").fill(updatedImageUrl);
     await page.getByLabel("Camp Host Name").fill(updatedHostName);
     await page.getByLabel("Camp Host Phone").fill(updatedHostPhone);
     await page.getByLabel(/Camp Features/).fill(updatedFeatures);
@@ -132,9 +134,13 @@ test.describe("Campsite Management and Field Persistence", () => {
       await expect(card).toContainText(updatedHostPhone);
       await expect(card).toContainText(updatedCabinInfo);
       await expect(card).toContainText(updatedDirections);
-      await expect(card).toContainText("Solar power");
-      await expect(card).toContainText("Hot showers");
-      await expect(card).toContainText("Bear boxes (heavy-duty)");
+      await expect(card).toContainText("Community propane grill");
+      await expect(card).toContainText("Community charcoal barbecue Charcoal is not provided.");
+      await expect(card).toContainText("Laundry room");
+      await expect(card).toContainText("Wi-fi (limited)");
+      await expect(card).toContainText("Playground");
+      await expect(card).toContainText("Horseshoe pit");
+      await expect(card).toContainText("Library of books and DVDs");
 
       const link = card.locator('a[target="_blank"]');
       await expect(link).toBeVisible();

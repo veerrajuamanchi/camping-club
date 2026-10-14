@@ -50,6 +50,7 @@ test.describe("Role-Based Access Control and Administrator Boundaries", () => {
       "/admin/members",
       "/admin/schedule-defaults",
       "/admin/constitution",
+      "/admin/responsibilities",
     ];
 
     for (const route of adminRoutes) {
@@ -59,6 +60,7 @@ test.describe("Role-Based Access Control and Administrator Boundaries", () => {
       await expect(page.getByRole("button", { name: "+ Add Campsite" })).toBeHidden();
       await expect(page.getByRole("button", { name: "Send invitation" })).toBeHidden();
       await expect(page.getByRole("button", { name: "Save schedule defaults" })).toBeHidden();
+      await expect(page.getByRole("button", { name: "+ Add Responsibility" })).toBeHidden();
     }
   });
 
@@ -70,10 +72,13 @@ test.describe("Role-Based Access Control and Administrator Boundaries", () => {
     await expect(page.getByRole("heading", { name: "Campsite Directory" })).toBeVisible();
     await expect(page.getByRole("button", { name: "+ Add Campsite" })).toBeVisible();
 
-    // Members
+    // Members: test duplicate invite detection and member listing
     await page.goto("/admin/members");
     await expect(page.getByRole("heading", { name: "Administrator · Members" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Send invitation" })).toBeVisible();
+    await page.getByLabel("Invite by email").fill(adminUser.email);
+    await page.getByRole("button", { name: "Send invitation" }).click();
+    await expect(page.getByText("This member already exists.")).toBeVisible();
 
     // Schedule Defaults
     await page.goto("/admin/schedule-defaults");
@@ -83,5 +88,28 @@ test.describe("Role-Based Access Control and Administrator Boundaries", () => {
     // Constitution
     await page.goto("/admin/constitution");
     await expect(page.getByRole("heading", { name: "Camping Constitution" })).toBeVisible();
+
+    // Master Responsibilities: create and verify persistence across reload
+    await page.goto("/admin/responsibilities");
+    await expect(page.getByRole("heading", { name: "Master Responsibilities" })).toBeVisible();
+    await page.getByRole("button", { name: "+ Add Responsibility" }).click();
+
+    const respTitle = `Friday Dinner - Mutton Biryani (${Date.now()})`;
+    const titleInput = page.getByLabel("Title *");
+    await expect(titleInput).toBeVisible();
+    await titleInput.fill(respTitle);
+    await page.getByLabel("Category *").selectOption("cooking");
+    await page.getByLabel("Default Capacity *").fill("1");
+    await page.getByLabel("Workload Weight *").fill("1.0");
+    await page.getByLabel("Description").fill("Make biryani");
+    await page.getByRole("button", { name: "Save Responsibility" }).click();
+
+    // Verify card rendered
+    await expect(page.locator(".event-card", { hasText: respTitle })).toBeVisible();
+
+    // Full page reload persistence check
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Master Responsibilities" })).toBeVisible();
+    await expect(page.locator(".event-card", { hasText: respTitle })).toBeVisible();
   });
 });

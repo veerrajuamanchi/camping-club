@@ -17,8 +17,20 @@ const actionNames = [
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
+  "admin_delete_trip", "admin_create_custom_trip",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
+
+const optionalUrl = z.string().trim()
+  .transform((v) => {
+    if (!v) return null;
+    return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+  })
+  .pipe(z.string().url().nullable())
+  .or(z.literal("").transform(() => null))
+  .nullable()
+  .optional()
+  .default(null);
 
 const inputSchemas = {
   get_calendar: z.object({}).strict(),
@@ -33,45 +45,55 @@ const inputSchemas = {
   admin_reorder_campsites: z.object({ order: z.array(uuid).min(7), nextRotationPosition: z.number().int().min(1), reason }).strict(),
   admin_create_campsite: z.object({
     name: z.string().trim().min(1).max(120),
-    availabilityUrl: z.string().trim().url().nullable().optional(),
+    availabilityUrl: optionalUrl,
     locationDescription: z.string().max(2000),
     directions: z.string().max(8000).nullable().optional(),
-    cabinCapacity: z.number().int().positive().nullable().optional(),
-    cabinTypes: z.array(z.string().trim().min(1).max(100)).max(20).optional().default([]),
+    cabinCapacity: z.number().int().nonnegative().nullable().optional(),
+    cabinTypes: z.array(z.string().trim().min(1).max(100)).max(20).nullable().optional().default([]),
     reservationInstructions: z.string().max(8000).nullable().optional(),
     estimatedRateCents: z.number().int().nonnegative().nullable().optional(),
     availabilityStatus: z.enum(["available", "limited", "unavailable", "unknown", "manual_confirmation"]).optional().default("available"),
-    availabilitySourceUrl: z.string().trim().url().nullable().optional(),
-    imageUrl: z.string().trim().url().nullable().optional(),
+    availabilitySourceUrl: optionalUrl,
+    imageUrl: optionalUrl,
     campHostName: z.string().trim().max(120).nullable().optional(),
     campHostPhone: z.string().trim().max(40).nullable().optional(),
     campFeatures: z.array(z.string().trim().min(1).max(300)).max(50).optional().default([]),
     cabinInformation: z.string().max(8000).nullable().optional(),
     adminNotes: z.string().max(4000).optional().default(""),
-    reason,
+    reason: reason.optional().default("Administrator created campsite"),
   }).strict(),
   admin_update_campsite: z.object({
-    campsiteId: uuid, expectedVersion: z.number().int().positive(), name: z.string().trim().min(1).max(120),
-    availabilityUrl: z.string().trim().url().nullable().optional(), locationDescription: z.string().max(2000),
-    directions: z.string().max(8000).nullable().optional(), cabinCapacity: z.number().int().positive().nullable(),
-    cabinTypes: z.array(z.string().trim().min(1).max(100)).max(20), reservationInstructions: z.string().max(8000).nullable().optional(),
-    estimatedRateCents: z.number().int().nonnegative().nullable(),
-    availabilityStatus: z.enum(["available", "limited", "unavailable", "unknown", "manual_confirmation"]),
-    availabilitySourceUrl: z.string().trim().url().nullable().optional(), availabilityVerifiedAt: z.string().datetime().nullable(),
-    imageUrl: z.string().trim().url().nullable().optional(),
+    campsiteId: uuid,
+    expectedVersion: z.number().int().positive(),
+    name: z.string().trim().min(1).max(120),
+    availabilityUrl: optionalUrl,
+    locationDescription: z.string().max(2000),
+    directions: z.string().max(8000).nullable().optional(),
+    cabinCapacity: z.number().int().nonnegative().nullable().optional(),
+    cabinTypes: z.array(z.string().trim().min(1).max(100)).max(20).nullable().optional().default([]),
+    reservationInstructions: z.string().max(8000).nullable().optional(),
+    estimatedRateCents: z.number().int().nonnegative().nullable().optional(),
+    availabilityStatus: z.enum(["available", "limited", "unavailable", "unknown", "manual_confirmation"]).optional().default("available"),
+    availabilitySourceUrl: optionalUrl,
+    availabilityVerifiedAt: z.string().nullable().optional(),
+    imageUrl: optionalUrl,
     campHostName: z.string().trim().max(120).nullable().optional(),
     campHostPhone: z.string().trim().max(40).nullable().optional(),
-    campFeatures: z.array(z.string().trim().min(1).max(300)).max(50).optional(),
+    campFeatures: z.array(z.string().trim().min(1).max(300)).max(50).optional().default([]),
     cabinInformation: z.string().max(8000).nullable().optional(),
-    adminNotes: z.string().max(4000), reason,
+    adminNotes: z.string().max(4000).optional().default(""),
+    reason: reason.optional().default("Administrator updated campsite"),
   }).strict(),
   admin_configure_trip: z.object({
     tripId: uuid, startsOn: date, endsOn: date, deadlineDate: date.nullable(), deadlineTime: time.nullable(),
     minimumParticipants: z.number().int().min(1).max(100), maxCapacity: z.number().int().min(1).max(100).nullable(),
     cabinCount: z.number().int().min(1).max(50).nullable().optional(),
     perCabinCapacity: z.number().int().min(1).max(50).optional(),
-    selectedCampsiteId: uuid, cabinBookingStatus: z.enum(["booked", "no_vacancy", "sites_available"]),
+    selectedCampsiteId: uuid, cabinBookingStatus: z.enum(["booked", "pending", "sites_available", "no_vacancy"]),
     additionalInformation: z.string().max(4000), expectedVersion: z.number().int().positive(), reason,
+    title: z.string().trim().min(1).max(120).nullable().optional(),
+    eventStatus: z.enum(["tentative", "confirmed", "cancelled"]).optional(),
+    campingType: z.enum(["cabin", "tent", "rv", "boat"]).optional(),
   }).strict(),
   admin_set_poll_status: z.object({ tripId: uuid, pollStatus: z.enum(["open", "closed"]), expectedVersion: z.number().int().positive(), reason }).strict(),
   admin_publish_rule: z.object({
@@ -164,6 +186,28 @@ const inputSchemas = {
     status: z.enum(["approved", "revoked"]),
     notes: z.string().trim().max(500).optional(),
   }).strict(),
+  admin_delete_trip: z.object({
+    tripId: uuid,
+    reason,
+  }).strict(),
+  admin_create_custom_trip: z.object({
+    title: z.string().trim().min(2).max(120),
+    startsOn: date,
+    endsOn: date,
+    selectedCampsiteId: uuid,
+    campingType: z.enum(["cabin", "tent", "rv", "boat"]).optional().default("cabin"),
+    sitesCount: z.number().int().min(1).max(50).optional().default(2),
+    siteCapacity: z.number().int().min(1).max(50).optional().default(6),
+    eventStatus: z.enum(["tentative", "confirmed", "cancelled"]).optional().default("tentative"),
+    cabinBookingStatus: z.enum(["booked", "pending", "sites_available", "no_vacancy"]).optional(),
+    bookingStatus: z.enum(["booked", "pending", "sites_available", "no_vacancy"]).optional(),
+    minimumParticipants: z.number().int().min(1).max(100).optional().default(4),
+    maxCapacity: z.number().int().min(1).max(100).nullable().optional(),
+    deadlineDate: date.nullable().optional(),
+    deadlineTime: time.nullable().optional(),
+    additionalInformation: z.string().max(4000).optional().default(""),
+    reason,
+  }).strict(),
 };
 
 type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended" };
@@ -175,7 +219,7 @@ const adminActions = new Set<Action>([
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
-  "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
+  "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -184,10 +228,11 @@ const mutatingActions = new Set<Action>([
   "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
+  "admin_delete_trip", "admin_create_custom_trip",
 ]);
 
-function errorResponse(request: Request, status: number, code: string, requestId: string): Response {
-  return json(request, status, { error: code, requestId });
+function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
+  return json(request, status, { error: code, message: message || code, requestId });
 }
 
 function databaseStatus(code: string | undefined): number {
@@ -243,7 +288,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
     service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,active,version").eq("active", true).order("rotation_position"),
-    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,version").gte("month_key", month).order("month_key").limit(12),
+    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
@@ -379,6 +424,9 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
           ? { position: ownWaitlistByTrip.get(trip.id)!.position, status: ownWaitlistByTrip.get(trip.id)!.status }
           : undefined,
         pollStatus: trip.poll_status,
+        title: trip.title ?? null,
+        eventStatus: trip.event_status ?? "tentative",
+        campingType: trip.camping_type ?? "cabin",
         additionalInformation: trip.additional_information, cabinBookingStatus: trip.cabin_booking_status,
         legacyCabinAvailabilityStatus: member.member_role === "admin" ? trip.cabin_availability_status : undefined,
         version: trip.version, comingCount: counts.get(trip.id) ?? 0, tripDecision: "none",
@@ -395,8 +443,9 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
 
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
   const tripResult = await service.from("camping_trips")
-    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,version")
+    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,camping_type,deleted_at,version")
     .eq("id", tripId)
+    .is("deleted_at", null)
     .maybeSingle();
   if (tripResult.error && tripResult.error.code !== "PGRST116") {
     checkError(tripResult.error);
@@ -524,6 +573,9 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   return {
     tripId: trip.id,
     monthKey: String(trip.month_key).slice(0, 7),
+    title: trip.title ?? null,
+    eventStatus: trip.event_status ?? "tentative",
+    campingType: trip.camping_type ?? "cabin",
     pollStatus: trip.poll_status,
     startsOn: trip.starts_on,
     endsOn: trip.ends_on,
@@ -640,8 +692,14 @@ Deno.serve(async (request) => {
   const action = parsed.action;
   if (adminActions.has(action) && member.member_role !== "admin") return errorResponse(request, 403, "administrator_required", requestId);
   let input: Record<string, unknown>;
-  try { input = inputSchemas[action].parse(parsed.input ?? {}) as Record<string, unknown>; }
-  catch { return errorResponse(request, 400, "invalid_request", requestId); }
+  try {
+    input = inputSchemas[action].parse(parsed.input ?? {}) as Record<string, unknown>;
+  } catch (zodErr) {
+    const errorMsg = zodErr instanceof z.ZodError
+      ? zodErr.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ")
+      : "Invalid input parameters";
+    return errorResponse(request, 400, "invalid_request", requestId, errorMsg);
+  }
 
   if (action === "get_calendar") {
     try { return json(request, 200, { ...(await getCalendar(member)), requestId }); }
@@ -873,7 +931,58 @@ Deno.serve(async (request) => {
     }
     case "admin_configure_trip":
       rpcName = "phase2_admin_configure_trip";
-      rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_starts_on: input.startsOn, p_ends_on: input.endsOn, p_deadline_date: input.deadlineDate, p_deadline_time: input.deadlineTime, p_minimum_participants: input.minimumParticipants, p_max_capacity: input.maxCapacity, p_selected_campsite_id: input.selectedCampsiteId, p_cabin_booking_status: input.cabinBookingStatus, p_additional_information: input.additionalInformation, p_expected_version: input.expectedVersion, p_reason: input.reason, p_request_id: key };
+      rpcArgs = {
+        p_actor_id: member.member_id,
+        p_trip_id: input.tripId,
+        p_starts_on: input.startsOn,
+        p_ends_on: input.endsOn,
+        p_deadline_date: input.deadlineDate,
+        p_deadline_time: input.deadlineTime,
+        p_minimum_participants: input.minimumParticipants,
+        p_max_capacity: input.maxCapacity,
+        p_selected_campsite_id: input.selectedCampsiteId,
+        p_cabin_booking_status: input.cabinBookingStatus,
+        p_additional_information: input.additionalInformation,
+        p_expected_version: input.expectedVersion,
+        p_reason: input.reason,
+        p_request_id: key,
+        p_title: input.title ?? null,
+        p_event_status: input.eventStatus ?? "tentative",
+        p_camping_type: input.campingType ?? "cabin",
+        p_cabin_count: input.cabinCount ?? null,
+        p_per_cabin_capacity: input.perCabinCapacity ?? 6,
+      };
+      break;
+    case "admin_delete_trip":
+      rpcName = "phase2_admin_delete_trip";
+      rpcArgs = {
+        p_actor_id: member.member_id,
+        p_trip_id: input.tripId,
+        p_reason: input.reason,
+        p_request_id: key,
+      };
+      break;
+    case "admin_create_custom_trip":
+      rpcName = "phase2_admin_create_custom_trip";
+      rpcArgs = {
+        p_actor_id: member.member_id,
+        p_title: input.title,
+        p_starts_on: input.startsOn,
+        p_ends_on: input.endsOn,
+        p_selected_campsite_id: input.selectedCampsiteId,
+        p_camping_type: input.campingType ?? "cabin",
+        p_sites_count: input.sitesCount ?? 2,
+        p_site_capacity: input.siteCapacity ?? 6,
+        p_event_status: input.eventStatus ?? "tentative",
+        p_booking_status: input.cabinBookingStatus ?? input.bookingStatus ?? "booked",
+        p_minimum_participants: input.minimumParticipants ?? 4,
+        p_max_capacity: input.maxCapacity ?? null,
+        p_deadline_date: input.deadlineDate ?? null,
+        p_deadline_time: input.deadlineTime ?? null,
+        p_additional_information: input.additionalInformation ?? "",
+        p_reason: input.reason,
+        p_request_id: key,
+      };
       break;
     case "admin_set_poll_status":
       rpcName = "phase2_admin_set_poll_status";
@@ -1071,7 +1180,13 @@ Deno.serve(async (request) => {
 
   const { data, error } = await service.rpc(rpcName, rpcArgs as never);
   if (error) {
-    return errorResponse(request, databaseStatus(error.code), databaseStatus(error.code) === 500 ? "operation_failed" : "operation_rejected", requestId);
+    return errorResponse(
+      request,
+      databaseStatus(error.code),
+      databaseStatus(error.code) === 500 ? "operation_failed" : "operation_rejected",
+      requestId,
+      error.message
+    );
   }
   if (action === "admin_configure_trip" && (typeof input.cabinCount !== "undefined" || typeof input.perCabinCapacity !== "undefined")) {
     const { error: updateError } = await service.from("camping_trips").update({

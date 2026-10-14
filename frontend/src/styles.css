@@ -496,6 +496,12 @@ label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color
   font-size: 0.9rem;
   font-weight: 500;
 }
+.form-error {
+  color: #dc2626;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
 .register-suggestion-btn {
   display: inline-block;
   color: #1c2d24;

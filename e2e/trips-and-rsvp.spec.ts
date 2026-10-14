@@ -27,7 +27,7 @@ test.describe("Trip Management, Constitution Acknowledgment, and RSVP Persistenc
     await cleanupSyntheticUsers([adminUser, memberUser]);
   });
 
-  test("admin opens poll, member confirms Going with Constitution acknowledgment, and verifies reload persistence", async ({
+  test("admin configures trip dates & deadline, member confirms Going with Constitution acknowledgment, and verifies reload persistence", async ({
     page,
     browser,
   }) => {
@@ -55,27 +55,17 @@ test.describe("Trip Management, Constitution Acknowledgment, and RSVP Persistenc
     const modal = page.locator(".modal-card");
     await expect(modal).toBeVisible();
 
-    // Month is November 2026
+    // Dates in November 2026
     const startsOn = "2026-11-20";
     const endsOn = "2026-11-22";
 
-    await modal.getByLabel("Trip start").fill(startsOn);
-    await modal.getByLabel("Trip end").fill(endsOn);
-    await modal.getByLabel("Cabin booking status").selectOption("booked");
-    await modal.getByLabel("Trip notes & information").fill("Annual Autumn Ridge Exploration");
+    await modal.getByLabel(/Trip start/i).fill(startsOn);
+    await modal.getByLabel(/Trip end/i).fill(endsOn);
+    await modal.getByRole("combobox", { name: "Cabin Booking Status" }).selectOption("booked");
+    await modal.getByLabel(/Trip notes & information/i).fill("Annual Autumn Ridge Exploration");
 
     await modal.getByRole("button", { name: "Save changes" }).click();
     await expect(modal).toBeHidden();
-
-    // Open Admin controls and click "Open poll"
-    const adminControlsSummary = firstTripCard.locator("summary", { hasText: "Admin controls" });
-    await adminControlsSummary.click();
-
-    const openPollBtn = firstTripCard.getByRole("button", { name: "Open poll" });
-    if (await openPollBtn.isVisible()) {
-      await openPollBtn.click();
-      await expect(firstTripCard.getByRole("button", { name: "Close poll" })).toBeVisible();
-    }
 
     // Capture the trip link
     const detailsLink = firstTripCard.locator("a.view-details-link");
@@ -123,5 +113,81 @@ test.describe("Trip Management, Constitution Acknowledgment, and RSVP Persistenc
     await expect(memberPage.locator(".status-badge-not-going")).toBeVisible();
 
     await memberContext.close();
+  });
+
+  test("admin creates custom camping event with open form, verifies date validation, reload persistence, and deletion", async ({
+    page,
+  }) => {
+    await authenticateSession(page, adminUser);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Upcoming Camping" })).toBeVisible();
+
+    // 1. Click "+ Add Custom Camping"
+    const addBtn = page.getByRole("button", { name: "+ Add Custom Camping" });
+    await expect(addBtn).toBeVisible();
+    await addBtn.click();
+
+    const modal = page.locator(".modal-card");
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole("heading", { name: "Add Custom Camping Event" })).toBeVisible();
+
+    // 2. Verify start/end date logic & form validation
+    const customTitle = `Big Sur Coastal Adventure (${Date.now()})`;
+    const startsOnInput = modal.getByLabel(/Trip start date/i);
+    const endsOnInput = modal.getByLabel(/Trip end date/i);
+
+    await modal.getByLabel(/Event Name/i).fill(customTitle);
+    await startsOnInput.fill("2027-04-16");
+    // Verify min attribute on endsOn is set
+    await expect(endsOnInput).toHaveAttribute("min", "2027-04-16");
+    await endsOnInput.fill("2027-04-18");
+
+    await modal.getByRole("combobox", { name: "Camping Type" }).selectOption("tent");
+    await modal.getByRole("combobox", { name: "Event Status" }).selectOption("confirmed");
+    await modal.getByLabel(/Camping Type Sites Count/i).fill("3");
+    await modal.getByLabel(/Camping Type Site Capacity/i).fill("4");
+    await modal.getByRole("combobox", { name: "Cabin Booking Status" }).selectOption("booked");
+    await modal.getByLabel(/Trip notes & information/i).fill("Oceanview tent sites, bring headlamps");
+
+    await modal.getByRole("button", { name: "Save Custom Camping" }).click();
+    await expect(modal).toBeHidden();
+
+    // 3. Verify custom event appears on calendar
+    const customCard = page.locator(".event-card-container", { hasText: customTitle });
+    await expect(customCard).toBeVisible();
+    await expect(customCard.locator(".badge-pill", { hasText: "Tent" })).toBeVisible();
+    await expect(customCard.locator(".event-status-pill")).toContainText("Confirmed");
+
+    // 4. Verify reload persistence
+    await page.reload();
+    await expect(page.locator(".event-card-container", { hasText: customTitle })).toBeVisible();
+
+    // 5. Admin edits the event title
+    const editBtn = customCard.getByRole("button", { name: "✏️ Edit" });
+    await editBtn.click();
+    const editModal = page.locator(".modal-card");
+    await expect(editModal).toBeVisible();
+
+    const updatedTitle = `${customTitle} - Updated`;
+    await editModal.getByLabel(/Event Name/i).fill(updatedTitle);
+    await editModal.getByRole("button", { name: "Save changes" }).click();
+    await expect(editModal).toBeHidden();
+
+    // Verify updated title on card and after reload
+    await expect(page.locator(".event-card-container", { hasText: updatedTitle })).toBeVisible();
+    await page.reload();
+    await expect(page.locator(".event-card-container", { hasText: updatedTitle })).toBeVisible();
+
+    // 6. Admin deletes the custom event with confirmation
+    const updatedCard = page.locator(".event-card-container", { hasText: updatedTitle });
+    page.once("dialog", (dialog) => dialog.accept());
+    await updatedCard.getByRole("button", { name: "🗑️ Delete" }).click();
+
+    // Verify card is removed from calendar
+    await expect(page.locator(".event-card-container", { hasText: updatedTitle })).toBeHidden();
+
+    // Verify deletion persists across reload
+    await page.reload();
+    await expect(page.locator(".event-card-container", { hasText: updatedTitle })).toBeHidden();
   });
 });
