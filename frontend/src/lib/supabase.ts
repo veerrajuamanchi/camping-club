@@ -35,15 +35,25 @@ export class AuthApiError extends Error {
   }
 }
 
-export async function responseErrorCode(response?: Response): Promise<string | undefined> {
-  if (!response) return undefined;
+export async function responseErrorDetails(response?: Response): Promise<{ code?: string; message?: string }> {
+  if (!response) return {};
   try {
     const payload = await response.clone().json();
-    if (typeof payload?.error === "string") return payload.error;
-    return typeof payload?.error?.code === "string" ? payload.error.code : undefined;
+    const code = typeof payload?.error === "string" ? payload.error : typeof payload?.error?.code === "string" ? payload.error.code : undefined;
+    const message = typeof payload?.message === "string"
+      ? payload.message
+      : typeof payload?.error_description === "string"
+        ? payload.error_description
+        : undefined;
+    return { code, message };
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+export async function responseErrorCode(response?: Response): Promise<string | undefined> {
+  const { code } = await responseErrorDetails(response);
+  return code;
 }
 
 export async function invokeMemberApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {
@@ -52,9 +62,9 @@ export async function invokeMemberApi<T>(action: string, input?: unknown, idempo
   const headers = !["me", "list_members"].includes(action) ? { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() } : undefined;
   const { data, error, response } = await supabase.functions.invoke("member-api", { body, headers });
   if (error || data?.error) {
-    const responseCode = await responseErrorCode(response);
+    const { code: responseCode, message: responseMsg } = await responseErrorDetails(response);
     const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
-    const msg = typeof data?.message === "string" ? data.message : (error?.message || undefined);
+    const msg = responseMsg || (typeof data?.message === "string" ? data.message : undefined) || (error?.message && error.message !== "Edge Function returned a non-2xx status code" ? error.message : undefined);
     throw new MemberApiError(responseCode ?? payloadCode, response?.status, msg);
   }
   return data?.data as T;
@@ -78,9 +88,9 @@ export async function invokeTripApi<T>(action: string, input?: unknown, idempote
     : undefined;
   const { data, error, response } = await supabase.functions.invoke("trip-api", { body: { action, input }, headers });
   if (error || data?.error) {
-    const responseCode = await responseErrorCode(response);
+    const { code: responseCode, message: responseMsg } = await responseErrorDetails(response);
     const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
-    const msg = typeof data?.message === "string" ? data.message : (error?.message || undefined);
+    const msg = responseMsg || (typeof data?.message === "string" ? data.message : undefined) || (error?.message && error.message !== "Edge Function returned a non-2xx status code" ? error.message : undefined);
     throw new TripApiError(responseCode ?? payloadCode, response?.status, msg);
   }
   return data?.data as T;

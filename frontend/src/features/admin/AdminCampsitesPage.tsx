@@ -145,7 +145,7 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
       } else if (editingSite) {
         await api("admin_update_campsite", {
           campsiteId: editingSite.campsiteId,
-          expectedVersion: editingSite.version,
+          expectedVersion: Math.max(1, editingSite.version ?? 1),
           name: name.trim(),
           locationDescription: address.trim(),
           imageUrl: cleanImageUrl || null,
@@ -178,7 +178,7 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
           setModalError("Permission denied. Administrator access is required.");
         } else {
           setModalError(
-            err.message && err.message !== "The trip request could not be completed."
+            err.message && !err.message.includes("non-2xx") && err.message !== "The trip request could not be completed."
               ? err.message
               : "Could not save campsite. Verify input values."
           );
