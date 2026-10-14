@@ -359,8 +359,12 @@ function EventCard({
         reason: `Administrator deleted trip: ${tripDisplayName}`,
       });
       await onRefresh();
-    } catch {
-      setError("Could not delete this camping event.");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof TripApiError && err.message && err.message !== "The trip request could not be completed."
+          ? err.message
+          : ((err as Error)?.message || "Could not delete this camping event.");
+      setError(msg);
     } finally {
       setBusy(false);
     }

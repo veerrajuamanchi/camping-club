@@ -191,8 +191,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         reason: `Administrator deleted event: ${name}`,
       });
       navigate("/");
-    } catch {
-      setError("Could not delete this camping event.");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof TripApiError && err.message && err.message !== "The trip request could not be completed."
+          ? err.message
+          : ((err as Error)?.message || "Could not delete this camping event.");
+      setError(msg);
       setLoading(false);
     }
   }

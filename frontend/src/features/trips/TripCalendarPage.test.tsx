@@ -322,5 +322,46 @@ describe("TripCalendarPage", () => {
       await screen.findByText("You are #2 on the waitlist. The administrator will notify you if a spot opens.")
     ).toBeInTheDocument();
   });
+
+  it("allows admin to delete an event with confirmation", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async (action: string) => {
+      if (action === "admin_delete_trip") {
+        return { success: true };
+      }
+      return calendar;
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<TripCalendarPage isAdmin={true} api={api as unknown as TripApi} />);
+    await screen.findByText(/January 2027/);
+    const deleteButton = screen.getByRole("button", { name: /Delete/i });
+    fireEvent.click(deleteButton);
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith("admin_delete_trip", expect.objectContaining({
+        tripId: "trip-1",
+        reason: expect.stringContaining("Administrator deleted trip"),
+      }));
+    });
+  });
+
+  it("displays server error message if deleting an event fails", async () => {
+    const calendar = makeCalendar();
+    const api = vi.fn(async (action: string) => {
+      if (action === "admin_delete_trip") {
+        throw new TripApiError("trip_deletion_failed", 400, "trip not found or already deleted");
+      }
+      return calendar;
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<TripCalendarPage isAdmin={true} api={api as unknown as TripApi} />);
+    await screen.findByText(/January 2027/);
+    const deleteButton = screen.getByRole("button", { name: /Delete/i });
+    fireEvent.click(deleteButton);
+
+    expect(await screen.findByText("trip not found or already deleted")).toBeInTheDocument();
+  });
 });
 
