@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./app/AuthProvider";
 import { AccessBoundary } from "./features/auth/AccessBoundary";
@@ -13,6 +13,38 @@ import { MemberProfileForm, type MemberProfileInput } from "./features/members/M
 import { TripCalendarPage } from "./features/trips/TripCalendarPage";
 import { EventDetailsPage } from "./features/trips/EventDetailsPage";
 import { configurationError, invokeAuthApi, invokeMemberApi, supabase } from "./lib/supabase";
+
+function LogoutRoute() {
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    void signOut().then(() => {
+      navigate("/signin", { replace: true });
+    });
+  }, [signOut, navigate]);
+
+  return <p role="status">Signing out…</p>;
+}
+
+function LoginRoute() {
+  const { membership, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (membership.status === "inactive") {
+      void signOut().then(() => {
+        navigate("/signin", { replace: true });
+      });
+    } else if (membership.status === "active") {
+      navigate("/", { replace: true });
+    } else if (membership.status !== "loading") {
+      navigate("/signin", { replace: true });
+    }
+  }, [membership.status, signOut, navigate]);
+
+  return <p role="status">Redirecting to sign in…</p>;
+}
 
 function SignInRoute() {
   const { refresh } = useAuth();
@@ -113,9 +145,22 @@ function AppRoutes() {
             )}
           </div>
         )}
+        {membership.status === "inactive" && (
+          <button
+            type="button"
+            className="secondary-button"
+            style={{ padding: "0.35rem 0.75rem", fontSize: "0.85rem", cursor: "pointer" }}
+            onClick={() => void signOut()}
+          >
+            🚪 Sign out
+          </button>
+        )}
       </header>
       <main className="container">
         <Routes>
+          <Route path="/logout" element={<LogoutRoute />} />
+          <Route path="/signout" element={<LogoutRoute />} />
+          <Route path="/login" element={<LoginRoute />} />
           <Route
             path="/signin"
             element={membership.status === "active" ? <Navigate to="/" replace /> : <SignInRoute />}
@@ -132,7 +177,7 @@ function AppRoutes() {
               ) : membership.status === "profileRequired" ? (
                 <AcceptInvitation onComplete={completeInvitation} />
               ) : (
-                <AccessBoundary state={membership} requiredRole="member">
+                <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
                   {null}
                 </AccessBoundary>
               )
@@ -141,7 +186,7 @@ function AppRoutes() {
           <Route
             path="/profile"
             element={
-              <AccessBoundary state={membership} requiredRole="member">
+              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
                 {profile && (
                   <MemberProfileForm
                     mode="edit"
@@ -157,7 +202,7 @@ function AppRoutes() {
           <Route
             path="/admin/members"
             element={
-              <AccessBoundary state={membership} requiredRole="admin">
+              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
                 <AdminMembersPage />
               </AccessBoundary>
             }
@@ -165,7 +210,7 @@ function AppRoutes() {
           <Route
             path="/admin/campsites"
             element={
-              <AccessBoundary state={membership} requiredRole="admin">
+              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
                 <AdminCampsitesPage />
               </AccessBoundary>
             }
@@ -173,7 +218,7 @@ function AppRoutes() {
           <Route
             path="/admin/schedule-defaults"
             element={
-              <AccessBoundary state={membership} requiredRole="admin">
+              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
                 <AdminScheduleDefaultsPage />
               </AccessBoundary>
             }
@@ -181,7 +226,7 @@ function AppRoutes() {
           <Route
             path="/admin/constitution"
             element={
-              <AccessBoundary state={membership} requiredRole="admin">
+              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
                 <AdminConstitutionPage />
               </AccessBoundary>
             }
@@ -189,7 +234,7 @@ function AppRoutes() {
           <Route
             path="/admin/responsibilities"
             element={
-              <AccessBoundary state={membership} requiredRole="admin">
+              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
                 <MasterResponsibilitiesPage />
               </AccessBoundary>
             }
@@ -202,7 +247,7 @@ function AppRoutes() {
               ) : membership.status === "profileRequired" ? (
                 <Navigate to="/accept-invitation" replace />
               ) : (
-                <AccessBoundary state={membership} requiredRole="member">
+                <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
                   <EventDetailsPage isAdmin={membership.status === "active" && membership.role === "admin"} />
                 </AccessBoundary>
               )
@@ -216,7 +261,7 @@ function AppRoutes() {
               ) : membership.status === "profileRequired" ? (
                 <Navigate to="/accept-invitation" replace />
               ) : (
-                <AccessBoundary state={membership} requiredRole="member">
+                <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
                   <TripCalendarPage isAdmin={membership.status === "active" && membership.role === "admin"} />
                 </AccessBoundary>
               )

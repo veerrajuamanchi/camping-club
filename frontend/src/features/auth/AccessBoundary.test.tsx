@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AccessBoundary, type MembershipState } from "./AccessBoundary";
 
 const privateContent = <p>Confidential member area</p>;
@@ -58,5 +58,20 @@ describe("AccessBoundary", () => {
 
     expect(screen.queryByText("Confidential member area")).not.toBeInTheDocument();
     expect(screen.getByText(/club access is inactive/i)).toBeInTheDocument();
+  });
+
+  it("renders sign out button for inactive account and triggers callback", () => {
+    const state: MembershipState = { status: "inactive" };
+    const onSignOut = vi.fn();
+    render(
+      <AccessBoundary state={state} requiredRole="member" onSignOut={onSignOut}>
+        {privateContent}
+      </AccessBoundary>,
+    );
+
+    const signOutBtn = screen.getByRole("button", { name: /sign out & return to sign in/i });
+    expect(signOutBtn).toBeInTheDocument();
+    signOutBtn.click();
+    expect(onSignOut).toHaveBeenCalledTimes(1);
   });
 });
