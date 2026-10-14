@@ -90,7 +90,7 @@ function TripEditModal({
   const deadlineLocal = formatZonedDateTimeLocal(trip?.pollDeadlineAt ?? null, trip?.clubTimezone ?? calendar?.clubConfiguration.timezone ?? null);
   const [deadline, setDeadline] = useState(deadlineLocal.slice(0, 10));
   const [deadlineTime, setDeadlineTime] = useState(deadlineLocal.slice(11, 16) || calendar?.clubConfiguration.defaultPollCloseTime?.slice(0, 5) || "18:00");
-  const [title, setTitle] = useState(trip?.title ?? "");
+  const [title, setTitle] = useState(trip?.title || `${monthName(trip.monthKey)} Camping`);
   const [startsOn, setStartsOn] = useState(trip?.startsOn ?? "");
   const [endsOn, setEndsOn] = useState(trip?.endsOn ?? "");
   const [minimum, setMinimum] = useState(trip?.minimumParticipants ?? calendar?.clubConfiguration.defaultMinimumParticipants ?? 4);
@@ -442,7 +442,6 @@ function EventCard({
             />
           )}
           <div>
-            <p className="eyebrow">{monthName(trip.monthKey)}</p>
             <h2 className="event-card-name">
               {trip.title || trip.additionalInformation || `${monthName(trip.monthKey)} Camping`}
             </h2>
@@ -502,19 +501,14 @@ function EventCard({
           <span style={{ fontSize: "0.9rem", color: "#111827" }}>
             • {trip.cabinCount ?? 0} {campingTypeLabel} Sites Booked | Capacity: {trip.effectiveCapacity ?? (trip.cabinCount ? trip.cabinCount * trip.perCabinCapacity : "—")}
           </span>
-          {trip.cabinCount != null && <span className="sr-only">{trip.cabinCount} sites booked</span>}
-          {trip.effectiveCapacity != null && <span className="sr-only">Capacity: {trip.effectiveCapacity}</span>}
         </div>
         <div>
           <strong style={{ display: "block", fontSize: "0.8rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em" }}>
             Attendance &amp; RSVP
           </strong>
           <span style={{ fontSize: "0.9rem", color: "#111827" }}>
-            • {trip.comingCount} Confirmed | {trip.spotsRemaining ?? 0} Spots Remaining
+            • {trip.comingCount} Confirmed | {trip.spotsRemaining ?? 0} Spots Remaining{trip.waitlistCount > 0 ? ` | ${trip.waitlistCount} Waitlisted` : ""}
           </span>
-          <span className="sr-only">{trip.comingCount} confirmed</span>
-          {trip.spotsRemaining != null && <span className="sr-only">{trip.spotsRemaining} spots remaining</span>}
-          {trip.waitlistCount > 0 && <span className="sr-only">{trip.waitlistCount} on waitlist</span>}
         </div>
       </div>
 
@@ -903,8 +897,7 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
     <section className="trip-page">
       <div className="feed-header">
         <div>
-          <h1 className="feed-title">Upcoming Camping</h1>
-          <span className="badge-pill">12 months</span>
+          <h1 className="feed-title">Upcoming Camping Events</h1>
         </div>
         {isAdmin && (
           <button

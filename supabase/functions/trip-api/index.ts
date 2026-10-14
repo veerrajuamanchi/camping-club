@@ -17,7 +17,7 @@ const actionNames = [
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
-  "admin_delete_trip", "admin_create_custom_trip",
+  "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -59,6 +59,12 @@ const inputSchemas = {
     campHostPhone: z.string().trim().max(40).nullable().optional(),
     campFeatures: z.array(z.string().trim().min(1).max(300)).max(50).optional().default([]),
     cabinInformation: z.string().max(8000).nullable().optional(),
+    siteAvailability: z.enum(["open_year_round", "closed_for_winter", "Open Year-Round", "Closed for Winter"]).transform((v) => {
+      if (v === "Closed for Winter" || v === "closed_for_winter") return "closed_for_winter";
+      return "open_year_round";
+    }).optional().default("open_year_round"),
+    peakSeasonTimeframe: z.string().trim().max(50).nullable().optional(),
+    peakSeasonBookingRequirement: z.string().trim().max(30).nullable().optional(),
     adminNotes: z.string().max(4000).optional().default(""),
     reason: reason.optional().default("Administrator created campsite"),
   }).strict(),
@@ -81,8 +87,18 @@ const inputSchemas = {
     campHostPhone: z.string().trim().max(40).nullable().optional(),
     campFeatures: z.array(z.string().trim().min(1).max(300)).max(50).optional().default([]),
     cabinInformation: z.string().max(8000).nullable().optional(),
+    siteAvailability: z.enum(["open_year_round", "closed_for_winter", "Open Year-Round", "Closed for Winter"]).transform((v) => {
+      if (v === "Closed for Winter" || v === "closed_for_winter") return "closed_for_winter";
+      return "open_year_round";
+    }).optional().default("open_year_round"),
+    peakSeasonTimeframe: z.string().trim().max(50).nullable().optional(),
+    peakSeasonBookingRequirement: z.string().trim().max(30).nullable().optional(),
     adminNotes: z.string().max(4000).optional().default(""),
     reason: reason.optional().default("Administrator updated campsite"),
+  }).strict(),
+  admin_delete_campsite: z.object({
+    campsiteId: uuid,
+    reason: reason.optional().default("Administrator deleted campsite"),
   }).strict(),
   admin_configure_trip: z.object({
     tripId: uuid, startsOn: date, endsOn: date, deadlineDate: date.nullable(), deadlineTime: time.nullable(),
@@ -220,6 +236,7 @@ const adminActions = new Set<Action>([
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
+  "admin_delete_campsite",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -228,7 +245,7 @@ const mutatingActions = new Set<Action>([
   "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
-  "admin_delete_trip", "admin_create_custom_trip",
+  "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -287,7 +304,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const month = `${new Date().toISOString().slice(0, 7)}-01`;
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
-    service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,active,version").eq("active", true).order("rotation_position"),
+    service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,active,version").eq("active", true).order("rotation_position"),
     service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
@@ -390,6 +407,9 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
       campHostPhone: site.camp_host_phone,
       campFeatures: site.camp_features ?? [],
       cabinInformation: site.cabin_information,
+      siteAvailability: site.site_availability ?? "open_year_round",
+      peakSeasonTimeframe: site.peak_season_timeframe,
+      peakSeasonBookingRequirement: site.peak_season_booking_requirement,
       adminNotes: member.member_role === "admin" ? (site as typeof site & { admin_notes?: string }).admin_notes : undefined,
       version: site.version,
     })),
@@ -466,7 +486,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   const [campsiteResult, bundleResult, rsvpResult, waitlistResult] = await Promise.all([
     trip.selected_campsite_id
       ? service.from("campsites")
-          .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,version")
+          .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,version")
           .eq("id", trip.selected_campsite_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -615,6 +635,9 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       campHostPhone: campsite.camp_host_phone,
       campFeatures: campsite.camp_features ?? [],
       cabinInformation: campsite.cabin_information,
+      siteAvailability: campsite.site_availability ?? "open_year_round",
+      peakSeasonTimeframe: campsite.peak_season_timeframe,
+      peakSeasonBookingRequirement: campsite.peak_season_booking_requirement,
       version: campsite.version,
     } : null,
     currentRuleBundle: bundleResult.data ? {
@@ -927,6 +950,16 @@ Deno.serve(async (request) => {
       rpcName = "phase2_admin_create_campsite";
       const { reason: why, ...campsiteInput } = input;
       rpcArgs = { p_actor_id: member.member_id, p_input: campsiteInput, p_reason: why, p_request_id: key };
+      break;
+    }
+    case "admin_delete_campsite": {
+      rpcName = "phase2_admin_delete_campsite";
+      rpcArgs = {
+        p_actor_id: member.member_id,
+        p_campsite_id: input.campsiteId,
+        p_reason: input.reason,
+        p_request_id: key,
+      };
       break;
     }
     case "admin_configure_trip":

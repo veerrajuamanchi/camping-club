@@ -775,7 +775,7 @@ function EditTripDetailsModal({
   onClose: () => void;
   onRefresh: () => Promise<void>;
 }) {
-  const [title, setTitle] = useState(details.title ?? "");
+  const [title, setTitle] = useState(details.title || `${monthName(details.monthKey)} Camping`);
   const [startsOn, setStartsOn] = useState(details.startsOn ?? "");
   const [endsOn, setEndsOn] = useState(details.endsOn ?? "");
   const [deadline, setDeadline] = useState(details.pollDeadlineAt ? details.pollDeadlineAt.slice(0, 10) : "");

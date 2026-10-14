@@ -96,6 +96,9 @@ describe("AdminCampsitesPage", () => {
     await user.type(screen.getByLabelText("Camp Host Phone"), "555-9876");
     await user.type(screen.getByLabelText("Camp Features (one per line)"), "Showers\nBoating");
     await user.type(screen.getByLabelText("Cabin Information"), "Rustic bunkhouse");
+    await user.selectOptions(screen.getByLabelText("Site Availability"), "closed_for_winter");
+    await user.type(screen.getByLabelText("Peak Season Timeframe"), "June to August");
+    await user.type(screen.getByLabelText("Peak Season Booking Requirement"), "Friday to Sunday");
 
     await user.click(screen.getByRole("button", { name: "Create Campsite" }));
 
@@ -110,6 +113,9 @@ describe("AdminCampsitesPage", () => {
           campHostPhone: "555-9876",
           campFeatures: ["Showers", "Boating"],
           cabinInformation: "Rustic bunkhouse",
+          siteAvailability: "closed_for_winter",
+          peakSeasonTimeframe: "June to August",
+          peakSeasonBookingRequirement: "Friday to Sunday",
         })
       );
     });
@@ -157,6 +163,43 @@ describe("AdminCampsitesPage", () => {
         })
       );
     });
+  });
+
+  it("allows deleting a campsite after confirmation", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn(async (action: string) => {
+      if (action === "get_calendar") {
+        return { campsites: mockCampsites };
+      }
+      if (action === "admin_delete_campsite") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    window.confirm = vi.fn().mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <AdminCampsitesPage api={api as any} />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Del Monte");
+    await user.click(screen.getByRole("button", { name: /Delete/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Are you sure you want to delete campsite "Del Monte"?'
+    );
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith("admin_delete_campsite", {
+        campsiteId: "site-1",
+        reason: "Administrator deleted campsite",
+      });
+    });
+
+    expect(await screen.findByText('Campsite "Del Monte" deleted successfully.')).toBeInTheDocument();
   });
 
   it("displays error message when saving campsite fails", async () => {

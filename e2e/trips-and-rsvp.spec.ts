@@ -42,7 +42,7 @@ test.describe("Trip Management, Constitution Acknowledgment, and RSVP Persistenc
 
     // 2. Admin navigates to Upcoming Camping calendar
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Upcoming Camping" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Upcoming Camping Events" })).toBeVisible();
 
     const firstTripCard = page.locator(".event-card-container").first();
     await expect(firstTripCard).toBeVisible();
@@ -120,7 +120,7 @@ test.describe("Trip Management, Constitution Acknowledgment, and RSVP Persistenc
   }) => {
     await authenticateSession(page, adminUser);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Upcoming Camping" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Upcoming Camping Events" })).toBeVisible();
 
     // 1. Click "+ Add Custom Camping"
     const addBtn = page.getByRole("button", { name: "+ Add Custom Camping" });

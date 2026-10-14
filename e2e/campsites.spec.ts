@@ -40,6 +40,9 @@ test.describe("Campsite Management and Field Persistence", () => {
     const directions = "Take US-101 South to CA-25 South, turn right on CA-146 West";
     const websiteUrl = "https://www.recreation.gov/camping/campgrounds/234059?tab=campsite&view=map";
 
+    const timeframe = "Memorial Day to Labor Day";
+    const bookingReq = "Saturday to Saturday";
+
     // Fill the campsite form
     await page.getByLabel("Campsite Name *").fill(siteName);
     await page.getByLabel("Campsite Address *").fill(address);
@@ -50,6 +53,9 @@ test.describe("Campsite Management and Field Persistence", () => {
     await page.getByLabel("Cabin Information").fill(cabinInfo);
     await page.getByLabel("Directions").fill(directions);
     await page.getByLabel("Reservation / Website URL").fill(websiteUrl);
+    await page.getByLabel("Site Availability").selectOption("open_year_round");
+    await page.getByLabel("Peak Season Timeframe").fill(timeframe);
+    await page.getByLabel("Peak Season Booking Requirement").fill(bookingReq);
 
     // Save
     await page.getByRole("button", { name: "Create Campsite" }).click();
@@ -67,6 +73,9 @@ test.describe("Campsite Management and Field Persistence", () => {
       await expect(card).toContainText(hostPhone);
       await expect(card).toContainText(cabinInfo);
       await expect(card).toContainText(directions);
+      await expect(card).toContainText("Open Year-Round");
+      await expect(card).toContainText(timeframe);
+      await expect(card).toContainText(bookingReq);
 
       // Verify features
       await expect(card).toContainText("Community propane grill");
@@ -112,6 +121,8 @@ test.describe("Campsite Management and Field Persistence", () => {
     const updatedCabinInfo = "Updated: 4 units with electric heating and kitchenettes";
     const updatedDirections = "Updated driving directions: Gate code #4821";
     const updatedWebsite = "https://parks.ca.gov/campsite?id=992&season=fall";
+    const updatedTimeframe = "June to August";
+    const updatedBookingReq = "Saturday to Saturday";
 
     await page.getByLabel("Campsite Address *").fill(updatedAddress);
     await page.getByLabel("Image URL").fill(updatedImageUrl);
@@ -121,6 +132,9 @@ test.describe("Campsite Management and Field Persistence", () => {
     await page.getByLabel("Cabin Information").fill(updatedCabinInfo);
     await page.getByLabel("Directions").fill(updatedDirections);
     await page.getByLabel("Reservation / Website URL").fill(updatedWebsite);
+    await page.getByLabel("Site Availability").selectOption("closed_for_winter");
+    await page.getByLabel("Peak Season Timeframe").fill(updatedTimeframe);
+    await page.getByLabel("Peak Season Booking Requirement").fill(updatedBookingReq);
 
     await page.getByRole("button", { name: "Save Changes" }).click();
     await expect(page.getByText("Campsite updated successfully!")).toBeVisible();
@@ -134,6 +148,9 @@ test.describe("Campsite Management and Field Persistence", () => {
       await expect(card).toContainText(updatedHostPhone);
       await expect(card).toContainText(updatedCabinInfo);
       await expect(card).toContainText(updatedDirections);
+      await expect(card).toContainText("Closed for Winter");
+      await expect(card).toContainText(updatedTimeframe);
+      await expect(card).toContainText(updatedBookingReq);
       await expect(card).toContainText("Community propane grill");
       await expect(card).toContainText("Community charcoal barbecue Charcoal is not provided.");
       await expect(card).toContainText("Laundry room");
@@ -153,5 +170,39 @@ test.describe("Campsite Management and Field Persistence", () => {
     await page.reload();
     await expect(page.getByRole("heading", { name: "Campsite Directory" })).toBeVisible();
     await verifyUpdatedCard();
+  });
+
+  test("deletes a campsite after confirmation and verifies removal persists across reload", async ({
+    page,
+  }) => {
+    await authenticateSession(page, adminUser);
+    await page.goto("/admin/campsites");
+
+    // Add a temporary campsite to delete
+    const deleteSiteName = `Temporary Delete Site (${Date.now()})`;
+    await page.getByRole("button", { name: "+ Add Campsite" }).click();
+    await page.getByLabel("Campsite Name *").fill(deleteSiteName);
+    await page.getByLabel("Campsite Address *").fill("123 Temp Way, Reno, NV 89501");
+    await page.getByRole("button", { name: "Create Campsite" }).click();
+
+    // Verify it was created
+    await expect(page.getByText("Campsite created successfully!")).toBeVisible();
+    const siteCard = page.locator(".card", { hasText: deleteSiteName });
+    await expect(siteCard).toBeVisible();
+
+    // Set up dialog handler to accept deletion
+    page.once("dialog", (dialog) => dialog.accept());
+
+    // Click Delete button on the campsite card
+    await siteCard.getByRole("button", { name: /Delete/i }).click();
+
+    // Verify deletion message and card removal
+    await expect(page.getByText(`Campsite "${deleteSiteName}" deleted successfully.`)).toBeVisible();
+    await expect(siteCard).not.toBeVisible();
+
+    // Full reload verification
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Campsite Directory" })).toBeVisible();
+    await expect(page.locator(".card", { hasText: deleteSiteName })).not.toBeVisible();
   });
 });

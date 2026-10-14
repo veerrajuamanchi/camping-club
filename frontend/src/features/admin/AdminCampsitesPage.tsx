@@ -14,6 +14,9 @@ export type Campsite = {
   estimatedRateCents: number | null;
   availabilityStatus: string;
   availabilitySourceUrl: string | null;
+  siteAvailability?: "open_year_round" | "closed_for_winter" | null;
+  peakSeasonTimeframe?: string | null;
+  peakSeasonBookingRequirement?: string | null;
   imageUrl?: string | null;
   campHostName?: string | null;
   campHostPhone?: string | null;
@@ -52,7 +55,9 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
   const [cabinInfo, setCabinInfo] = useState("");
   const [directions, setDirections] = useState("");
   const [availabilityUrl, setAvailabilityUrl] = useState("");
-  const [availabilityStatus, setAvailabilityStatus] = useState<string>("available");
+  const [siteAvailability, setSiteAvailability] = useState<"open_year_round" | "closed_for_winter">("open_year_round");
+  const [peakSeasonTimeframe, setPeakSeasonTimeframe] = useState("");
+  const [peakSeasonBookingRequirement, setPeakSeasonBookingRequirement] = useState("");
 
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -85,7 +90,9 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
     setCabinInfo(site.cabinInformation ?? "");
     setDirections(site.directions ?? "");
     setAvailabilityUrl(site.availabilityUrl ?? "");
-    setAvailabilityStatus(site.availabilityStatus || "available");
+    setSiteAvailability(site.siteAvailability === "closed_for_winter" ? "closed_for_winter" : "open_year_round");
+    setPeakSeasonTimeframe(site.peakSeasonTimeframe ?? "");
+    setPeakSeasonBookingRequirement(site.peakSeasonBookingRequirement ?? "");
     setModalError(null);
     setMessage(null);
   }
@@ -102,9 +109,36 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
     setCabinInfo("");
     setDirections("");
     setAvailabilityUrl("");
-    setAvailabilityStatus("available");
+    setSiteAvailability("open_year_round");
+    setPeakSeasonTimeframe("");
+    setPeakSeasonBookingRequirement("");
     setModalError(null);
     setMessage(null);
+  }
+
+  async function handleDeleteCampsite(site: Campsite) {
+    if (!window.confirm(`Are you sure you want to delete campsite "${site.name}"?`)) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await api("admin_delete_campsite", {
+        campsiteId: site.campsiteId,
+        reason: "Administrator deleted campsite",
+      });
+      setMessage(`Campsite "${site.name}" deleted successfully.`);
+      await loadCampsites();
+    } catch (err) {
+      if (err instanceof TripApiError) {
+        setError(err.message || "Could not delete campsite.");
+      } else {
+        setError("Could not delete campsite.");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -138,7 +172,10 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
           cabinInformation: cabinInfo.trim() || null,
           directions: directions.trim() || null,
           availabilityUrl: cleanAvailabilityUrl || null,
-          availabilityStatus: availabilityStatus as any,
+          availabilityStatus: "available",
+          siteAvailability,
+          peakSeasonTimeframe: peakSeasonTimeframe.trim() || null,
+          peakSeasonBookingRequirement: peakSeasonBookingRequirement.trim() || null,
           reason: "Administrator added new campsite",
         });
         setMessage("Campsite created successfully!");
@@ -159,7 +196,10 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
           cabinTypes: editingSite.cabinTypes ?? [],
           reservationInstructions: editingSite.reservationInstructions ?? null,
           estimatedRateCents: editingSite.estimatedRateCents ?? null,
-          availabilityStatus: availabilityStatus as any,
+          availabilityStatus: editingSite.availabilityStatus || "available",
+          siteAvailability,
+          peakSeasonTimeframe: peakSeasonTimeframe.trim() || null,
+          peakSeasonBookingRequirement: peakSeasonBookingRequirement.trim() || null,
           availabilitySourceUrl: editingSite.availabilitySourceUrl || null,
           availabilityVerifiedAt: null,
           adminNotes: editingSite.adminNotes ?? "",
@@ -309,17 +349,36 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
               </label>
 
               <label>
-                Site Availability &amp; Booking Status
+                Site Availability
                 <select
-                  value={availabilityStatus}
-                  onChange={(e) => setAvailabilityStatus(e.target.value)}
+                  value={siteAvailability}
+                  onChange={(e) => setSiteAvailability(e.target.value as "open_year_round" | "closed_for_winter")}
                 >
-                  <option value="available">Available (Active in Rotation)</option>
-                  <option value="limited">Limited</option>
-                  <option value="unavailable">Unavailable / Missed Lottery (Disabled)</option>
-                  <option value="manual_confirmation">Manual Confirmation</option>
-                  <option value="unknown">Unknown</option>
+                  <option value="open_year_round">Open Year-Round</option>
+                  <option value="closed_for_winter">Closed for Winter</option>
                 </select>
+              </label>
+
+              <label>
+                Peak Season Timeframe
+                <input
+                  type="text"
+                  maxLength={50}
+                  value={peakSeasonTimeframe}
+                  onChange={(e) => setPeakSeasonTimeframe(e.target.value)}
+                  placeholder="e.g. Memorial Day to Labor Day"
+                />
+              </label>
+
+              <label>
+                Peak Season Booking Requirement
+                <input
+                  type="text"
+                  maxLength={30}
+                  value={peakSeasonBookingRequirement}
+                  onChange={(e) => setPeakSeasonBookingRequirement(e.target.value)}
+                  placeholder="e.g. Saturday to Saturday"
+                />
               </label>
 
               <div style={{ display: "flex", gap: "0.75rem", marginTop: "1rem" }}>
@@ -364,11 +423,11 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
                         padding: "0.15rem 0.5rem",
                         borderRadius: "9999px",
                         fontWeight: 600,
-                        background: site.availabilityStatus === "unavailable" ? "#fee2e2" : "#f0fdf4",
-                        color: site.availabilityStatus === "unavailable" ? "#991b1b" : "#166534",
+                        background: site.siteAvailability === "closed_for_winter" ? "#fef3c7" : "#f0fdf4",
+                        color: site.siteAvailability === "closed_for_winter" ? "#92400e" : "#166534",
                       }}
                     >
-                      {site.availabilityStatus === "unavailable" ? "Unavailable / Lottery Missed" : (site.availabilityStatus || "Available")}
+                      {site.siteAvailability === "closed_for_winter" ? "Closed for Winter" : "Open Year-Round"}
                     </span>
                   </div>
                   <p style={{ margin: "0.2rem 0", color: "#4b5563" }}>
@@ -376,18 +435,35 @@ export function AdminCampsitesPage({ api = invokeTripApi }: Props = {}) {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                style={{ padding: "0.4rem 0.85rem", fontSize: "0.85rem", background: "#f3f4f6", color: "#111827" }}
-                onClick={() => startEdit(site)}
-              >
-                ✏️ Edit
-              </button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.85rem", background: "#f3f4f6", color: "#111827" }}
+                  onClick={() => startEdit(site)}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${site.name}`}
+                  style={{ padding: "0.4rem 0.85rem", fontSize: "0.85rem", background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5" }}
+                  onClick={() => void handleDeleteCampsite(site)}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
             </div>
 
             {(site.campHostName || site.campHostPhone) && (
               <p style={{ margin: 0, fontSize: "0.9rem", color: "#374151" }}>
                 <strong>Camp Host:</strong> {site.campHostName || "Host"}{site.campHostPhone ? ` · ${site.campHostPhone}` : ""}
+              </p>
+            )}
+
+            {(site.peakSeasonTimeframe || site.peakSeasonBookingRequirement) && (
+              <p style={{ margin: 0, fontSize: "0.9rem", color: "#374151" }}>
+                <strong>Peak Season:</strong> {site.peakSeasonTimeframe || "None listed"}
+                {site.peakSeasonBookingRequirement ? ` (Requirement: ${site.peakSeasonBookingRequirement})` : ""}
               </p>
             )}
 

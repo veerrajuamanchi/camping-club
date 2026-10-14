@@ -13,7 +13,7 @@ const render = (ui: ReactElement, options?: Omit<RenderOptions, "wrapper">) =>
 export const makeCalendar = (): Calendar => ({
   clubConfiguration: { timezone: "America/Los_Angeles", defaultPollLeadDays: 35, defaultPollCloseTime: "18:00:00", defaultMinimumParticipants: 4, nextMonthToGenerate: "2027-01-01", nextRotationPosition: 1, version: 2 },
   campsites: [{ campsiteId: "site-1", rotationPosition: 1, name: "Del Monte", availabilityUrl: "https://example.test", locationDescription: "North", directions: null, cabinCapacity: 8, cabinTypes: ["cabin"], reservationInstructions: null, estimatedRateCents: 25000, availabilityStatus: "unknown", availabilitySourceUrl: null, availabilityVerifiedAt: null, version: 1 }],
-  trips: [{ tripId: "trip-1", monthKey: "2027-01", rotationPosition: 1, suggestedCampsiteId: "site-1", selectedCampsiteId: "site-1", startsOn: "2027-01-15", endsOn: "2027-01-17", clubTimezone: "America/Los_Angeles", pollDeadlineAt: "2027-01-01T18:00:00-08:00", minimumParticipants: 4, minimumBasis: null, maxCapacity: 8, perCabinCapacity: 6, cabinCount: null, effectiveCapacity: 8, spotsRemaining: 6, waitlistCount: 0, myWaitlistPosition: null, pollStatus: "open", additionalInformation: "Bring warm clothes", cabinBookingStatus: "booked", version: 3, comingCount: 2, tripDecision: "none", currentRuleBundle: { id: "bundle-1", version: 1, contentHash: "a".repeat(64), rules: [{ stable_key: "disclosure", text: "Coming is an interest response only.", structured_values: {} }], createdAt: "2026-10-01T00:00:00Z" }, myRsvp: null }],
+  trips: [{ tripId: "trip-1", monthKey: "2027-01", rotationPosition: 1, suggestedCampsiteId: "site-1", selectedCampsiteId: "site-1", startsOn: "2027-01-15", endsOn: "2027-01-17", clubTimezone: "America/Los_Angeles", pollDeadlineAt: "2027-01-01T18:00:00-08:00", minimumParticipants: 4, minimumBasis: null, maxCapacity: 8, perCabinCapacity: 6, cabinCount: null, effectiveCapacity: 8, spotsRemaining: 6, waitlistCount: 0, myWaitlistPosition: null, pollStatus: "open", title: "January 2027 Camping", additionalInformation: "Bring warm clothes", cabinBookingStatus: "booked", version: 3, comingCount: 2, tripDecision: "none", currentRuleBundle: { id: "bundle-1", version: 1, contentHash: "a".repeat(64), rules: [{ stable_key: "disclosure", text: "Coming is an interest response only.", structured_values: {} }], createdAt: "2026-10-01T00:00:00Z" }, myRsvp: null }],
 });
 
 const buildCalendar = (tripOverrides: Partial<Calendar["trips"][number]>[] = []): Calendar => {
@@ -21,6 +21,7 @@ const buildCalendar = (tripOverrides: Partial<Calendar["trips"][number]>[] = [])
   if (tripOverrides.length > 0) {
     base.trips = tripOverrides.map((override, i) => ({
       ...base.trips[0],
+      title: override.title !== undefined ? override.title : (override.additionalInformation ?? base.trips[0].title),
       tripId: `trip-${i + 1}`,
       ...override,
     }));
