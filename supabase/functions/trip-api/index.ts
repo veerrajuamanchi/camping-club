@@ -310,7 +310,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
   const tripIds = trips.map((trip) => trip.id);
-  const openTripIds = trips.filter((trip) => trip.poll_status === "open").map((trip) => trip.id);
+  const openTripIds = trips.filter((trip) => trip.poll_status !== "draft" && trip.event_status !== "cancelled").map((trip) => trip.id);
   if (openTripIds.length) {
     const { error } = await service.rpc("phase2_refresh_open_rule_bundles", { p_actor_id: member.member_id, p_trip_ids: openTripIds });
     checkError(error);
@@ -483,7 +483,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   }
   const trip = tripResult.data;
 
-  if (trip.poll_status === "open") {
+  if (trip.poll_status !== "draft" && trip.event_status !== "cancelled") {
     const { error: refreshError } = await service.rpc("phase2_refresh_open_rule_bundles", {
       p_actor_id: member.member_id,
       p_trip_ids: [tripId],
@@ -877,7 +877,7 @@ Deno.serve(async (request) => {
             claimed_at,
             released_at,
             release_reason,
-            member:member_profiles!member_id(
+            member:member_profiles!trip_duty_assignments_member_id_fkey(
               member_id,
               display_name
             )

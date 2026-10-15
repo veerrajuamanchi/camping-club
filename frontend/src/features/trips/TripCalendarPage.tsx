@@ -308,15 +308,12 @@ function EventCard({
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [withdrawalReason, setWithdrawalReason] = useState("");
-  const [withdrawalMessage, setWithdrawalMessage] = useState<string | null>(null);
   const [waitlistedPosition, setWaitlistedPosition] = useState<number | null>(null);
 
   const isDraft = trip.pollStatus === "draft";
-  const isOpen =
-    trip.pollStatus === "open" &&
-    Boolean(trip.pollDeadlineAt) &&
-    new Date(trip.pollDeadlineAt as string).getTime() > Date.now();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: trip.clubTimezone ?? "America/Los_Angeles" }).format(new Date());
+  const isOpen = trip.pollStatus !== "draft" && trip.eventStatus !== "cancelled" && !!trip.endsOn && trip.endsOn >= today;
+  const daysUntilTrip = trip.startsOn ? (Date.parse(trip.startsOn) - Date.parse(today)) / 86_400_000 : null;
   const isComing = trip.myRsvp?.response === "coming";
   const isNotComing = trip.myRsvp?.response === "not_coming";
   const needsAcknowledgment = choice === "coming" && !isComing;
@@ -383,28 +380,6 @@ function EventCard({
     }
   }
 
-  async function requestWithdrawal(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setWithdrawalMessage(null);
-    try {
-      const result = await api<{ state: string }>("request_withdrawal", {
-        tripId: trip.tripId,
-        reason: withdrawalReason,
-      });
-      setWithdrawalMessage(
-        result.state === "pending_owner_policy"
-          ? "Request recorded for administrator review. Your effective poll response remains Coming until the withdrawal policy is approved."
-          : "Withdrawal request recorded."
-      );
-      setWithdrawalReason("");
-      await onRefresh();
-    } catch {
-      setWithdrawalMessage("The request could not be saved. It may already be pending or the poll state may have changed.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const [showEditModal, setShowEditModal] = useState(false);
 
@@ -636,6 +611,11 @@ function EventCard({
         </section>
       )}
 
+      {choice === "not_coming" && isComing && daysUntilTrip !== null && daysUntilTrip >= 0 && daysUntilTrip <= 30 && (
+        <p role="alert">You are withdrawing within 30 days of the trip. Your $50 deposit is non-refundable,
+          and your withdrawal may increase costs for the people going. You can refer a replacement to the
+          administrator and arrange to collect the deposit from that person once their spot is confirmed.</p>
+      )}
       {choice === "not_coming" && (
         <div className="not-coming-submit">
           <button type="button" onClick={() => void submit()} disabled={busy}>
@@ -662,35 +642,7 @@ function EventCard({
         </details>
       )}
 
-      {!isDraft && !isOpen && (
-        <p role="status">
-          {trip.pollStatus === "closed"
-            ? "This poll is closed."
-            : "This poll has passed its deadline and is closing. You can contact an administrator."}
-        </p>
-      )}
-
-      {trip.pollStatus === "closed" && trip.myRsvp?.response === "coming" && (
-        <form className="withdrawal-request" onSubmit={(event) => void requestWithdrawal(event)}>
-          <h3>Request a withdrawal</h3>
-          <p>
-            Because the poll is closed, your request will be recorded for administrator review. This will not change
-            the current response.
-          </p>
-          <label>
-            Reason
-            <textarea
-              required
-              minLength={1}
-              maxLength={500}
-              value={withdrawalReason}
-              onChange={(event) => setWithdrawalReason(event.target.value)}
-            />
-          </label>
-          <button disabled={busy}>Submit withdrawal request</button>
-          {withdrawalMessage && <p role="status">{withdrawalMessage}</p>}
-        </form>
-      )}
+      {!isDraft && !isOpen && <p role="status">RSVP changes are unavailable for cancelled or ended events.</p>}
 
       {waitlistedPosition !== null && (
         <p role="status">

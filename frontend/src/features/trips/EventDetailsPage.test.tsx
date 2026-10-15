@@ -7,8 +7,10 @@ import { TripApiError } from "../../lib/supabase";
 
 const tripData = {
   tripId: "trip-1",
+  eventStatus: "tentative" as "tentative" | "confirmed" | "cancelled",
+  minimumParticipants: 4,
   monthKey: "2026-12",
-  pollStatus: "open" as const,
+  pollStatus: "open" as "draft" | "open" | "closed",
   startsOn: "2026-12-05",
   endsOn: "2026-12-07",
   additionalInformation: "December Camping",
@@ -485,5 +487,37 @@ describe("EventDetailsPage", () => {
 
     expect(screen.getByText(/2 cabin sites \(Pending Sites available\) · 8 people per site \(16 total spots\)/i)).toBeInTheDocument();
   });
+  it("allows withdrawing from a confirmed closed poll and explains the late deposit", async () => {
+    const user = userEvent.setup();
+    const start = new Date(); start.setDate(start.getDate() + 15);
+    const { apiMock } = renderPage({ ...tripData, pollStatus: "closed", eventStatus: "confirmed",
+      startsOn: start.toISOString().slice(0, 10), endsOn: start.toISOString().slice(0, 10),
+      myRsvp: { response: "coming", version: 2, acknowledgmentId: "ack-1", updatedAt: "2026-10-14T00:00:00Z" }, minimumParticipants: 4 }, false);
+    await screen.findByText("December Camping");
+    expect(screen.queryByText(/Minimum participants required/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Not Going$/ }));
+    expect(screen.getByText(/non-refundable/)).toBeInTheDocument();
+    expect(screen.getByText(/replacement/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Confirm Not Going" }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith("submit_rsvp", expect.objectContaining({ response: "not_coming", expectedVersion: 2 })));
+  });
+
+  it("keeps cancelled events unavailable for RSVP changes", async () => {
+    renderPage({ ...tripData, eventStatus: "cancelled" }, false);
+    await screen.findByText("December Camping");
+    expect(screen.queryByRole("button", { name: /^Not Going$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Going$/ })).not.toBeInTheDocument();
+  });
+
+  it("does not show the 30-day warning outside its notice window", async () => {
+    const user = userEvent.setup();
+    const start = new Date(); start.setDate(start.getDate() + 32);
+    renderPage({ ...tripData, startsOn: start.toISOString().slice(0, 10),
+      myRsvp: { response: "coming", version: 2, acknowledgmentId: "ack-1", updatedAt: "2026-10-14T00:00:00Z" } }, false);
+    await screen.findByText("December Camping");
+    await user.click(screen.getByRole("button", { name: /^Not Going$/ }));
+    expect(screen.queryByText(/You are withdrawing within 30 days/)).not.toBeInTheDocument();
+  });
+
 });
 

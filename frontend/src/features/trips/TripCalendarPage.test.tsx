@@ -175,17 +175,16 @@ describe("TripCalendarPage", () => {
     expect(screen.getByRole("button", { name: "Going ✓" })).toBeInTheDocument();
   });
 
-  it("records a post-deadline withdrawal request without changing Coming", async () => {
+  it("saves a post-deadline withdrawal immediately", async () => {
     const calendar = makeCalendar();
     calendar.trips[0].pollStatus = "closed";
-    calendar.trips[0].pollDeadlineAt = "2026-10-01T18:00:00-07:00";
     calendar.trips[0].myRsvp = { response: "coming", acknowledgmentId: "ack-1", version: 4, updatedAt: "2026-10-01T00:00:00Z" };
-    const api = vi.fn(async (action: string) => action === "request_withdrawal" ? { state: "pending_owner_policy" } : calendar);
+    const api = vi.fn(async () => calendar);
     render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
-    fireEvent.change(await screen.findByLabelText("Reason"), { target: { value: "I can no longer attend" } });
-    fireEvent.click(screen.getByRole("button", { name: "Submit withdrawal request" }));
-    await waitFor(() => expect(api).toHaveBeenCalledWith("request_withdrawal", { tripId: "trip-1", reason: "I can no longer attend" }));
-    expect(await screen.findByText(/effective poll response remains Coming/i)).toBeInTheDocument();
+    await screen.findByText("January 2027 Camping");
+    fireEvent.click(screen.getByRole("button", { name: "Not Going" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Not Going" }));
+    await waitFor(() => expect(api).toHaveBeenCalledWith("submit_rsvp", { tripId: "trip-1", response: "not_coming", expectedVersion: 4 }));
   });
 
   it("shows Dates TBA for draft trips", async () => {
@@ -252,7 +251,7 @@ describe("TripCalendarPage", () => {
     expect(titles).toEqual(["January Trip", "March Trip", "Draft Trip"]);
   });
 
-  it("renders Going and Not Going buttons as disabled when poll is closed or past deadline", async () => {
+  it("allows Going and Not Going changes when upcoming polls are closed or past deadline", async () => {
     const calendar = buildCalendar([
       {
         tripId: "t1",
@@ -278,13 +277,13 @@ describe("TripCalendarPage", () => {
     expect(goingButtons).toHaveLength(2);
     expect(notGoingButtons).toHaveLength(2);
 
-    expect(goingButtons[0]).toBeDisabled();
-    expect(notGoingButtons[0]).toBeDisabled();
-    expect(goingButtons[1]).toBeDisabled();
-    expect(notGoingButtons[1]).toBeDisabled();
+    expect(goingButtons[0]).toBeEnabled();
+    expect(notGoingButtons[0]).toBeEnabled();
+    expect(goingButtons[1]).toBeEnabled();
+    expect(notGoingButtons[1]).toBeEnabled();
 
-    expect(screen.getByText("This poll is closed.")).toBeInTheDocument();
-    expect(screen.getByText("This poll has passed its deadline and is closing. You can contact an administrator.")).toBeInTheDocument();
+    expect(screen.queryByText("This poll is closed.")).not.toBeInTheDocument();
+
   });
 
   it("shows Not Going button as selected when member already responded not coming", async () => {

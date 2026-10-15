@@ -224,3 +224,7 @@ All UPDATE policies must constrain both old and new row ownership (USING and WIT
 ## 9. Current platform note
 
 Supabase's announced Data API default changed for new projects on 2026-05-30 and is scheduled to apply across all projects on 2026-10-30. The schema and migrations must explicitly configure API exposure and table grants instead of depending on defaults. Re-check the date/current behavior before implementation. References: [Supabase changelog](https://supabase.com/changelog?types=breaking-change), [RLS and grants](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+## Maintenance migration — 2026-10-15
+
+`20261015070306_event_access_and_rsvp_maintenance.sql` replaces existing service-only membership and RSVP transactions; it creates no new tables or client write grants. It preserves historical RSVP/acknowledgment records, releases upcoming duties/waitlist entries on inactive or suspended membership, and permits eligible dated event RSVP changes after cutoff. All event eligibility date comparisons use the trip IANA timezone (club fallback America/Los_Angeles).

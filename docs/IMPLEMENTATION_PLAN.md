@@ -623,3 +623,7 @@ Do not parallelize phases that share database lifecycle/financial contracts. A l
 ## Phase 1 start recommendation
 
 **New application coding remains blocked until the owner explicitly approves the applicable implementation plan and phase.** Existing Phase 1/2 source on `main` does not authorize additional changes or deployment. Phase 2/3 trip lifecycle work remains blocked until the minimum basis, withdrawal behavior and cabin-verification-gate decisions are recorded. Cancellation/excess accounting and the exact solver cap remain gates for their later phases.
+
+## Owner-authorized maintenance — 2026-10-15
+
+The owner requested continuation of five fixes: logout to `/signin`, removal of inactive/suspended members from upcoming events, repair of Tasks & Meals reads, member RSVP changes before/after confirmation with a 30-day withdrawal warning, and hiding the minimum-participants field on confirmed event details. This authorizes this maintenance slice only (AUTH-02/04, TRIP-04/08/09, RESP-03). Preserve all historical attendance and financial facts. Cancelled, deleted, draft, and ended events remain unavailable for RSVP changes. Replacement referrals are coordinated by the administrator; reimbursement is external and does not rewrite a financial fact. OD-03 is recorded separately; other financial/lifecycle choices remain pending. Production deployment and broader release certification are separate from local verification.

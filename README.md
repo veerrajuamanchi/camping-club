@@ -6,6 +6,8 @@ The full private club coordination platform is governed by the approved design a
 
 Phase 1 is reviewed as PASS WITH RISK. Phase 2 is deployed for the owner's limited verification and is certified PASS WITH RISK in [its certification report](docs/PHASE2_CERTIFICATION.md). Do not start Phase 3 or onboard additional real members until separately authorized. Financial and trip-decision features remain out of scope.
 
+The owner authorized the five event/access maintenance fixes in the resume request, recorded on October 15, 2026. This approval covers the bounded maintenance slice in [the implementation plan](docs/IMPLEMENTATION_PLAN.md) and the immediate RSVP decision recorded as OD-03; broader feature phases and production deployment remain separate. Evidence and limits are recorded in [the maintenance verification report](docs/MAINTENANCE_VERIFICATION_2026-10-15.md).
+
 ## Technology
 
 - React, TypeScript, and Vite in `frontend/`

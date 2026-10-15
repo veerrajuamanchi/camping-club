@@ -138,7 +138,13 @@ function AppRoutes() {
                   </>
                 )}
                 <hr />
-                <button type="button" onClick={() => void signOut()}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    void signOut().then(() => navigate("/signin", { replace: true }));
+                  }}
+                >
                   🚪 Sign out
                 </button>
               </div>
@@ -150,7 +156,9 @@ function AppRoutes() {
             type="button"
             className="secondary-button"
             style={{ padding: "0.35rem 0.75rem", fontSize: "0.85rem", cursor: "pointer" }}
-            onClick={() => void signOut()}
+            onClick={() => {
+              void signOut().then(() => navigate("/signin", { replace: true }));
+            }}
           >
             🚪 Sign out
           </button>
@@ -177,7 +185,7 @@ function AppRoutes() {
               ) : membership.status === "profileRequired" ? (
                 <AcceptInvitation onComplete={completeInvitation} />
               ) : (
-                <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="member">
                   {null}
                 </AccessBoundary>
               )
@@ -186,57 +194,81 @@ function AppRoutes() {
           <Route
             path="/profile"
             element={
-              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
-                {profile && (
-                  <MemberProfileForm
-                    mode="edit"
-                    initialDisplayName={profile.displayName}
-                    initialPhone={profile.phoneE164}
-                    initialMethod={profile.paymentMethod ?? "venmo"}
-                    onSave={saveProfile}
-                  />
-                )}
-              </AccessBoundary>
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="member">
+                  {profile && (
+                    <MemberProfileForm
+                      mode="edit"
+                      initialDisplayName={profile.displayName}
+                      initialPhone={profile.phoneE164}
+                      initialMethod={profile.paymentMethod ?? "venmo"}
+                      onSave={saveProfile}
+                    />
+                  )}
+                </AccessBoundary>
+              )
             }
           />
           <Route
             path="/admin/members"
             element={
-              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
-                <AdminMembersPage />
-              </AccessBoundary>
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
+                  <AdminMembersPage />
+                </AccessBoundary>
+              )
             }
           />
           <Route
             path="/admin/campsites"
             element={
-              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
-                <AdminCampsitesPage />
-              </AccessBoundary>
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
+                  <AdminCampsitesPage />
+                </AccessBoundary>
+              )
             }
           />
           <Route
             path="/admin/schedule-defaults"
             element={
-              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
-                <AdminScheduleDefaultsPage />
-              </AccessBoundary>
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
+                  <AdminScheduleDefaultsPage />
+                </AccessBoundary>
+              )
             }
           />
           <Route
             path="/admin/constitution"
             element={
-              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
-                <AdminConstitutionPage />
-              </AccessBoundary>
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
+                  <AdminConstitutionPage />
+                </AccessBoundary>
+              )
             }
           />
           <Route
             path="/admin/responsibilities"
             element={
-              <AccessBoundary state={membership} onSignOut={signOut} requiredRole="admin">
-                <MasterResponsibilitiesPage />
-              </AccessBoundary>
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
+                  <MasterResponsibilitiesPage />
+                </AccessBoundary>
+              )
             }
           />
           <Route

@@ -185,3 +185,7 @@ Operational records remain available through trip operations and unresolved fina
 - Event append and projection refresh occur in one transaction. A projection mismatch is repaired from events and emits an operational alert.
 - Each side-effecting transition has a unique event key/idempotency record and writes its notification-outbox intent in the same transaction. Provider delivery status is separate and never substitutes for a business event.
 - The canonical lifecycle-to-persistence mapping is in [State Persistence Matrix](STATE_PERSISTENCE_MATRIX.md); this document defines transitions and that matrix defines database/API/event/notification linkage.
+
+## Maintenance decision — 2026-10-15
+
+OD-03 now selects immediate member RSVP changes after confirmation, per the owner's maintenance request. On eligible upcoming events, Coming → Not coming is effective immediately and releases active duty assignments; Not coming → Coming requires personal acknowledgment of the current rules and available capacity. Cancelled, deleted, draft and ended events remain closed. Deactivation/suspension removes upcoming participation and waiting entries while preserving past attendance and all money facts. The within-30-calendar-days warning is informational; no automatic replacement, refund, or transfer of obligation is created. Broader administrator notifications and below-minimum lifecycle decisions still require their Phase 3 work/certification.

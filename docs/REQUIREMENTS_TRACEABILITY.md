@@ -111,3 +111,5 @@
 - Finance reviewer signs off solver oracle, cabin advance/cancellation tests and finalization invariants.
 - Operations owner signs backup export, identity restore, Storage restore, paused-project catch-up, and manual cabin calendar exercises.
 - Owner decision records link the approved policy text to the relevant gate; no decision is implied by a passing test.
+
+Owner-authorized maintenance (2026-10-15): AUTH-02/04, TRIP-04/08/09 and RESP-03 map to `phase15_deactivate_member_and_rsvp_changes.sql`, `EventDetailsPage.test.tsx`, and `e2e/event-maintenance.spec.ts`. The browser journey covers both role task reads, Going/Not Going persistence to PostgreSQL and reload, deactivation, logout navigation, and mobile overflow across the three configured browser projects. See `MAINTENANCE_VERIFICATION_2026-10-15.md` for executed evidence and limits.

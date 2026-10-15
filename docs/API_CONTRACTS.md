@@ -141,3 +141,7 @@
 ## 6. Contract tests
 
 For every operation, test signed-out, active member owner, active non-owner, inactive member, admin and system caller as applicable. Test malformed UUID/cents, same-key/same-payload replay, same-key/different-payload conflict, replay after expiry (reject, never execute), stale expected_version, concurrent duplicate request, state transition conflict, sensitive-field redaction and outbox behavior. Contribution receipt and settlement events lock their aggregate rows and validate cumulative amounts in the same transaction. Contract response schemas are versioned; additive optional fields are backward compatible, field meaning/status changes require API contract versioning.
+
+## Maintenance contract — 2026-10-15
+
+Owner-authorized `submit_rsvp` and `admin_record_interest` allow changes on dated, non-draft, non-cancelled, non-deleted events through the trip's local end date, independently of poll cutoff. Current active membership, optimistic RSVP version, capacity, and personal current-rule acknowledgment still apply. Withdrawal releases active duties without changing any contribution/payment fact. Deactivation/suspension changes upcoming Coming RSVPs to Not coming, appends RSVP audit events, releases duties and removes waiting entries in the membership transaction; past records remain intact. Re-enabling membership does not automatically restore attendance. `get_trip_task_matrix` explicitly selects the assignee foreign key to avoid ambiguous joins against releasing members.

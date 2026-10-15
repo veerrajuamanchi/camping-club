@@ -19,7 +19,13 @@ export function AccessBoundary({
   children: ReactNode;
 }) {
   if (state.status === "loading") return <p role="status">Checking club access…</p>;
-  if (state.status === "signedOut") return <p>Sign in to continue.</p>;
+  if (state.status === "signedOut") {
+    return (
+      <p>
+        <a href="/signin">Sign in to continue.</a>
+      </p>
+    );
+  }
   if (state.status === "profileRequired") return <p>Complete your invited profile to continue.</p>;
   if (state.status === "inactive") {
     return (

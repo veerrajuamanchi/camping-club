@@ -177,3 +177,9 @@ Each implementation phase must publish:
 - Critical financial, authorization, cancellation-deadline, retention and restore tests must pass before launch.
 - Exact solver properties are tested against a separate exhaustive oracle; tests must not reuse the solver's recurrence as the only expected-value source.
 - Use only synthetic test data; production member emails, identifiers, receipts and credentials are forbidden in test fixtures.
+
+## Maintenance acceptance — 2026-10-15
+
+Run `npm run test:e2e` sequentially on Desktop Chromium, iPhone Mobile WebKit and Android Mobile Chromium. `event-maintenance.spec.ts` checks real PostgreSQL RSVP state plus full reload, two-way post-confirmation RSVP changes, within-30-day warning, both-role Tasks & Meals reads using an assigned duty, deactivation through the member administration form, attendee removal after reload, logout redirect, and overflow. Console diagnostics are attached alongside configured failure screenshot/video/trace artifacts. Database regression runs the service-only transactions as `service_role`, covers cancelled/past/stale/inactive rejection, waitlist/duty cleanup and preservation of past attendance. Do not certify solely from API success or component tests.
+
+`node scripts/test-maintenance-backfill.mjs` expands the real migration into a synthetic fixture transaction and executes local-container PostgreSQL tests; it rolls back all fixture facts. It rejects non-local database endpoints and checks pgTAP failure output as well as process status.

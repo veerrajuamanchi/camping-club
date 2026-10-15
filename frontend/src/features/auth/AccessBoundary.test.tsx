@@ -14,7 +14,7 @@ describe("AccessBoundary", () => {
     );
 
     expect(screen.queryByText("Confidential member area")).not.toBeInTheDocument();
-    expect(screen.getByText(/sign in to continue/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in to continue/i })).toHaveAttribute("href", "/signin");
   });
 
   it("denies member access to administrator routes", () => {

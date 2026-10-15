@@ -33,3 +33,5 @@
 3. A trusted database transaction appends fact(s), updates projection(s), writes audit data, and inserts outbox intent atomically. External delivery occurs after commit and records its own outcome.
 4. `sent` is not `received`; email accepted is not email delivered; club trip cancellation is not campsite cancellation; booking coverage is not cash receipt.
 5. At any transition, persist the actor, source state/version, target state, reason where required, event key, and linked idempotency record. Scheduler decisions also store cutoff, basis, count, and counted record IDs/hash.
+
+Maintenance clarification (2026-10-15): disabled-account removal and member withdrawal append `trip_rsvp_events`; RSVP versions remain rebuildable attendance projections and do not settle, cancel, refund, or transfer a monetary obligation. Released duties retain release actor/time/reason. Previously disabled accounts receive system-authored RSVP backfill events; historical attendance and immutable rule acknowledgments remain preserved.

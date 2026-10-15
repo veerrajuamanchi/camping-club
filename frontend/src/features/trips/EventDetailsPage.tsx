@@ -19,6 +19,7 @@ type TripDetails = {
   startsOn: string | null;
   endsOn: string | null;
   pollDeadlineAt?: string | null;
+  clubTimezone?: string | null;
   minimumParticipants?: number;
   selectedCampsiteId?: string;
   cabinBookingStatus?: "booked" | "no_vacancy" | "sites_available" | "pending" | null;
@@ -294,7 +295,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     );
 
   const isDraft = details.pollStatus === "draft";
-  const isOpen = details.pollStatus === "open";
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: details.clubTimezone ?? "America/Los_Angeles" }).format(new Date());
+  const canChangeRsvp = details.pollStatus !== "draft" && details.eventStatus !== "cancelled" &&
+    !!details.endsOn && details.endsOn >= today;
+  const daysUntilTrip = details.startsOn ? (Date.parse(details.startsOn) - Date.parse(today)) / 86_400_000 : null;
+  const showLateWithdrawalWarning = (details.myRsvp?.response === "coming" && rsvpChoice === "not_coming") &&
+    daysUntilTrip !== null && daysUntilTrip >= 0 && daysUntilTrip <= 30;
   const isComing = details.myRsvp?.response === "coming";
   const isNotComing = details.myRsvp?.response === "not_coming";
   const rsvpStatusLabel = details.myWaitlistPosition
@@ -464,7 +470,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
             </span>
             {details.effectiveCapacity != null && <span className="sr-only">Capacity: {details.effectiveCapacity}</span>}
           </div>
-          {details.minimumParticipants != null && (
+          {details.minimumParticipants != null && details.eventStatus !== "confirmed" && (
             <div className="hero-info-item">
               <span>👥</span>
               <span>Minimum participants required: {details.minimumParticipants}</span>
@@ -594,7 +600,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
               )
             )}
 
-            {!isDraft && isOpen && (
+            {canChangeRsvp && (
               <div className="response-actions">
                 <button
                   type="button"
@@ -640,6 +646,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
               </div>
             )}
 
+            {showLateWithdrawalWarning && (
+              <p role="alert">
+                You are withdrawing within 30 days of the trip. Your $50 deposit is non-refundable,
+                and your withdrawal may increase costs for the people going. You can refer a replacement
+                to the administrator and arrange to collect the deposit from that person once their spot is confirmed.
+              </p>
+            )}
             {rsvpChoice === "not_coming" && (
               <button type="button" onClick={() => void submitRsvp()} disabled={rsvpBusy}>
                 {rsvpBusy ? "Saving…" : "Confirm Not Going"}
