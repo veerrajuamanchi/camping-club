@@ -172,6 +172,10 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
     }
   }
 
+  const activeItems = responsibilities.filter((item) => item.active);
+  const activeWeightTenths = activeItems.reduce((sum, item) => sum + Math.round(Number(item.workload_weight) * 10), 0);
+  const capacityWeightTenths = activeItems.reduce((sum, item) => sum + Math.round(Number(item.workload_weight) * 10) * item.default_capacity, 0);
+
   const filteredItems = responsibilities.filter((item) => {
     if (!showRetired && !item.active) return false;
     if (selectedCategory !== "all" && item.category !== selectedCategory) return false;
@@ -201,6 +205,15 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
         <p role="status">Loading master responsibilities…</p>
       ) : (
         <>
+          <section className="card" aria-label="Active workload summary" style={{ marginBottom: "1rem" }}>
+            <h3>Active workload</h3>
+            <p>{activeItems.length} active responsibilities</p>
+            <p>Total active task weight: <output aria-label="Total active template weight">{(activeWeightTenths / 10).toFixed(1)}×</output></p>
+            <p>Total volunteer capacity: <output aria-label="Total active volunteer capacity weight">{(capacityWeightTenths / 10).toFixed(1)}×</output></p>
+            <p>Volunteer capacity includes every slot: a 2× task with three volunteers provides 6× of workload capacity.
+              Daily requirements depend on the tasks scheduled for that date.</p>
+          </section>
+
           <div className="filter-bar" style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center", marginBottom: "20px" }}>
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
               <button
@@ -224,30 +237,33 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
                 );
               })}
             </div>
-            <label style={{ marginLeft: "auto", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+            <label style={{ marginLeft: "auto", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", minHeight: "44px", maxWidth: "100%" }}>
               <input
                 type="checkbox"
+                style={{ width: "18px", height: "18px", flex: "0 0 18px", margin: 0, padding: 0 }}
                 checked={showRetired}
                 onChange={(e) => setShowRetired(e.target.checked)}
               />
-              Show retired templates
+              <span>Show retired templates</span>
             </label>
           </div>
 
-          <div className="responsibilities-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
+          <div className="responsibilities-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))", gap: "16px" }}>
             {filteredItems.map((item) => (
               <div
                 key={item.id}
                 className="event-card"
                 style={{
                   padding: "16px",
+                  minWidth: 0,
+                  overflowWrap: "anywhere",
                   borderRadius: "10px",
                   border: item.active ? "1px solid #e2e8f0" : "1px dashed #cbd5e1",
                   background: item.active ? "#ffffff" : "#f8fafc",
                   opacity: item.active ? 1 : 0.75,
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                   <span
                     style={{
                       fontSize: "0.75rem",
@@ -285,6 +301,7 @@ export function MasterResponsibilitiesPage({ api = defaultApi }: { api?: TripApi
                   style={{
                     display: "flex",
                     gap: "12px",
+                    flexWrap: "wrap",
                     fontSize: "0.8rem",
                     color: "#475569",
                     marginBottom: "12px",

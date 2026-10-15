@@ -39,3 +39,7 @@ For each ID, the owner should record the selected option or exact policy text, a
 ## Implementation boundary
 
 This record is a planning artifact and does not authorize additional coding or deployment. Existing Phase 1/2 source on `main` is not itself approval for further changes. Follow the current repository approval boundary; later phase gates also require their listed policy decisions and certification evidence.
+
+## Workload maintenance instruction — recorded 2026-10-15
+
+The owner explicitly requests active workload totals, an administrator-determined daily weighted goal (4× given as an example), and no forced additional selections when all eligible tasks are taken. Daily goals are configured per trip and opt-in; this does not impose a new default on existing trips. This instruction does not authorize duplicating a trip-wide driver credit across days, altering money policy, or bypassing the QA-first release boundary.

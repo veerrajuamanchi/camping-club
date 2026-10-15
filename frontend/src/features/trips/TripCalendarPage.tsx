@@ -1,3 +1,4 @@
+import { dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
@@ -28,7 +29,7 @@ export type Trip = {
   waitlistCount: number; myWaitlistPosition: number | null;
   pollStatus: "draft" | "open" | "closed";
   title?: string | null; eventStatus?: EventStatus; campingType?: CampingType;
-  taskQuotaTarget?: number; myDutyCount?: number;
+  taskQuotaTarget?: number; myDutyCount?: number; myDailyWorkload?: DailyWorkload | null;
   additionalInformation: string; cabinBookingStatus: CabinBookingStatus | null;
   legacyCabinAvailabilityStatus?: string | null; version: number; comingCount: number;
   tripDecision: "none"; currentRuleBundle: Bundle | null;
@@ -553,6 +554,7 @@ function EventCard({
             <span className="status-chip status-none">No response</span>
           )}
           {isComing && (
+            trip.myDailyWorkload?.target != null ? <Link to={`/trips/${trip.tripId}?tab=tasks`} className="badge-pill">{dailyWorkloadLabel(trip.myDailyWorkload)}</Link> :
             (trip.myDutyCount ?? 0) >= (trip.taskQuotaTarget ?? 2) ? (
               <span
                 className="badge-pill"
@@ -942,6 +944,8 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
         <PostRsvpDutyModal
           tripTitle={dutyPromptTrip.title || dutyPromptTrip.additionalInformation || `${monthName(dutyPromptTrip.monthKey)} Camping`}
           quotaTarget={dutyPromptTrip.taskQuotaTarget ?? 2}
+          dailyTarget={dutyPromptTrip.myDailyWorkload?.target}
+          dailySatisfied={dutyPromptTrip.myDailyWorkload?.satisfied}
           onChooseDuties={() => {
             const targetTripId = dutyPromptTrip.tripId;
             setDutyPromptTrip(null);

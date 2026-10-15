@@ -113,3 +113,5 @@
 - Owner decision records link the approved policy text to the relevant gate; no decision is implied by a passing test.
 
 Owner-authorized maintenance (2026-10-15): AUTH-02/04, TRIP-04/08/09 and RESP-03 map to `phase15_deactivate_member_and_rsvp_changes.sql`, `EventDetailsPage.test.tsx`, and `e2e/event-maintenance.spec.ts`. The browser journey covers both role task reads, Going/Not Going persistence to PostgreSQL and reload, deactivation, logout navigation, and mobile overflow across the three configured browser projects. See `MAINTENANCE_VERIFICATION_2026-10-15.md` for executed evidence and limits.
+
+QA-first daily workload (RESP-01–03, DEP-03): `phase16_daily_workload.sql`, directory/tasks/details component tests and `e2e/daily-workload.spec.ts` verify active totals, opt-in audited daily goals, true weight-based progress, exhausted capacity, persistence and mobile behavior. `scripts/run-hosted-workload-qa.mjs` repeats the browser workflow against classified hosted staging. Final results are recorded in `QA_WORKLOAD_2026-10-15.md`.

@@ -5,6 +5,7 @@ import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
 import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
+import { DailyWorkloadProgress, dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
 import { formatCabinBookingStatus } from "./TripCalendarPage";
 
 type TripDetails = {
@@ -15,6 +16,7 @@ type TripDetails = {
   campingType?: "cabin" | "tent" | "rv" | "boat";
   taskQuotaTarget?: number;
   myDutyCount?: number;
+  myDailyWorkload?: DailyWorkload | null;
   pollStatus: "draft" | "open" | "closed";
   startsOn: string | null;
   endsOn: string | null;
@@ -374,7 +376,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
             </span>
             {isComing && <span className="status-badge-going">You're going</span>}
             {isComing && (
-              (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2) ? (
+              details.myDailyWorkload?.target != null ? (
+                <button type="button" className="badge-pill" onClick={() => setTab("tasks")}>{dailyWorkloadLabel(details.myDailyWorkload)}</button>
+              ) : (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2) ? (
                 <span
                   className="badge-pill"
                   style={{ background: "#dcfce7", color: "#166534", fontWeight: 600, fontSize: "0.82rem" }}
@@ -583,6 +587,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
             </p>
 
             {isComing && (
+              details.myDailyWorkload?.target != null ? <DailyWorkloadProgress progress={details.myDailyWorkload} /> :
               (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2) ? (
                 <div style={{ margin: "0.75rem 0", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.88rem", color: "#166534" }}>
                   ✓ <strong>Duties Quota Complete:</strong> You have selected {details.myDutyCount} of {details.taskQuotaTarget ?? 2} camping duties.{" "}
@@ -829,6 +834,8 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         <PostRsvpDutyModal
           tripTitle={tripTitle}
           quotaTarget={details.taskQuotaTarget ?? 2}
+          dailyTarget={details.myDailyWorkload?.target}
+          dailySatisfied={details.myDailyWorkload?.satisfied}
           onChooseDuties={() => {
             setShowDutyPromptModal(false);
             setTab("tasks");

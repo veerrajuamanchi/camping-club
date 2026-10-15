@@ -3,10 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventDetailsPage } from "./EventDetailsPage";
+import type { DailyWorkload } from "./DailyWorkloadProgress";
 import { TripApiError } from "../../lib/supabase";
 
 const tripData = {
   tripId: "trip-1",
+  myDailyWorkload: undefined as DailyWorkload | undefined,
   eventStatus: "tentative" as "tentative" | "confirmed" | "cancelled",
   minimumParticipants: 4,
   monthKey: "2026-12",
@@ -517,6 +519,18 @@ describe("EventDetailsPage", () => {
     await screen.findByText("December Camping");
     await user.click(screen.getByRole("button", { name: /^Not Going$/ }));
     expect(screen.queryByText(/You are withdrawing within 30 days/)).not.toBeInTheDocument();
+  });
+
+  it("does not force more duties when the daily slots are all taken", async () => {
+    renderPage({ ...tripData,
+      myRsvp: { response: "coming", version: 1, acknowledgmentId: "ack-1", updatedAt: "2026-10-14T00:00:00Z" },
+      myDailyWorkload: { target: 4, tripVersion: 1, satisfied: true, days: [
+        { date: "2026-12-05", selectedWeight: 0, totalWeight: 8, remainingWeight: 0, eligibleSlots: 0, status: "no_tasks_available" },
+      ] },
+    }, false);
+    await screen.findByText("December Camping");
+    expect(screen.queryByText(/Action Needed:/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Daily workload: no additional selections needed/ })).toBeInTheDocument();
   });
 
 });

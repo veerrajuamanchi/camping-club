@@ -17,7 +17,7 @@ const actionNames = [
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
-  "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite",
+  "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -33,6 +33,7 @@ const optionalUrl = z.string().trim()
   .default(null);
 
 const inputSchemas = {
+  admin_set_daily_workload_target: z.object({ tripId: uuid, target: z.number().min(0.5).max(100).multipleOf(0.5).nullable(), expectedVersion: z.number().int().positive() }).strict(),
   get_calendar: z.object({}).strict(),
   get_constitution: z.object({ tripId: uuid.optional() }).strict(),
   get_trip_details: z.object({ tripId: uuid }).strict(),
@@ -236,7 +237,7 @@ const adminActions = new Set<Action>([
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
-  "admin_delete_campsite",
+  "admin_delete_campsite", "admin_set_daily_workload_target",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -245,7 +246,7 @@ const mutatingActions = new Set<Action>([
   "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
-  "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite",
+  "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -305,7 +306,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
     service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,active,version").eq("active", true).order("rotation_position"),
-    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,task_quota_target,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
+    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,task_quota_target,daily_workload_target,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
@@ -392,6 +393,12 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
     withdrawalRequests = (requests ?? []).map((row) => ({ requestId: row.id, tripId: row.trip_id, memberId: row.member_id, displayName: activeMemberNames.get(row.member_id) ?? "Member", reason: row.reason, createdAt: row.created_at }));
   }
 
+  const dailyByTrip = new Map<string, unknown>();
+  await Promise.all(trips.filter(trip => trip.daily_workload_target != null).map(async trip => {
+    const progress = await service.rpc("phase3_get_daily_workload_progress", { p_trip_id: trip.id, p_member_id: member.member_id });
+    checkError(progress.error);
+    dailyByTrip.set(trip.id, progress.data);
+  }));
   return {
     clubConfiguration: {
       timezone: configuration.data.club_timezone,
@@ -455,6 +462,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
         campingType: trip.camping_type ?? "cabin",
         taskQuotaTarget: (trip as any).task_quota_target ?? 2,
         myDutyCount: dutyCountsByTrip.get(trip.id) ?? 0,
+        myDailyWorkload: dailyByTrip.get(trip.id) ?? null,
         additionalInformation: trip.additional_information, cabinBookingStatus: trip.cabin_booking_status,
         legacyCabinAvailabilityStatus: member.member_role === "admin" ? trip.cabin_availability_status : undefined,
         version: trip.version, comingCount: counts.get(trip.id) ?? 0, tripDecision: "none",
@@ -471,7 +479,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
 
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
   const tripResult = await service.from("camping_trips")
-    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,camping_type,task_quota_target,deleted_at,version")
+    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,camping_type,task_quota_target,daily_workload_target,deleted_at,version")
     .eq("id", tripId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -601,6 +609,9 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     }
   }
 
+  const dailyProgress = trip.daily_workload_target == null ? { data: null, error: null }
+    : await service.rpc("phase3_get_daily_workload_progress", { p_trip_id: trip.id, p_member_id: member.member_id });
+  checkError(dailyProgress.error);
   const effectiveCapacity = trip.max_capacity
     ?? (trip.cabin_count != null ? trip.cabin_count * (trip.per_cabin_capacity ?? 6) : null);
 
@@ -612,6 +623,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     campingType: trip.camping_type ?? "cabin",
     taskQuotaTarget: (trip as any).task_quota_target ?? 2,
     myDutyCount: dutiesResult.count ?? 0,
+    myDailyWorkload: dailyProgress.data,
     pollStatus: trip.poll_status,
     startsOn: trip.starts_on,
     endsOn: trip.ends_on,
@@ -827,7 +839,7 @@ Deno.serve(async (request) => {
   if (action === "get_trip_task_matrix") {
     try {
       const tripId = input.tripId as string;
-      const [slotsResult, assignmentsResult, creditsResult, quotaResult, attendeesResult] = await Promise.all([
+      const [slotsResult, assignmentsResult, creditsResult, quotaResult, attendeesResult, dailyResult] = await Promise.all([
         service
           .from("trip_time_slots")
           .select(`
@@ -905,8 +917,10 @@ Deno.serve(async (request) => {
           `)
           .eq("trip_id", tripId)
           .eq("response", "coming"),
+        service.rpc("phase3_get_daily_workload_progress", { p_trip_id: tripId, p_member_id: member.member_id }),
       ]);
 
+      checkError(dailyResult.error);
       checkError(slotsResult.error);
       checkError(assignmentsResult.error);
       checkError(creditsResult.error);
@@ -918,6 +932,7 @@ Deno.serve(async (request) => {
         activeAssignments: assignmentsResult.data ?? [],
         driverCredits: creditsResult.data ?? [],
         myQuotaProgress: quotaResult.data ?? null,
+        myDailyWorkload: dailyResult.data,
         confirmedAttendees: (attendeesResult.data ?? []).map((row) => ({
           memberId: row.member_id,
           displayName: (row.member as { display_name?: string } | null)?.display_name ?? "Member",
@@ -944,6 +959,10 @@ Deno.serve(async (request) => {
   let rpcName: string;
   let rpcArgs: Record<string, unknown>;
   switch (action) {
+    case "admin_set_daily_workload_target":
+      rpcName = "phase3_set_daily_workload_target";
+      rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_target: input.target, p_expected_version: input.expectedVersion, p_request_id: key };
+      break;
     case "admin_configure_club":
       rpcName = "phase2_configure_club";
       rpcArgs = { p_actor_id: member.member_id, p_timezone: input.timezone, p_lead_days: input.leadDays, p_close_time: input.closeTime, p_default_minimum: input.defaultMinimumParticipants, p_next_rotation_position: input.nextRotationPosition, p_expected_version: input.expectedVersion, p_request_id: key };

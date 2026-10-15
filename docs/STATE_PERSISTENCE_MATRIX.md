@@ -35,3 +35,5 @@
 5. At any transition, persist the actor, source state/version, target state, reason where required, event key, and linked idempotency record. Scheduler decisions also store cutoff, basis, count, and counted record IDs/hash.
 
 Maintenance clarification (2026-10-15): disabled-account removal and member withdrawal append `trip_rsvp_events`; RSVP versions remain rebuildable attendance projections and do not settle, cancel, refund, or transfer a monetary obligation. Released duties retain release actor/time/reason. Previously disabled accounts receive system-authored RSVP backfill events; historical attendance and immutable rule acknowledgments remain preserved.
+
+Daily workload targets are audited administrator settings on the trip. Per-date scores and availability exemptions are derived live from enabled slots, active duties and active assignments; they are not money facts or evidence of task completion. Exhaustion exemptions disappear when eligible capacity reopens. Driver-credit facts remain trip-wide and are never copied onto multiple days.

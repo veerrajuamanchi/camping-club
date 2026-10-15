@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -41,6 +41,19 @@ const mockResponsibilities: MasterResponsibility[] = [
 ];
 
 describe("MasterResponsibilitiesPage", () => {
+  it("totals every active template and its volunteer capacity while excluding retired templates", async () => {
+    const api = vi.fn().mockResolvedValue({ responsibilities: mockResponsibilities });
+    const user = userEvent.setup();
+    render(<MemoryRouter><MasterResponsibilitiesPage api={api} /></MemoryRouter>);
+    const summary = await screen.findByRole("region", { name: "Active workload summary" });
+    expect(within(summary).getByLabelText("Total active template weight")).toHaveTextContent("3.0×");
+    expect(within(summary).getByLabelText("Total active volunteer capacity weight")).toHaveTextContent("4.0×");
+    await user.click(screen.getByRole("button", { name: /Transport & Driving/ }));
+    await user.click(screen.getByLabelText("Show retired templates"));
+    expect(within(summary).getByLabelText("Total active template weight")).toHaveTextContent("3.0×");
+    expect(within(summary).getByLabelText("Total active volunteer capacity weight")).toHaveTextContent("4.0×");
+  });
+
   it("renders list of master responsibilities with categories and weights", async () => {
     const api = vi.fn().mockImplementation((action: string) => {
       if (action === "admin_list_master_responsibilities") {

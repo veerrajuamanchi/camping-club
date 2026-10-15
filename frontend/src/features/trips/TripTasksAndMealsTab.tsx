@@ -1,4 +1,5 @@
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { DailyWorkloadProgress, type DailyWorkload } from "./DailyWorkloadProgress";
 import type { TripApiType } from "./EventDetailsPage";
 import type { TripTimeSlot, TripSlotDuty } from "./AdminTimeSlotManagerModal";
 
@@ -61,6 +62,10 @@ export function TripTasksAndMealsTab({
   const [timeSlots, setTimeSlots] = useState<TripTimeSlot[]>([]);
   const [assignments, setAssignments] = useState<DutyAssignment[]>([]);
   const [driverCredits, setDriverCredits] = useState<DriverCredit[]>([]);
+  const [dailyWorkload, setDailyWorkload] = useState<DailyWorkload | null>(null);
+  const [dailyTargetInput, setDailyTargetInput] = useState("4");
+  const [useDailyTarget, setUseDailyTarget] = useState(false);
+  const [savingDailyTarget, setSavingDailyTarget] = useState(false);
   const [quotaProgress, setQuotaProgress] = useState<QuotaProgress | null>(null);
   const [attendees, setAttendees] = useState<ConfirmedAttendee[]>([]);
 
@@ -79,32 +84,53 @@ export function TripTasksAndMealsTab({
 
   const [isPending, startTransition] = useTransition();
 
+  const latestLoad = useRef(0);
   const loadData = async () => {
+    const loadId = ++latestLoad.current;
     try {
       const data = await api<{
         timeSlots: TripTimeSlot[];
         activeAssignments: DutyAssignment[];
         driverCredits: DriverCredit[];
         myQuotaProgress: QuotaProgress | null;
+        myDailyWorkload?: DailyWorkload;
         confirmedAttendees: ConfirmedAttendee[];
       }>("get_trip_task_matrix", { tripId });
 
+      if (loadId !== latestLoad.current) return;
       setTimeSlots(data.timeSlots ?? []);
       setAssignments(data.activeAssignments ?? []);
       setDriverCredits(data.driverCredits ?? []);
       setQuotaProgress(data.myQuotaProgress ?? null);
+      setDailyWorkload(data.myDailyWorkload ?? null);
+      setUseDailyTarget(data.myDailyWorkload?.target != null);
+      setDailyTargetInput(String(data.myDailyWorkload?.target ?? 4));
       setAttendees(data.confirmedAttendees ?? []);
       setErrorMsg(null);
     } catch {
-      setErrorMsg("Failed to load meal and chore tasks.");
+      if (loadId === latestLoad.current) setErrorMsg("Failed to load meal and chore tasks.");
     } finally {
-      setLoading(false);
+      if (loadId === latestLoad.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    void loadData();
+    return () => { latestLoad.current++; };
   }, [tripId]);
+
+  async function saveDailyTarget(event: React.FormEvent) {
+    event.preventDefault();
+    if (!dailyWorkload) return;
+    setSavingDailyTarget(true); setErrorMsg(null); setSuccessMsg(null);
+    try {
+      await api("admin_set_daily_workload_target", { tripId, target: useDailyTarget ? Number(dailyTargetInput) : null, expectedVersion: dailyWorkload.tripVersion });
+      await loadData();
+      await onDutyChanged?.();
+      setSuccessMsg("Daily workload target saved.");
+    } catch { setErrorMsg("Could not save daily target. Refresh the trip and try again."); }
+    finally { setSavingDailyTarget(false); }
+  }
 
   const handleClaimDuty = async (slotDutyId: string, acknowledgeOverlap = false) => {
     setErrorMsg(null);
@@ -251,8 +277,16 @@ export function TripTasksAndMealsTab({
         </div>
       )}
 
-      {/* Quota Progress Banner */}
-      <div className="card quota-progress-card" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)", borderColor: "#bbf7d0" }}>
+      {isAdmin && dailyWorkload && <form className="card" onSubmit={event => void saveDailyTarget(event)}>
+        <h3>Daily workload target</h3>
+        <label className="checkbox-label" style={{ minHeight: "44px" }}><input type="checkbox" checked={useDailyTarget} onChange={event => setUseDailyTarget(event.target.checked)} />Use a daily workload target for this trip</label>
+        {useDailyTarget && <label>Daily workload target (×)<input type="number" min="0.5" max="100" step="0.5" required value={dailyTargetInput} onChange={event => setDailyTargetInput(event.target.value)} /></label>}
+        <p>Daily targets use scheduled task weights. Members below target are excused when no eligible slots remain. RSVP stays saved.</p>
+        <button disabled={savingDailyTarget} style={{ minHeight: "44px" }}>{savingDailyTarget ? "Saving…" : "Save daily target"}</button>
+      </form>}
+      {dailyWorkload?.target != null && isConfirmedAttendee && <DailyWorkloadProgress progress={dailyWorkload} />}
+      {/* Preserve the existing trip quota until the admin opts into a daily target. */}
+      {dailyWorkload?.target == null && <div className="card quota-progress-card" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)", borderColor: "#bbf7d0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
           <div>
             <h3 style={{ margin: 0, fontSize: "1.2rem", color: "#0f172a" }}>Your Trip Responsibility Progress</h3>
@@ -304,7 +338,7 @@ export function TripTasksAndMealsTab({
             ℹ️ You are not currently a confirmed attendee. Please submit your RSVP as <strong>Going</strong> to volunteer for tasks.
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Driver Workload Credits Section */}
       <div className="card">
@@ -691,7 +725,7 @@ export function TripTasksAndMealsTab({
                 >
                   <option value="1.0">1.0 point (Standard Carpool Driver)</option>
                   <option value="1.5">1.5 points (Long Distance Carpool)</option>
-                  <option value="2.0">2.0 points (Full Quota Equivalent)</option>
+                  <option value="2.0">2.0 points (trip-wide credit)</option>
                 </select>
               </label>
 

@@ -228,3 +228,5 @@ Supabase's announced Data API default changed for new projects on 2026-05-30 and
 ## Maintenance migration — 2026-10-15
 
 `20261015070306_event_access_and_rsvp_maintenance.sql` replaces existing service-only membership and RSVP transactions; it creates no new tables or client write grants. It preserves historical RSVP/acknowledgment records, releases upcoming duties/waitlist entries on inactive or suspended membership, and permits eligible dated event RSVP changes after cutoff. All event eligibility date comparisons use the trip IANA timezone (club fallback America/Los_Angeles).
+
+Daily workload maintenance adds nullable `camping_trips.daily_workload_target numeric(4,1)` via `20261015215430_daily_workload_targets.sql`. Both new functions use SECURITY INVOKER and service-only execute grants. The admin setter locks/version-checks the trip and records old/new target; progress is derived from dated enabled slots, active duties and active assignments. No new exposed table, FK, browser write grant or financial record is introduced.

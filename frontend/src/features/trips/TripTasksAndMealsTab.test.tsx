@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
@@ -98,6 +99,34 @@ const mockTaskMatrixData = {
 };
 
 describe("TripTasksAndMealsTab", () => {
+  it("ignores an older matrix response after the admin starts editing", async () => {
+    let resolveOld!: (value: unknown) => void;
+    const snapshot = { ...mockTaskMatrixData, myDailyWorkload: { target: null, tripVersion: 1, satisfied: true, days: [] } };
+    const api = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; })).mockResolvedValue(snapshot);
+    render(<StrictMode><TripTasksAndMealsTab tripId="trip-1" isConfirmedAttendee={false} isAdmin={true} currentMemberId="member-1" api={api} /></StrictMode>);
+    const toggle = await screen.findByLabelText("Use a daily workload target for this trip");
+    await userEvent.click(toggle);
+    await userEvent.clear(screen.getByLabelText("Daily workload target (×)"));
+    await userEvent.type(screen.getByLabelText("Daily workload target (×)"), "6");
+    await act(async () => resolveOld(snapshot));
+    expect(toggle).toBeChecked();
+    expect(screen.getByLabelText("Daily workload target (×)")).toHaveValue(6);
+  });
+
+  it("shows daily weighted progress and excuses days with no eligible slots", async () => {
+    const api = vi.fn().mockResolvedValue({ ...mockTaskMatrixData, myDailyWorkload: {
+      target: 4, tripVersion: 1, satisfied: false, days: [
+        { date: "2026-11-13", selectedWeight: 2.5, totalWeight: 8, remainingWeight: 2, eligibleSlots: 1, status: "needs_selection" },
+        { date: "2026-11-14", selectedWeight: 1, totalWeight: 8, remainingWeight: 0, eligibleSlots: 0, status: "no_tasks_available" },
+      ],
+    } });
+    render(<TripTasksAndMealsTab tripId="trip-1" isConfirmedAttendee={true} isAdmin={false} currentMemberId="member-1" api={api} />);
+    expect(await screen.findByText("2.5× / 4×")).toBeInTheDocument();
+    expect(screen.getByText(/Select at least 1.5× more/)).toBeInTheDocument();
+    expect(screen.getByText(/No tasks available.*No additional selection required/)).toBeInTheDocument();
+    expect(screen.queryByText(/1 of 2 responsibilities selected/)).not.toBeInTheDocument();
+  });
+
   it("renders chronological time slots, duties, capacity, and quota progress", async () => {
     const api = vi.fn().mockImplementation(async (action: string) => {
       if (action === "get_trip_task_matrix") return mockTaskMatrixData;

@@ -627,3 +627,7 @@ Do not parallelize phases that share database lifecycle/financial contracts. A l
 ## Owner-authorized maintenance — 2026-10-15
 
 The owner requested continuation of five fixes: logout to `/signin`, removal of inactive/suspended members from upcoming events, repair of Tasks & Meals reads, member RSVP changes before/after confirmation with a 30-day withdrawal warning, and hiding the minimum-participants field on confirmed event details. This authorizes this maintenance slice only (AUTH-02/04, TRIP-04/08/09, RESP-03). Preserve all historical attendance and financial facts. Cancelled, deleted, draft, and ended events remain unavailable for RSVP changes. Replacement referrals are coordinated by the administrator; reimbursement is external and does not rewrite a financial fact. OD-03 is recorded separately; other financial/lifecycle choices remain pending. Production deployment and broader release certification are separate from local verification.
+
+## QA-first workload maintenance — recorded 2026-10-15
+
+The owner requested QA verification before production and active workload totals plus daily weighted targets with an exhausted-capacity exemption. This bounded Enh-A/Enh-C maintenance covers RESP-01–03 and DEP-03. Use classified staging `rwmizunhxszjvcsaqkre` and synthetic fixtures only; do not push main or deploy production during QA. Daily goals are opt-in per trip, preserving existing quota settings and trip-wide driver-credit facts. See `QA_WORKLOAD_2026-10-15.md` for the behavior and evidence.
