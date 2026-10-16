@@ -16,7 +16,11 @@ const publishable = values.find(value => typeof value === "string" && value.star
 if (!secret || !publishable) throw new Error("Staging requires current secret and publishable credentials.");
 const api = `https://${project}.supabase.co`;
 console.log(`Running hosted workload QA against classified staging ${project}; production is excluded.`);
-const runner = spawn("npx", ["playwright", "test", "e2e/daily-workload.spec.ts", "--retries=0"], {
+const specs = process.argv.slice(2);
+if (specs.some(spec => !["e2e/daily-workload.spec.ts", "e2e/daily-responsibility-plan.spec.ts"].includes(spec))) throw new Error("Only the workload QA journeys are allowed.");
+const qaBrowser = process.env.QA_BROWSER;
+if (qaBrowser && !["Desktop Chromium", "iPhone (Mobile WebKit)", "Android (Mobile Chromium)"].includes(qaBrowser)) throw new Error("Unknown QA browser.");
+const runner = spawn("npx", ["playwright", "test", ...(specs.length ? specs : ["e2e/daily-workload.spec.ts"]), "--retries=0", ...(qaBrowser ? ["--project", qaBrowser] : [])], {
   stdio: "inherit",
   env: { ...process.env, CI: "1", HOSTED_QA: "1", SUPABASE_URL: api, SUPABASE_SERVICE_ROLE_KEY: secret,
     SUPABASE_PUBLISHABLE_KEY: publishable, VITE_SUPABASE_URL: api, VITE_SUPABASE_PUBLISHABLE_KEY: publishable,

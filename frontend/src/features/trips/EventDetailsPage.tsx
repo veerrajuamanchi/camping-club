@@ -822,6 +822,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       {tab === "tasks" && (
         <TripTasksAndMealsTab
           tripId={details.tripId}
+          refreshVersion={details.version}
           isConfirmedAttendee={isComing}
           isAdmin={isAdmin}
           currentMemberId={authProfileMemberId}

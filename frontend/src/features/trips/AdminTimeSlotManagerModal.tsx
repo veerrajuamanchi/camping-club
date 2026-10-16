@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DailyResponsibilityPlanner } from "./DailyResponsibilityPlanner";
 import type { FormEvent } from "react";
 import type { TripApiType } from "./EventDetailsPage";
 
@@ -29,7 +30,7 @@ export type TripTimeSlot = {
   trip_id: string;
   slot_date: string;
   time_block: string;
-  slot_type: "meal" | "chore" | "activity" | "general";
+  slot_type: "meal" | "chore" | "activity" | "general" | "custom";
   label: string;
   is_custom: boolean;
   is_enabled: boolean;
@@ -56,6 +57,9 @@ export function AdminTimeSlotManagerModal({
   onClose,
   onRefreshParent,
 }: Props) {
+  const [tripVersion, setTripVersion] = useState(0);
+  const [assignedDutyIds, setAssignedDutyIds] = useState<string[]>([]);
+  const latestLoad = useRef(0);
   const [slots, setSlots] = useState<TripTimeSlot[]>([]);
   const [responsibilities, setResponsibilities] = useState<MasterResponsibility[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,14 +84,18 @@ export function AdminTimeSlotManagerModal({
   const [confirmDisableSlot, setConfirmDisableSlot] = useState<TripTimeSlot | null>(null);
 
   async function loadData() {
+    const loadId = ++latestLoad.current;
     setLoading(true);
     setError(null);
     try {
       const [slotsRes, respRes] = await Promise.all([
-        api<{ timeSlots: TripTimeSlot[] }>("get_trip_time_slots", { tripId }),
+        api<{ timeSlots: TripTimeSlot[]; tripVersion: number; assignedDutyIds?: string[] }>("get_trip_time_slots", { tripId }),
         api<{ responsibilities: MasterResponsibility[] }>("admin_list_master_responsibilities", { includeInactive: false }),
       ]);
+      if (loadId !== latestLoad.current) return;
       setSlots(slotsRes.timeSlots ?? []);
+      setTripVersion(slotsRes.tripVersion);
+      setAssignedDutyIds(slotsRes.assignedDutyIds ?? []);
       setResponsibilities(respRes.responsibilities ?? []);
       if (respRes.responsibilities && respRes.responsibilities.length > 0 && !selectedRespId) {
         setSelectedRespId(respRes.responsibilities[0].id);
@@ -95,14 +103,15 @@ export function AdminTimeSlotManagerModal({
         setDutyWeight(respRes.responsibilities[0].workload_weight);
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load time slots");
+      if (loadId === latestLoad.current) setError(err instanceof Error ? err.message : "Failed to load time slots");
     } finally {
-      setLoading(false);
+      if (loadId === latestLoad.current) setLoading(false);
     }
   }
 
   useEffect(() => {
     void loadData();
+    return () => { latestLoad.current++; };
   }, [tripId]);
 
   function handleRespSelectChange(respId: string) {
@@ -111,22 +120,6 @@ export function AdminTimeSlotManagerModal({
     if (found) {
       setDutyCapacity(found.default_capacity);
       setDutyWeight(found.workload_weight);
-    }
-  }
-
-  async function handleGenerateSlots(regenerate = false) {
-    setBusy(true);
-    setError(null);
-    setSuccessMsg(null);
-    try {
-      await api("admin_generate_candidate_slots", { tripId, regenerate });
-      setSuccessMsg(regenerate ? "Candidate slots regenerated." : "Standard candidate slots created.");
-      await loadData();
-      if (onRefreshParent) await onRefreshParent();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to generate candidate slots");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -261,6 +254,7 @@ export function AdminTimeSlotManagerModal({
       role="dialog"
       aria-modal="true"
       aria-label="Manage Meal & Chore Slots"
+      className="daily-responsibility-manager"
       style={{
         position: "fixed",
         inset: 0,
@@ -287,17 +281,17 @@ export function AdminTimeSlotManagerModal({
         }}
       >
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <h2 style={{ margin: "0 0 0.25rem 0" }}>🍽️ Manage Meal &amp; Chore Slots</h2>
             <p className="eyebrow" style={{ margin: 0 }}>
-              {tripStartsOn && tripEndsOn ? `${tripStartsOn} to ${tripEndsOn}` : "Trip Schedule"} · Candidate &amp; Custom Time Slots
+              {tripStartsOn && tripEndsOn ? `${tripStartsOn} to ${tripEndsOn}` : "Trip Schedule"} · Daily Responsibilities &amp; Custom Time Slots
             </p>
           </div>
           <button
             type="button"
             className="secondary-button"
-            style={{ padding: "0.25rem 0.6rem", fontSize: "0.9rem" }}
+            style={{ padding: "0.25rem 0.6rem", fontSize: "0.9rem", flexShrink: 0, whiteSpace: "nowrap" }}
             onClick={onClose}
             disabled={busy}
           >
@@ -317,18 +311,12 @@ export function AdminTimeSlotManagerModal({
           </div>
         )}
 
+        {!loading && <DailyResponsibilityPlanner tripId={tripId} start={tripStartsOn} end={tripEndsOn} tripVersion={tripVersion}
+          slots={slots} responsibilities={responsibilities} assignedDutyIds={assignedDutyIds} api={api}
+          onSaved={async () => { await loadData(); await onRefreshParent?.(); }} />}
+
         {/* Action toolbar */}
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-          <button
-            type="button"
-            className="primary-button"
-            style={{ fontSize: "0.85rem", padding: "0.35rem 0.75rem" }}
-            onClick={() => handleGenerateSlots(slots.length > 0)}
-            disabled={busy || loading}
-          >
-            {slots.length === 0 ? "✨ Generate Candidate Slots" : "🔄 Regenerate Candidate Slots"}
-          </button>
-
           <button
             type="button"
             className="secondary-button"
@@ -434,7 +422,7 @@ export function AdminTimeSlotManagerModal({
           <div className="card" style={{ textAlign: "center", padding: "2rem", backgroundColor: "#f9fafb" }}>
             <p style={{ fontSize: "1.1rem", fontWeight: "600", margin: "0 0 0.5rem 0" }}>No Meal or Chore Slots Yet</p>
             <p style={{ color: "#6b7280", margin: "0 0 1rem 0" }}>
-              Click <strong>&quot;Generate Candidate Slots&quot;</strong> to automatically suggest standard Friday–Sunday breakfast, lunch, dinner, and cleanup duties based on trip dates.
+              Choose responsibilities for every date above and save your plan. You can also add a custom time slot below.
             </p>
           </div>
         ) : (
@@ -477,7 +465,7 @@ export function AdminTimeSlotManagerModal({
                         {/* Slot Header */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
                           <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", minWidth: 0, alignItems: "center", gap: "0.5rem" }}>
                               <span style={{ fontSize: "1.1rem" }}>
                                 {slot.slot_type === "meal" ? "🍳" : slot.slot_type === "chore" ? "🧹" : slot.slot_type === "activity" ? "🎯" : "📌"}
                               </span>
@@ -631,6 +619,9 @@ export function AdminTimeSlotManagerModal({
                                     style={{
                                       display: "flex",
                                       justifyContent: "space-between",
+                                      flexWrap: "wrap",
+                                      gap: "0.5rem",
+                                      minWidth: 0,
                                       alignItems: "center",
                                       fontSize: "0.85rem",
                                       padding: "0.35rem 0.5rem",
@@ -640,7 +631,7 @@ export function AdminTimeSlotManagerModal({
                                       opacity: duty.is_active ? 1 : 0.65,
                                     }}
                                   >
-                                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                    <div style={{ display: "flex", flexWrap: "wrap", minWidth: 0, alignItems: "center", gap: "0.5rem" }}>
                                       <span>{title}</span>
                                       <span style={{ fontSize: "0.7rem", color: "#64748b" }}>
                                         ({category.replace("_", " ")}) · {duty.workload_weight}x weight
@@ -652,9 +643,9 @@ export function AdminTimeSlotManagerModal({
                                       )}
                                     </div>
 
-                                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                    <div style={{ display: "flex", flexWrap: "wrap", minWidth: 0, alignItems: "center", gap: "0.5rem" }}>
                                       {/* Capacity Stepper */}
-                                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                      <div style={{ display: "flex", flexWrap: "wrap", minWidth: 0, alignItems: "center", gap: "0.25rem" }}>
                                         <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Capacity:</span>
                                         <button
                                           type="button"

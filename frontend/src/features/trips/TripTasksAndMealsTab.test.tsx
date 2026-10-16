@@ -99,6 +99,17 @@ const mockTaskMatrixData = {
 };
 
 describe("TripTasksAndMealsTab", () => {
+  it("shows newly planned duties when the event version changes", async () => {
+    let matrix = { ...mockTaskMatrixData, timeSlots: [] as typeof mockTaskMatrixData.timeSlots };
+    const api = vi.fn().mockImplementation(async () => matrix);
+    const props = { tripId: "trip-1", isConfirmedAttendee: false, isAdmin: true, currentMemberId: "member-1", api };
+    const { rerender } = render(<TripTasksAndMealsTab {...props} refreshVersion={1} />);
+    expect(await screen.findByText("No meal or chore slots scheduled yet.")).toBeInTheDocument();
+    matrix = mockTaskMatrixData;
+    rerender(<TripTasksAndMealsTab {...props} refreshVersion={2} />);
+    expect(await screen.findByText("Friday Dinner")).toBeInTheDocument();
+  });
+
   it("ignores an older matrix response after the admin starts editing", async () => {
     let resolveOld!: (value: unknown) => void;
     const snapshot = { ...mockTaskMatrixData, myDailyWorkload: { target: null, tripVersion: 1, satisfied: true, days: [] } };

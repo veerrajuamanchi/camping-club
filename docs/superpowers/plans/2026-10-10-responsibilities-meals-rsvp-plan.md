@@ -1,5 +1,7 @@
 # Camping Club Enhancements A–E — Remediated Implementation Plan
 
+**2026-10-16 owner amendment:** The automatic weekday/title preset generator and acceptance scenario S-07 are superseded by explicit per-event-date master-responsibility checkboxes. See [approved scope](../../IMPLEMENTATION_PLAN.md#owner-approved-daily-responsibility-planning--2026-10-16) and [QA evidence](../../QA_DAILY_RESPONSIBILITIES_2026-10-16.md). Other phase/policy gates remain unchanged.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver enhanced RSVP confirmation, master responsibilities directory, candidate meal & chore time-slot matrix, volunteer tasks tab with driver credits, scheduled contractual cutoff safeguards, and a private backend notification outbox with reliable transactional delivery.

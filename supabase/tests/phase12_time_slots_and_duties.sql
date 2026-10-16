@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+select plan(26);
 
 -- 1. Table structure
 select has_table('public', 'trip_time_slots', 'trip_time_slots table exists');
@@ -57,34 +57,14 @@ select throws_ok(
   'member cannot generate candidate slots'
 );
 
--- Admin call succeeds and generates candidate slots
-select is(
-  public.phase3_generate_candidate_time_slots((select id from public.camping_trips order by month_key limit 1), '22000000-0000-4000-8000-000000000002'::uuid, false)->>'created',
-  'true',
-  'admin generates candidate time slots'
+-- Explicit daily choices replace automatic weekend presets.
+select throws_ok(
+  $$select public.phase3_generate_candidate_time_slots((select id from public.camping_trips order by month_key limit 1), '22000000-0000-4000-8000-000000000002'::uuid, false)$$,
+  '22023', null, 'preset generator directs admin to the daily planner'
 );
-
--- Check generated slot count (7 slots: Fri evening, Fri dinner, Sat morning, Sat lunch, Sat dinner, Sat evening, Sun morning breakfast, Sun morning cleanup)
-select ok(
-  (select count(*) >= 7 from public.trip_time_slots where trip_id = (select id from public.camping_trips order by month_key limit 1)),
-  'at least 7 candidate time slots generated for weekend trip'
-);
-
--- Check multi-duty attachment on Friday dinner (at least 2 duties)
-select ok(
-  (select count(*) >= 2 from public.trip_slot_duties d 
-   join public.trip_time_slots s on s.id = d.time_slot_id 
-   where s.trip_id = (select id from public.camping_trips order by month_key limit 1) 
-     and s.time_block = 'friday_dinner'),
-  'Friday dinner time slot has multiple duties attached'
-);
-
--- Repeated call with regenerate=false is idempotent
-select is(
-  public.phase3_generate_candidate_time_slots((select id from public.camping_trips order by month_key limit 1), '22000000-0000-4000-8000-000000000002'::uuid, false)->>'created',
-  'false',
-  'repeated generation without regenerate flag is idempotent and preserves slots'
-);
+select is((select count(*)::int from public.trip_time_slots where trip_id=(select id from public.camping_trips order by month_key limit 1)),0,'retired generator creates no slots');
+insert into public.trip_time_slots(trip_id,slot_date,time_block,slot_type,label)
+  values((select id from public.camping_trips order by month_key limit 1),'2026-11-13','custom','chore','Explicit setup');
 
 -- Admin can configure time slot (e.g. toggle enabled)
 select lives_ok(

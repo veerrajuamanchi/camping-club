@@ -41,6 +41,7 @@ export type ConfirmedAttendee = {
 
 type Props = {
   tripId: string;
+  refreshVersion?: number;
   isConfirmedAttendee: boolean;
   isAdmin: boolean;
   currentMemberId?: string;
@@ -50,6 +51,7 @@ type Props = {
 
 export function TripTasksAndMealsTab({
   tripId,
+  refreshVersion,
   isConfirmedAttendee,
   isAdmin,
   currentMemberId,
@@ -117,7 +119,7 @@ export function TripTasksAndMealsTab({
   useEffect(() => {
     void loadData();
     return () => { latestLoad.current++; };
-  }, [tripId]);
+  }, [tripId, refreshVersion]);
 
   async function saveDailyTarget(event: React.FormEvent) {
     event.preventDefault();
@@ -400,7 +402,7 @@ export function TripTasksAndMealsTab({
         <div className="card" style={{ textAlign: "center", padding: "2.5rem 1rem", color: "#64748b" }}>
           <p style={{ margin: 0, fontSize: "1.1rem", fontWeight: 500 }}>No meal or chore slots scheduled yet.</p>
           <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.9rem" }}>
-            Administrators can generate suggested candidate slots using the "Manage Meals &amp; Chores" button above.
+            Administrators choose responsibilities for each event date using the "Manage Meals &amp; Chores" button above.
           </p>
         </div>
       ) : (

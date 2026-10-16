@@ -15,7 +15,7 @@ const actionNames = [
   "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
-  "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
+  "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
 ] as const;
@@ -148,6 +148,8 @@ const inputSchemas = {
     workloadWeight: z.number().min(0.5).max(5.0),
     active: z.boolean().optional(),
   }).strict(),
+  admin_save_daily_responsibilities: z.object({ tripId: uuid, expectedVersion: z.number().int().positive(), confirmRemoval: z.boolean().default(false),
+    days: z.array(z.object({ date, responsibilityIds: z.array(uuid).min(1) }).strict()).min(1) }).strict(),
   admin_generate_candidate_slots: z.object({
     tripId: uuid,
     regenerate: z.boolean().optional(),
@@ -235,7 +237,7 @@ const adminActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
   "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
-  "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
+  "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
   "admin_delete_campsite", "admin_set_daily_workload_target",
 ]);
@@ -244,7 +246,7 @@ const mutatingActions = new Set<Action>([
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
   "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
   "admin_create_master_responsibility", "admin_update_master_responsibility",
-  "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
+  "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
 ]);
@@ -319,7 +321,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [bundleResult, rsvpResult, dutyAssignmentsResult] = tripIds.length ? await Promise.all([
     service.from("trip_rule_bundles").select("id,trip_id,version_no,content_hash,rendered_bundle,created_at").in("trip_id", tripIds).eq("is_current", true),
     service.from("trip_rsvps").select("trip_id,member_id,response,rule_acknowledgment_id,version,updated_at").in("trip_id", tripIds),
-    service.from("trip_duty_assignments").select("trip_id").in("trip_id", tripIds).eq("member_id", member.member_id).in("status", ["claimed", "assigned_by_admin"]),
+    service.from("trip_duty_assignments").select("trip_id,duty:trip_slot_duties!inner(is_active,slot:trip_time_slots!inner(is_enabled))").eq("duty.is_active", true).eq("duty.slot.is_enabled", true).in("trip_id", tripIds).eq("member_id", member.member_id).in("status", ["claimed", "assigned_by_admin"]),
   ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
   checkError(bundleResult.error); checkError(rsvpResult.error); checkError(dutyAssignmentsResult.error);
 
@@ -520,7 +522,8 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       .eq("status", "waiting")
       .order("position"),
     service.from("trip_duty_assignments")
-      .select("id", { count: "exact", head: true })
+      .select("id,duty:trip_slot_duties!inner(is_active,slot:trip_time_slots!inner(is_enabled))", { count: "exact", head: true })
+      .eq("duty.is_active", true).eq("duty.slot.is_enabled", true)
       .eq("trip_id", tripId)
       .eq("member_id", member.member_id)
       .in("status", ["claimed", "assigned_by_admin"]),
@@ -792,6 +795,8 @@ Deno.serve(async (request) => {
   }
   if (action === "get_trip_time_slots") {
     try {
+      const trip = await service.from("camping_trips").select("version").eq("id", input.tripId).is("deleted_at", null).single();
+      checkError(trip.error);
       const { data, error } = await service
         .from("trip_time_slots")
         .select(`
@@ -831,7 +836,9 @@ Deno.serve(async (request) => {
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
       checkError(error);
-      return json(request, 200, { timeSlots: data ?? [], requestId });
+      const assignments = await service.from("trip_duty_assignments").select("slot_duty_id").eq("trip_id", input.tripId).in("status", ["claimed", "assigned_by_admin"]);
+      checkError(assignments.error);
+      return json(request, 200, { timeSlots: data ?? [], tripVersion: trip.data.version, assignedDutyIds: [...new Set((assignments.data ?? []).map(row => row.slot_duty_id))], requestId });
     } catch {
       return errorResponse(request, 500, "trip_time_slots_read_failed", requestId);
     }
@@ -1150,6 +1157,10 @@ Deno.serve(async (request) => {
         p_active: input.active ?? true,
         p_actor_id: member.member_id,
       };
+      break;
+    case "admin_save_daily_responsibilities":
+      rpcName = "phase3_save_daily_responsibilities";
+      rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_days: input.days, p_expected_version: input.expectedVersion, p_confirm_removal: input.confirmRemoval, p_request_id: key };
       break;
     case "admin_generate_candidate_slots":
       rpcName = "phase3_generate_candidate_time_slots";

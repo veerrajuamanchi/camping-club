@@ -631,3 +631,9 @@ The owner requested continuation of five fixes: logout to `/signin`, removal of 
 ## QA-first workload maintenance — recorded 2026-10-15
 
 The owner requested QA verification before production and active workload totals plus daily weighted targets with an exhausted-capacity exemption. This bounded Enh-A/Enh-C maintenance covers RESP-01–03 and DEP-03. Use classified staging `rwmizunhxszjvcsaqkre` and synthetic fixtures only; do not push main or deploy production during QA. Daily goals are opt-in per trip, preserving existing quota settings and trip-wide driver-credit facts. See `QA_WORKLOAD_2026-10-15.md` for the behavior and evidence.
+
+## Owner-approved daily responsibility planning — 2026-10-16
+
+The owner approved the in-chat bounded plan for RESP-01–03: each actual event date gets checkboxes for active master responsibilities; at least one selection per date is required before saving the complete responsibility plan. Show daily selected-weight and volunteer-capacity totals. Preserve chosen existing duty identities/weights/capacities/assignments; explicitly confirm removal of duties with volunteer claims, soft-disable removed duties and retain history. Replace automatic Friday–Sunday/title-based generation. No event/RSVP/financial transition is added or blocked. QA precedes release. Implementation and evidence: [daily planner QA](QA_DAILY_RESPONSIBILITIES_2026-10-16.md).
+
+The same slice enforces existing SEC-02/05 boundaries on legacy responsibility RPCs: browser writes go through trip-api rather than accepting a supplied actor ID through direct RPC execution. This fixes an authorization bypass without changing intended administrator/member permissions or any financial policy.

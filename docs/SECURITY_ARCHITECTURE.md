@@ -156,3 +156,5 @@ Before each phase exit:
 - Verify payment identifiers appear only in authorized single-transfer instructions and are deleted on retention date.
 - Run Supabase security/database advisors and resolve critical findings before launch.
 - Classify every security gate PASS / PASS WITH RISK / BLOCKED. Unauthorized data access is BLOCKED.
+
+Responsibility RPC boundary (2026-10-16): all legacy master/slot/duty/assignment/driver-credit mutations are service-role-only SECURITY INVOKER. The browser uses trip-api, which resolves the active actor; direct RPC calls cannot supply an administrator/other member ID to impersonate them. Existing intended administrator/member permissions through the API are preserved.

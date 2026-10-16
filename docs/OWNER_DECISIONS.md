@@ -43,3 +43,7 @@ This record is a planning artifact and does not authorize additional coding or d
 ## Workload maintenance instruction — recorded 2026-10-15
 
 The owner explicitly requests active workload totals, an administrator-determined daily weighted goal (4× given as an example), and no forced additional selections when all eligible tasks are taken. Daily goals are configured per trip and opt-in; this does not impose a new default on existing trips. This instruction does not authorize duplicating a trip-wide driver credit across days, altering money policy, or bypassing the QA-first release boundary.
+
+## Daily responsibility planning — owner approved 2026-10-16
+
+The owner approved the per-date checkbox plan in chat: every actual date requires at least one selected master responsibility to save the responsibility plan. This supersedes automatic weekday/title-based presets for this bounded responsibilities slice. Existing volunteer assignments are retained; removing their duties requires explicit administrator confirmation and excludes those duties from daily workload. This does not require a responsibility plan before RSVP, event creation or confirmation, and does not change financial or trip cancellation policies.
