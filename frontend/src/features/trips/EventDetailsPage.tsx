@@ -8,6 +8,7 @@ import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 import { DailyWorkloadProgress, dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
 import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
+import { TripFinancialsTab } from "./TripFinancialsTab";
 
 type TripDetails = {
   tripId: string;
@@ -893,13 +894,16 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       )}
 
       {tab === "financials" && (
-        <div className="card">
-          <h2>Financials</h2>
-          <p>
-            Settlement details will be available after the trip is confirmed. Expense tracking is coming in a future
-            update.
-          </p>
-        </div>
+        <TripFinancialsTab
+          tripId={details.tripId}
+          isAdmin={isAdmin}
+          isConfirmedAttendee={isComing}
+          currentMemberId={authProfileMemberId}
+          confirmedAttendees={confirmedAttendees}
+          tripStatus={details.tripStatus ?? details.eventStatus}
+          api={api}
+          onStatusChange={refresh}
+        />
       )}
 
       {tab === "tasks" && (

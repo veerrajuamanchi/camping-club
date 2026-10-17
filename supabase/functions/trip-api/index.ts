@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolveServiceApiKey } from "../_shared/service-key.mjs";
 import { canonicalJson, keyedDigest, requestDigest, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, isOriginAllowed, json, readBody } from "../_shared/http.ts";
+import { computeSettlement, calculateEqualAllocations, type ExpenseInput } from "../_shared/settlementEngine.ts";
 
 const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 const uuid = z.string().uuid();
@@ -20,6 +21,7 @@ const actionNames = [
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation", "get_trip_lifecycle",
   "get_trip_logistics", "manage_trip_commitment", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
+  "get_trip_financials", "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -94,6 +96,32 @@ const inputSchemas = {
     targetMemberId: uuid,
     action: z.enum(["assign", "unassign"]),
     reason: z.string().trim().max(500).optional(),
+  }).strict(),
+  get_trip_financials: z.object({ tripId: uuid }).strict(),
+  admin_manage_trip_expense: z.object({
+    tripId: uuid,
+    action: z.enum(["create", "delete"]),
+    expenseId: uuid.optional(),
+    expenseType: z.enum(["cabin_deposit", "carpool_mileage", "shared_receipt", "other"]).optional(),
+    payerMemberId: uuid.optional(),
+    amountCents: z.number().int().positive().optional(),
+    description: z.string().trim().min(1).max(500).optional(),
+    incurredDate: date.optional(),
+    receiptUrl: optionalUrl,
+    allocations: z.array(z.object({
+      memberId: uuid,
+      allocatedCents: z.number().int().nonnegative(),
+    })).optional(),
+  }).strict(),
+  admin_finalize_settlement: z.object({
+    tripId: uuid,
+    reason: reason.optional(),
+  }).strict(),
+  update_settlement_transfer: z.object({
+    transferId: uuid,
+    action: z.enum(["mark_sent", "confirm_received"]),
+    paymentMethod: z.enum(["zelle", "venmo", "paypal", "apple_cash", "cash", "other"]).optional(),
+    notes: z.string().trim().max(500).optional(),
   }).strict(),
   admin_set_daily_workload_target: z.object({ tripId: uuid, target: z.number().min(0.5).max(100).multipleOf(0.5).nullable(), expectedVersion: z.number().int().positive() }).strict(),
   get_calendar: z.object({}).strict(),
@@ -304,6 +332,7 @@ const adminActions = new Set<Action>([
   "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
   "admin_manage_carpool", "admin_override_duty",
+  "admin_manage_trip_expense", "admin_finalize_settlement",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -315,6 +344,7 @@ const mutatingActions = new Set<Action>([
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
   "manage_trip_commitment", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
+  "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -330,7 +360,7 @@ function databaseStatus(code: string | undefined): number {
 }
 
 function aggregateId(action: Action, input: Record<string, unknown>, memberId: string): string {
-  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId", "commitmentId", "carpoolId", "dutyId"]) if (typeof input[key] === "string") return input[key] as string;
+  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId", "commitmentId", "carpoolId", "dutyId", "expenseId", "transferId"]) if (typeof input[key] === "string") return input[key] as string;
   return memberId;
 }
 
@@ -884,6 +914,306 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
   };
 }
 
+async function getTripFinancials(member: Member, tripId: string): Promise<Record<string, unknown>> {
+  const [tripResult, expensesResult, rsvpsResult, carpoolsResult, latestRunResult, paymentMethodsResult] = await Promise.all([
+    service.from("camping_trips")
+      .select("id, starts_on, ends_on, title, trip_status, event_status, trip_mileage_rate_cents, deposit_amount_cents, cabin_payer_member_id")
+      .eq("id", tripId)
+      .is("deleted_at", null)
+      .single(),
+    service.from("trip_expenses")
+      .select(`
+        id, trip_id, expense_type, payer_member_id, amount_cents, description,
+        incurred_date, receipt_url, source_reference_id, is_locked, created_at,
+        allocations:trip_expense_allocations(id, member_id, allocated_cents)
+      `)
+      .eq("trip_id", tripId)
+      .order("created_at"),
+    service.from("trip_rsvps")
+      .select("member_id, response")
+      .eq("trip_id", tripId)
+      .eq("response", "coming"),
+    service.from("trip_carpools")
+      .select(`
+        id, trip_id, driver_member_id, vehicle_description, max_seats,
+        starting_mileage, ending_mileage, departure_details,
+        riders:trip_carpool_riders(id, rider_member_id)
+      `)
+      .eq("trip_id", tripId),
+    service.from("settlement_runs")
+      .select(`
+        id, trip_id, version_no, status, total_expenses_cents, algorithm_used,
+        snapshot_hash, created_by, finalized_at, settled_at, created_at,
+        balances:settlement_balances(id, member_id, total_paid_cents, total_allocated_cents, net_balance_cents),
+        transfers:settlement_transfers(
+          id, payer_member_id, recipient_member_id, amount_cents, status,
+          marked_sent_at, confirmed_received_at, payment_method, notes
+        )
+      `)
+      .eq("trip_id", tripId)
+      .in("status", ["finalized", "settled"])
+      .order("version_no", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    service.from("member_payment_methods")
+      .select("id, member_id, method, preferred, accepted_for_receiving")
+      .eq("active", true),
+  ]);
+
+  checkError(tripResult.error);
+  checkError(expensesResult.error);
+  checkError(rsvpsResult.error);
+  checkError(carpoolsResult.error);
+
+  const trip = tripResult.data;
+  const rawExpenses = expensesResult.data ?? [];
+  const confirmedAttendees = (rsvpsResult.data ?? []).map((r) => r.member_id);
+  const rawCarpools = carpoolsResult.data ?? [];
+  const latestRun = latestRunResult?.data ?? null;
+
+  const memberIdSet = new Set<string>(confirmedAttendees);
+  if (trip.cabin_payer_member_id) memberIdSet.add(trip.cabin_payer_member_id);
+  for (const exp of rawExpenses) {
+    memberIdSet.add(exp.payer_member_id);
+    for (const a of ((exp as any).allocations ?? [])) {
+      memberIdSet.add(a.member_id);
+    }
+  }
+  for (const cp of rawCarpools) {
+    memberIdSet.add(cp.driver_member_id);
+    for (const r of ((cp as any).riders ?? [])) {
+      memberIdSet.add(r.rider_member_id);
+    }
+  }
+
+  const { data: memberProfiles } = memberIdSet.size > 0
+    ? await service.from("member_profiles").select("member_id, display_name").in("member_id", Array.from(memberIdSet))
+    : { data: [] };
+
+  const nameMap = new Map((memberProfiles ?? []).map((m: any) => [m.member_id, m.display_name]));
+
+  const paymentMethodsByMember = new Map<string, { method: string; label: string }>();
+  for (const pm of (paymentMethodsResult.data ?? [])) {
+    if (pm.preferred || !paymentMethodsByMember.has(pm.member_id)) {
+      paymentMethodsByMember.set(pm.member_id, {
+        method: pm.method,
+        label: pm.method.replace("_", " ").toUpperCase(),
+      });
+    }
+  }
+
+  const expenses = rawExpenses.map((exp: any) => ({
+    id: exp.id,
+    tripId: exp.trip_id,
+    expenseType: exp.expense_type,
+    payerMemberId: exp.payer_member_id,
+    payerName: nameMap.get(exp.payer_member_id) ?? "Member",
+    amountCents: exp.amount_cents,
+    description: exp.description,
+    incurredDate: exp.incurred_date,
+    receiptUrl: exp.receipt_url,
+    isLocked: exp.is_locked,
+    isMine: exp.payer_member_id === member.member_id,
+    allocations: (exp.allocations ?? []).map((a: any) => ({
+      id: a.id,
+      memberId: a.member_id,
+      memberName: nameMap.get(a.member_id) ?? "Member",
+      allocatedCents: a.allocated_cents,
+      isMe: a.member_id === member.member_id,
+    })),
+  }));
+
+  const ratePerMile = trip.trip_mileage_rate_cents ?? 76;
+  const carpoolReimbursements = rawCarpools
+    .filter((cp: any) => {
+      const occupantCount = ((cp as any).riders ?? []).length + 1;
+      return occupantCount >= 3 && cp.starting_mileage != null && cp.ending_mileage != null && cp.ending_mileage > cp.starting_mileage;
+    })
+    .map((cp: any) => {
+      const miles = Number(cp.ending_mileage) - Number(cp.starting_mileage);
+      const totalReimbursementCents = Math.round(miles * ratePerMile);
+      const passengers = [cp.driver_member_id, ...((cp as any).riders ?? []).map((r: any) => r.rider_member_id)];
+      const allocations = calculateEqualAllocations(totalReimbursementCents, passengers);
+
+      return {
+        carpoolId: cp.id,
+        driverMemberId: cp.driver_member_id,
+        driverName: nameMap.get(cp.driver_member_id) ?? "Driver",
+        vehicleDescription: cp.vehicle_description,
+        miles,
+        rateCentsPerMile: ratePerMile,
+        amountCents: totalReimbursementCents,
+        occupantCount: passengers.length,
+        allocations: allocations.map((a) => ({
+          memberId: a.memberId,
+          memberName: nameMap.get(a.memberId) ?? "Member",
+          allocatedCents: a.allocatedCents,
+          isMe: a.memberId === member.member_id,
+        })),
+      };
+    });
+
+  let cabinDeposit = null;
+  if (trip.cabin_payer_member_id && confirmedAttendees.length > 0) {
+    const depositPerPerson = trip.deposit_amount_cents ?? 5000;
+    const totalDepositCents = confirmedAttendees.length * depositPerPerson;
+    cabinDeposit = {
+      payerMemberId: trip.cabin_payer_member_id,
+      payerName: nameMap.get(trip.cabin_payer_member_id) ?? "Cabin Payer",
+      depositPerPersonCents: depositPerPerson,
+      confirmedCount: confirmedAttendees.length,
+      amountCents: totalDepositCents,
+      allocations: confirmedAttendees.map((id) => ({
+        memberId: id,
+        memberName: nameMap.get(id) ?? "Camper",
+        allocatedCents: depositPerPerson,
+        isMe: id === member.member_id,
+      })),
+    };
+  }
+
+  let settlementRun = null;
+  let balances: any[] = [];
+  let transfers: any[] = [];
+  const isFinalized = latestRun != null && (latestRun.status === "finalized" || latestRun.status === "settled");
+
+  if (isFinalized && latestRun) {
+    settlementRun = {
+      id: latestRun.id,
+      versionNo: latestRun.version_no,
+      status: latestRun.status,
+      totalExpensesCents: latestRun.total_expenses_cents,
+      algorithmUsed: latestRun.algorithm_used,
+      finalizedAt: latestRun.finalized_at,
+      settledAt: latestRun.settled_at,
+    };
+
+    balances = (latestRun.balances ?? []).map((b: any) => ({
+      memberId: b.member_id,
+      displayName: nameMap.get(b.member_id) ?? "Member",
+      totalPaidCents: b.total_paid_cents,
+      totalAllocatedCents: b.total_allocated_cents,
+      netBalanceCents: b.net_balance_cents,
+      isMe: b.member_id === member.member_id,
+    }));
+
+    transfers = (latestRun.transfers ?? []).map((t: any) => {
+      const pm = paymentMethodsByMember.get(t.recipient_member_id);
+      return {
+        id: t.id,
+        payerMemberId: t.payer_member_id,
+        payerName: nameMap.get(t.payer_member_id) ?? "Payer",
+        recipientMemberId: t.recipient_member_id,
+        recipientName: nameMap.get(t.recipient_member_id) ?? "Recipient",
+        amountCents: t.amount_cents,
+        status: t.status,
+        markedSentAt: t.marked_sent_at,
+        confirmedReceivedAt: t.confirmed_received_at,
+        paymentMethod: t.payment_method ?? pm?.method ?? null,
+        recipientPreferredMethod: pm?.label ?? "Zelle / Venmo",
+        notes: t.notes,
+        isPayer: t.payer_member_id === member.member_id,
+        isRecipient: t.recipient_member_id === member.member_id,
+      };
+    });
+  } else {
+    const engineExpenses: ExpenseInput[] = [];
+
+    for (const exp of rawExpenses) {
+      engineExpenses.push({
+        id: exp.id,
+        payerMemberId: exp.payer_member_id,
+        amountCents: exp.amount_cents,
+        allocations: (exp.allocations ?? []).map((a: any) => ({
+          memberId: a.member_id,
+          allocatedCents: a.allocated_cents,
+        })),
+      });
+    }
+
+    for (const cpr of carpoolReimbursements) {
+      engineExpenses.push({
+        id: `carpool-${cpr.carpoolId}`,
+        payerMemberId: cpr.driverMemberId,
+        amountCents: cpr.amountCents,
+        allocations: cpr.allocations.map((a: any) => ({
+          memberId: a.memberId,
+          allocatedCents: a.allocatedCents,
+        })),
+      });
+    }
+
+    if (cabinDeposit) {
+      engineExpenses.push({
+        id: `cabin-deposit-${trip.id}`,
+        payerMemberId: cabinDeposit.payerMemberId,
+        amountCents: cabinDeposit.amountCents,
+        allocations: cabinDeposit.allocations.map((a: any) => ({
+          memberId: a.memberId,
+          allocatedCents: a.allocatedCents,
+        })),
+      });
+    }
+
+    try {
+      if (memberIdSet.size > 0 && engineExpenses.length > 0) {
+        const draftResult = computeSettlement(Array.from(memberIdSet), engineExpenses);
+        balances = draftResult.balances.map((b) => ({
+          memberId: b.memberId,
+          displayName: nameMap.get(b.memberId) ?? "Member",
+          totalPaidCents: b.totalPaidCents,
+          totalAllocatedCents: b.totalAllocatedCents,
+          netBalanceCents: b.netBalanceCents,
+          isMe: b.memberId === member.member_id,
+        }));
+
+        transfers = draftResult.transfers.map((t, idx) => {
+          const pm = paymentMethodsByMember.get(t.recipientMemberId);
+          return {
+            id: `draft-${idx}`,
+            payerMemberId: t.payerMemberId,
+            payerName: nameMap.get(t.payerMemberId) ?? "Payer",
+            recipientMemberId: t.recipientMemberId,
+            recipientName: nameMap.get(t.recipientMemberId) ?? "Recipient",
+            amountCents: t.amountCents,
+            status: "outstanding",
+            markedSentAt: null,
+            confirmedReceivedAt: null,
+            paymentMethod: pm?.method ?? null,
+            recipientPreferredMethod: pm?.label ?? "Zelle / Venmo",
+            notes: null,
+            isPayer: t.payerMemberId === member.member_id,
+            isRecipient: t.recipientMemberId === member.member_id,
+          };
+        });
+
+        settlementRun = {
+          id: null,
+          versionNo: 0,
+          status: "draft",
+          totalExpensesCents: draftResult.totalExpensesCents,
+          algorithmUsed: draftResult.algorithmUsed,
+          finalizedAt: null,
+          settledAt: null,
+        };
+      }
+    } catch {
+      // Incomplete draft allocations
+    }
+  }
+
+  return {
+    tripId,
+    expenses,
+    carpoolReimbursements,
+    cabinDeposit,
+    settlementRun,
+    balances,
+    transfers,
+    isFinalized,
+  };
+}
+
 async function getConstitution(member: Member, tripId?: string): Promise<Record<string, unknown>> {
   const definitionQuery = service.from("rule_definitions").select("id,stable_key,category,scope,trip_id,active,created_at").order("stable_key");
   const { data: allDefinitions, error: definitionsError } = await definitionQuery;
@@ -978,6 +1308,13 @@ Deno.serve(async (request) => {
       return json(request, 200, { ...(await getTripLogistics(member, input.tripId as string)), requestId });
     } catch {
       return errorResponse(request, 500, "trip_logistics_read_failed", requestId);
+    }
+  }
+  if (action === "get_trip_financials") {
+    try {
+      return json(request, 200, { ...(await getTripFinancials(member, input.tripId as string)), requestId });
+    } catch {
+      return errorResponse(request, 500, "trip_financials_read_failed", requestId);
     }
   }
   if (action === "admin_list_master_responsibilities") {
@@ -1538,6 +1875,62 @@ Deno.serve(async (request) => {
         p_status: input.status,
         p_notes: input.notes ?? null,
         p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_manage_trip_expense":
+      rpcName = "phase5_manage_expense";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_action: input.action,
+        p_expense_id: input.expenseId ?? null,
+        p_expense_type: input.expenseType ?? "shared_receipt",
+        p_payer_member_id: input.payerMemberId ?? null,
+        p_amount_cents: input.amountCents ?? null,
+        p_description: input.description ?? null,
+        p_incurred_date: input.incurredDate ?? null,
+        p_receipt_url: input.receiptUrl ?? null,
+        p_source_reference_id: null,
+        p_allocations: input.allocations ?? [],
+        p_actor_id: member.member_id,
+        p_is_admin: member.member_role === "admin",
+      };
+      break;
+    case "admin_finalize_settlement": {
+      const fin = await getTripFinancials(member, input.tripId as string);
+      if (!fin.settlementRun) {
+        return errorResponse(request, 400, "settlement_calculation_failed", requestId, "No expenses or balances found to finalize.");
+      }
+      rpcName = "phase5_record_settlement_run";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_algorithm_used: fin.settlementRun.algorithmUsed,
+        p_total_expenses_cents: fin.settlementRun.totalExpensesCents,
+        p_snapshot_hash: `settle-${Date.now()}`,
+        p_balances: fin.balances.map((b: any) => ({
+          member_id: b.memberId,
+          total_paid_cents: b.totalPaidCents,
+          total_allocated_cents: b.totalAllocatedCents,
+          net_balance_cents: b.netBalanceCents,
+        })),
+        p_transfers: fin.transfers.map((t: any) => ({
+          payer_member_id: t.payerMemberId,
+          recipient_member_id: t.recipientMemberId,
+          amount_cents: t.amountCents,
+          payment_method: t.paymentMethod,
+        })),
+        p_actor_id: member.member_id,
+      };
+      break;
+    }
+    case "update_settlement_transfer":
+      rpcName = "phase5_update_transfer_status";
+      rpcArgs = {
+        p_transfer_id: input.transferId,
+        p_action: input.action,
+        p_payment_method: input.paymentMethod ?? null,
+        p_notes: input.notes ?? null,
+        p_actor_id: member.member_id,
+        p_is_admin: member.member_role === "admin",
       };
       break;
     default: return errorResponse(request, 400, "unsupported_operation", requestId);

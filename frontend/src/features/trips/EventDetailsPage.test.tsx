@@ -73,6 +73,7 @@ function renderPage(
     if (action === "get_trip_details") return Promise.resolve(uiData);
     if (action === "get_constitution") return Promise.resolve({ definitions: [] });
     if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+    if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
     return Promise.resolve({});
   }),
   initialRoute = "/trips/trip-1"
@@ -153,16 +154,14 @@ describe("EventDetailsPage", () => {
     expect(screen.getByText("Take Highway 285 South")).toBeInTheDocument();
   });
 
-  it("switches to Financials tab and displays settlement placeholder", async () => {
+  it("switches to Financials tab and displays settlement and expenses", async () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findByText("December Camping");
 
     await user.click(screen.getByRole("tab", { name: /financials/i }));
-    expect(screen.getByRole("heading", { name: /financials/i })).toBeInTheDocument();
-    expect(
-      screen.getByText(/settlement details will be available after the trip is confirmed/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/settlement & expenses/i)).toBeInTheDocument();
+    expect(screen.getByText(/settlement transfers/i)).toBeInTheDocument();
   });
 
   it("requires rule acknowledgment to submit Going RSVP", async () => {
