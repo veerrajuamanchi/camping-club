@@ -47,3 +47,15 @@ The owner explicitly requests active workload totals, an administrator-determine
 ## Daily responsibility planning — owner approved 2026-10-16
 
 The owner approved the per-date checkbox plan in chat: every actual date requires at least one selected master responsibility to save the responsibility plan. This supersedes automatic weekday/title-based presets for this bounded responsibilities slice. Existing volunteer assignments are retained; removing their duties requires explicit administrator confirmation and excludes those duties from daily workload. This does not require a responsibility plan before RSVP, event creation or confirmation, and does not change financial or trip cancellation policies.
+
+## Final architecture refinements — recorded 2026-10-16
+
+The owner established the baseline architecture with eight targeted refinements:
+1. **Driving as Master Responsibility:** Driving is not a special-case workload code mechanism. `driver_workload_credit` is removed from `trip_carpools`. Driving tasks (e.g. Friday Departure Driver, Sunday Return Driver, Round Trip Driver) are configured from the Master Responsibilities library with standard workload weights.
+2. **Member Profile & Settlement Display:** Member profile payment methods (Zelle, Venmo, PayPal, Apple Cash) and handles are encrypted at rest; settlement screens display the recipient's preferred method and decrypted handle directly to the payer. The app never moves money.
+3. **Trip Commitments Model:** Unified item commitment model across Cooking Gear, Food & Groceries, Supplies, Shelter & Camp Setup, and Safety. All commitments answer: *Who committed to bring it?*
+4. **Flexible Food Planning:** Admins may plan food via Item-Based Planning (e.g. *2 Dozen Eggs*) or Grouped Planning (e.g. *Saturday Breakfast Supplies*); the system does not force ingredient-level tracking.
+5. **Duty Assignment Modes:** Self-selection is default; at T-48h before trip start, Admin Assignment Mode enables organizers to force-assign, reassign, move, or remove duties to close remaining gaps.
+6. **Two-Stage Settlement Lifecycle:** Lifecycle distinguishes `financially_finalized` (expenses and odometers locked, settlement transfers computed) from `financially_settled` (all transfers confirmed received by recipients or admin override). Recipient confirmation progression: `Outstanding` → `Marked Sent` → `Awaiting Confirmation` → `Settled`.
+7. **Home Page Preservation:** The event-card-centered landing page is preserved as the primary interface, enhanced with a 5-point Trip Readiness scorecard.
+8. **Scope Governance:** Product scope is bounded strictly by the Five Questions (*Am I going? What do I owe? What responsibilities did I commit to? What am I bringing? How am I getting there?*). Chat, guest workflows, ride requests, volunteer scoring, and social features remain strictly out of scope.

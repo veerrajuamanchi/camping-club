@@ -311,16 +311,18 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 **Objective:** Deliver all member signup preferences and trip coordination features.
 
 **Features**
-- Packing checklist and per-trip admin additions.
+- Trip Commitments replacing isolated packing lists: unified model covering Cooking Gear, Food & Groceries, Supplies, Shelter & Camp Setup, and Safety.
+- Supports both Item-Based Planning (e.g. 2 Dozen Eggs, 3 Bags Ice) and Grouped Planning (e.g. Saturday Breakfast Supplies, Coffee Station Supplies); critical item warning indicators (`⚠️ Critical Items Missing`).
 - Coffee/tea choices for Saturday and Sunday mornings.
 - Vegetarian/non-vegetarian default and per-meal override, not-eating choice, admin-set freeze cutoff.
-- Responsibilities across Friday night, Saturday morning, Saturday night, Sunday morning; first-come claims with concurrent capacity enforcement; Needs assignment overflow.
-- Admin tasks including activity planning; driving counts toward workload.
-- Vehicle/driver/occupants/mileage/reimbursement eligibility and documented exceptions.
+- Responsibilities across Friday night, Saturday morning, Saturday night, Sunday morning; self-selection default with daily workload goals.
+- At T-48h before trip start, Admin Assignment Mode unlocks to allow organizers to close remaining gaps (force assign, reassign, move, remove).
+- Driving is configured as a standard duty in the Master Responsibilities library (e.g. Departure Driver, Return Driver, Round Trip Driver) with standard workload weight; no special-case driver workload code.
+- Carpool transportation planner: driver, vehicle, max seats, departure details, and passenger allocation; start and end odometer mileage capture.
 - Bed count, server random floor draw with eligibility snapshot, count input, reasoned reruns, mutual exchanges and audit history.
 
 **Database changes**
-- Packing items/responses, meal slots/preferences/freeze, responsibility definitions/slots/claims, vehicles/occupants/mileage, lottery draw/eligibility/result/exchanges.
+- Trip commitments (items, categories, quantities, assignments, critical flags), meal slots/preferences/freeze, responsibility definitions/slots/claims, carpools/riders (with starting/ending odometer mileage and trip snapshot mileage rate), lottery draw/eligibility/result/exchanges.
 
 **API/function changes**
 - Submit/freeze meal preferences, claim/release responsibility slot, admin add slot/override, assign vehicle/driver, record trip mileage/exception, run lottery, request/accept bed exchange.
@@ -416,6 +418,9 @@ These are not safe to invent in application code; the [Owner Decision Record](OW
 - Pure TypeScript exact minimum-transfer solver for groups at or below the owner-approved bound; deterministic fallback above it.
 - Whole-trip aggregation across expenses with different participant subsets.
 - Cabin $50 advances and cabin payer's upfront booking payment are reconciled once against cabin expense.
+- Two-stage settlement lifecycle: `financially_finalized` (expenses and odometers locked, settlement transfers computed) and `financially_settled` (all transfers confirmed received by recipients or admin override).
+- Recipient confirmation workflow: `Outstanding` (🔴) → `Marked Sent` (🟡) → `Settled` (✅).
+- Settlement screens display the recipient's preferred payment method (Zelle, Venmo, PayPal, Apple Cash) and handle decrypted for authorized payer.
 - Settlement preview; admin-only finalize; immutable version and transfer ledger; payment method instructions and warning.
 - Payer marks sent; recipient/admin confirms received; disputes and explicit resolutions.
 - Corrections create immutable numbered adjustments preserving prior sent/received transfers and unpaid balances.

@@ -25,8 +25,10 @@ Registration and trip status are separate state dimensions. The columns `camping
 | Confirmed | Admin decision to cancel because participation is insufficient | Cancelled — post-confirmation | Require reason; start cabin cancellation and contribution reconciliation; no automatic refund or forfeiture until approved policy is implemented. |
 | Cancelled — minimum not met | Admin verifies cabin still available and adds/retains enough Coming participants | Confirmed | Explicit reinstatement event, proof/evidence note and admin actor; send confirmation and $50 requests. |
 | Cancelled — minimum not met | Cabin unavailable or reinstatement rejected | Cancelled | Terminal for this trip occurrence; rotation position remains unchanged by default. |
-| Confirmed | Trip dates pass and actual roster is recorded | Completed | Admin operation; releases trip preparation data to actual-attendance review and expense collection. |
-| Completed | Expenses/settlement closed and retention eligibility reached | Closed / history only | Cleanup job removes operational data under retention rules; high-level summary and 12-month ledger remain. |
+| Confirmed | Trip dates pass and actual roster is recorded | Completed | Admin operation; releases trip preparation data to actual-attendance review, mileage capture, and final expense collection. |
+| Completed | Admin locks expenses and odometer mileage; settlement matrix generated | Financially Finalized | Expenses and odometers locked. Peer-to-peer settlement matrix generated. Debtors can mark sent; creditors can confirm receipt. |
+| Financially Finalized | All transfer recipients confirm payment received (or admin override applied) | Financially Settled | All transfers reconciled. Total imbalance zero. Financial records locked. |
+| Financially Settled | Retention eligibility reached | Archived / history only | Cleanup job removes operational data under retention rules; high-level summary and 12-month ledger remain. Read-only. |
 
 Rules:
 - “Trip confirmed” means club participation threshold is met; it does not mean the cabin is reserved or its cancellation is confirmed.
@@ -112,7 +114,25 @@ Per member and required block:
 - Claimed → Admin overrides with reason → Admin assigned.
 - After trip closure → Operational assignment expires under retention policy.
 
+### Duty Assignment Modes
+- **Self-Selection (Default):** Available once the trip enters `rsvp_open` or `confirmed`. Members claim open duty slots up to the daily workload limit.
+- **Admin Assignment Mode (T-48h Before Trip Start):** 48 hours prior to trip start, Admin Assignment Mode unlocks to allow organizers to close remaining gaps:
+  - **Force Assign:** Assign unassigned confirmed attendees to open duties.
+  - **Reassign / Move:** Move an attendee between duties.
+  - **Remove Assignment:** Unassign a member from a duty.
+- **Driving as Responsibility:** Driving is not a special-case workload code mechanism. Driving is simply configured from the Master Responsibilities library (e.g. *Friday Departure Driver*, *Sunday Return Driver*, *Round Trip Driver*) with appropriate workload weight (e.g. 1.0 or 2.0). The existing responsibility system serves as the single mechanism for workload balancing.
+
 The database transaction locks the relevant trip/block capacity row and enforces at most the configured number of claims. Client-side availability is advisory only.
+
+## 5.1 Trip Commitments Lifecycle (Gear, Food, Supplies, Shelter, Safety)
+
+Trip Commitments replace isolated packing lists with a unified item commitment model:
+
+- **Unassigned Item** → Member clicks [Claim Item] → **Committed**.
+- **Unassigned Item** → Admin assigns directly to member → **Committed (Admin Assigned)**.
+- **Committed** → Member or Admin releases item before trip lock → **Unassigned Item**.
+- **Critical Item Warning:** Items flagged `is_critical` (e.g. *First Aid Kit*, *20lb Propane Tank*, *Emergency Lantern*) trigger prominent warnings (`⚠️ Critical Items Missing`) on the trip overview until committed.
+- **Planning Granularity:** Supports both **Item-Based Planning** (e.g. *2 Dozen Eggs*, *2 Gallons Milk*, *3 Bags Ice*) and **Grouped Planning** (e.g. *Saturday Breakfast Supplies*, *Saturday Dinner Supplies*, *Coffee Station Supplies*). The system does not force individual ingredient tracking. All commitments simply track: *Who committed to bring it?*
 
 ## 5. Floor lottery audit and reproducibility
 
@@ -149,14 +169,19 @@ Expense approval and settlement finalization are different events. Only actual a
 
 A version never mutates after finalization. A correction is an append-only accounting event with lineage. Any amount already confirmed received cannot be requested again.
 
-## 8. Payment transfer acknowledgment
+## 8. Payment transfer acknowledgment and confirmation workflow
 
-- Pending → payer marks sent with amount ≤ outstanding → Marked sent or Partially paid.
-- Marked sent → recipient/admin confirms received → Partially paid or Confirmed received.
-- Any unsettled state → participant disputes → Disputed.
-- Disputed → admin records resolution and evidence note → Resolved, or new adjustment run if amount changes.
+For each settlement transfer (e.g. `Dave K. → Sarah M. $28.00`):
+
+- **Status Progression:**
+  1. **Outstanding (🔴):** Payout instruction generated in `financially_finalized` state. Displays recipient's preferred payment method (Zelle, Venmo, PayPal, Apple Cash) and handle (e.g., `@sarah-m`).
+  2. **Marked Sent (🟡 Awaiting Confirmation):** Debtor clicks `[I Have Sent This]`. Records `payment_marked_sent_at`.
+  3. **Settled (✅ Confirmed):** Recipient clicks `[Confirm Received]`. Records `payment_confirmed_received_at`.
+  4. **Admin Override:** Administrators may override and confirm receipt on behalf of a recipient when needed to close out a trip.
+
+- Any unsettled transfer can enter **Disputed** if an incorrect amount was sent or payment failed externally.
 - Email acceptance, delivery, or opening never changes payment state.
-- Multiple partial event rows sum to no more than transfer amount; duplicate idempotency key returns the original event.
+- Once 100% of transfers in a run reach **Settled**, the trip advances from `financially_finalized` to `financially_settled`.
 
 ## 9. Notification lifecycle
 
