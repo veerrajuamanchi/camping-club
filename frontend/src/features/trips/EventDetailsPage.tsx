@@ -18,6 +18,7 @@ type TripDetails = {
   tripStatus?: "rsvp_open" | "confirmed" | "in_progress" | "completed" | "financially_finalized" | "financially_settled" | "archived" | "cancelled";
   tripMileageRateCents?: number;
   depositAmountCents?: number;
+  cabinPayerMemberId?: string | null;
   cabinReservation?: {
     id: string;
     status: string;
@@ -192,7 +193,8 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         }
         setCategoryMap(mapping);
       }
-    } catch {
+    } catch (err: any) {
+      console.error("Failed to load trip details:", err);
       setError("Could not load trip details. Please try again.");
     } finally {
       setLoading(false);
@@ -683,13 +685,20 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
 
           <div className="card">
             <h2>RSVP & Attendance</h2>
-            <div style={{ marginBottom: "1rem", background: "#f9fafb", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
-              <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
+            <div style={{ marginBottom: "1rem", background: "#f8fafc", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#334155", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
                 Deposit Obligation
               </strong>
-              <span style={{ fontSize: "0.9rem", color: "#4b5563" }}>
-                • $50 deposit per attendee due upon confirmation · <em>Payment tracking coming soon</em>
-              </span>
+              <div style={{ fontSize: "0.9rem", color: "#475569" }}>
+                • <strong>$50.00 deposit</strong> per attendee is due upon confirmation to the assigned cabin payer.
+                <button
+                  type="button"
+                  onClick={() => setTab("financials")}
+                  style={{ marginLeft: "0.5rem", background: "none", border: "none", color: "#2563eb", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit", fontWeight: 600 }}
+                >
+                  View in Financials &rarr;
+                </button>
+              </div>
             </div>
 
             <p>
@@ -987,6 +996,7 @@ function EditTripDetailsModal({
   const [campingType, setCampingType] = useState<"cabin" | "tent" | "rv" | "boat">(details.campingType ?? "cabin");
   const [eventStatus, setEventStatus] = useState<string>(details.tripStatus || details.eventStatus || "rsvp_open");
   const [bookingStatus, setBookingStatus] = useState<string>(details.cabinBookingStatus || "not_booked");
+  const [cabinPayerMemberId, setCabinPayerMemberId] = useState<string>(details.cabinPayerMemberId || details.cabinReservation?.paid_by_member_id || "");
   const [information, setInformation] = useState(details.additionalInformation ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -1015,6 +1025,7 @@ function EditTripDetailsModal({
         perCabinCapacity: perCabinCapacity ? Number(perCabinCapacity) : 6,
         selectedCampsiteId: details.selectedCampsiteId || details.campsite?.campsiteId || "",
         cabinBookingStatus: bookingStatus,
+        cabinPayerMemberId: cabinPayerMemberId || null,
         additionalInformation: information,
         title: title.trim() || null,
         eventStatus,
@@ -1101,6 +1112,24 @@ function EditTripDetailsModal({
               {cabinBookingStatuses.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
+            </select>
+          </label>
+          <label>
+            Cabin Reservation Payer
+            <select value={cabinPayerMemberId} onChange={(e) => setCabinPayerMemberId(e.target.value)}>
+              <option value="">-- No Cabin Payer Assigned --</option>
+              {details.participantEntries.map((p) => (
+                <option key={p.memberId} value={p.memberId}>
+                  {p.displayName} (Confirmed Attendee)
+                </option>
+              ))}
+              {details.allMemberEntries
+                ?.filter((m) => !details.participantEntries.some((p) => p.memberId === m.memberId))
+                .map((m) => (
+                  <option key={m.memberId} value={m.memberId}>
+                    {m.displayName}
+                  </option>
+                ))}
             </select>
           </label>
           <label>

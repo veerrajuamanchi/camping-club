@@ -549,7 +549,7 @@ export function TripFinancialsTab({
 
         <div style={{ display: "grid", gap: "1rem" }}>
           {/* Cabin Deposit Section */}
-          {data?.cabinDeposit && (
+          {data?.cabinDeposit ? (
             <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
@@ -562,6 +562,13 @@ export function TripFinancialsTab({
                   {formatMoney(data.cabinDeposit.amountCents)}
                 </span>
               </div>
+            </div>
+          ) : (
+            <div style={{ border: "1px dashed #cbd5e1", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
+              <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#475569" }}>🏡 Cabin Deposit ($50 / Attendee)</h4>
+              <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                No cabin reservation payer is assigned yet. When assigned by an administrator via Edit Event, the $50/attendee deposit will automatically populate here in the ledger and route transfers in the settlement matrix.
+              </p>
             </div>
           )}
 

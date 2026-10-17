@@ -201,6 +201,7 @@ const inputSchemas = {
     title: z.string().trim().min(1).max(120).nullable().optional(),
     eventStatus: z.enum(["tentative", "confirmed", "cancelled"]).optional(),
     campingType: z.enum(["cabin", "tent", "rv", "boat"]).optional(),
+    cabinPayerMemberId: uuid.nullable().optional(),
   }).strict(),
   admin_set_poll_status: z.object({ tripId: uuid, pollStatus: z.enum(["open", "closed"]), expectedVersion: z.number().int().positive(), reason }).strict(),
   admin_publish_rule: z.object({
@@ -577,7 +578,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
 
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
   const tripResult = await service.from("camping_trips")
-    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,trip_status,camping_type,task_quota_target,daily_workload_target,trip_mileage_rate_cents,deposit_amount_cents,deleted_at,version")
+    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,trip_status,camping_type,task_quota_target,daily_workload_target,trip_mileage_rate_cents,deposit_amount_cents,cabin_payer_member_id,deleted_at,version")
     .eq("id", tripId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -626,8 +627,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     service.from("cabin_reservations")
       .select("id,status,reservation_reference,provider_label,paid_by_member_id,reservation_amount_cents,cabin_count,per_cabin_capacity,cancellation_notes,updated_at")
       .eq("trip_id", tripId)
-      .maybeSingle()
-      .catch(() => ({ data: null, error: null })),
+      .maybeSingle(),
   ]);
   checkError(campsiteResult.error);
   checkError(bundleResult.error);
@@ -751,6 +751,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     additionalInformation: trip.additional_information,
     tripMileageRateCents: trip.trip_mileage_rate_cents ?? 50,
     depositAmountCents: trip.deposit_amount_cents ?? 5000,
+    cabinPayerMemberId: trip.cabin_payer_member_id ?? null,
     cabinReservation: cabinReservationResult?.data ?? null,
     version: trip.version,
     campsite: campsite ? {
@@ -1296,11 +1297,12 @@ Deno.serve(async (request) => {
     try {
       return json(request, 200, { ...(await getTripDetails(member, input.tripId as string)), requestId });
     } catch (error: unknown) {
+      console.error("get_trip_details failed:", error);
       const err = error as { message?: string; code?: string; status?: number } | null;
       if (err?.message === "trip not found" || err?.code === "22023" || err?.status === 404) {
         return errorResponse(request, 404, "trip_not_found", requestId);
       }
-      return errorResponse(request, 500, "trip_details_read_failed", requestId);
+      return errorResponse(request, 500, "trip_details_read_failed", requestId, err?.message);
     }
   }
   if (action === "get_trip_logistics") {
@@ -1946,13 +1948,19 @@ Deno.serve(async (request) => {
       error.message
     );
   }
-  if (action === "admin_configure_trip" && (typeof input.cabinCount !== "undefined" || typeof input.perCabinCapacity !== "undefined")) {
+  if (action === "admin_configure_trip" && (typeof input.cabinCount !== "undefined" || typeof input.perCabinCapacity !== "undefined" || typeof input.cabinPayerMemberId !== "undefined")) {
     const { error: updateError } = await service.from("camping_trips").update({
       ...(typeof input.cabinCount !== "undefined" && { cabin_count: input.cabinCount }),
       ...(typeof input.perCabinCapacity !== "undefined" && { per_cabin_capacity: input.perCabinCapacity }),
+      ...(typeof input.cabinPayerMemberId !== "undefined" && { cabin_payer_member_id: input.cabinPayerMemberId }),
     }).eq("id", input.tripId);
     if (updateError) {
       return errorResponse(request, databaseStatus(updateError.code), "operation_failed", requestId);
+    }
+    if (typeof input.cabinPayerMemberId !== "undefined") {
+      await service.from("cabin_reservations").update({
+        paid_by_member_id: input.cabinPayerMemberId,
+      }).eq("trip_id", input.tripId);
     }
   }
   try {
