@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS public.trip_commitments (
     category TEXT NOT NULL CHECK (category IN ('gear', 'food', 'supplies', 'shelter', 'safety')),
     item_name TEXT NOT NULL,
     quantity_description TEXT,
-    assigned_member_id UUID REFERENCES public.members(id) ON DELETE SET NULL,
+    assigned_member_id UUID REFERENCES public.member_profiles(member_id) ON DELETE SET NULL,
     is_critical BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_trip_commitments_critical ON public.trip_commitme
 CREATE TABLE IF NOT EXISTS public.trip_carpools (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     trip_id UUID NOT NULL REFERENCES public.camping_trips(id) ON DELETE CASCADE,
-    driver_member_id UUID NOT NULL REFERENCES public.members(id) ON DELETE CASCADE,
+    driver_member_id UUID NOT NULL REFERENCES public.member_profiles(member_id) ON DELETE CASCADE,
     vehicle_description TEXT NOT NULL,
     max_seats INTEGER NOT NULL CHECK (max_seats >= 1),
     starting_mileage NUMERIC(10, 2),
@@ -45,7 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_trip_carpools_driver ON public.trip_carpools(driv
 CREATE TABLE IF NOT EXISTS public.trip_carpool_riders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     carpool_id UUID NOT NULL REFERENCES public.trip_carpools(id) ON DELETE CASCADE,
-    rider_member_id UUID NOT NULL REFERENCES public.members(id) ON DELETE CASCADE,
+    rider_member_id UUID NOT NULL REFERENCES public.member_profiles(member_id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT trip_carpool_riders_unique UNIQUE (carpool_id, rider_member_id)
 );
@@ -354,7 +354,7 @@ DECLARE
     v_is_admin BOOLEAN;
     v_duty RECORD;
 BEGIN
-    SELECT (member_role = 'admin') INTO v_is_admin FROM public.members WHERE id = p_actor_id;
+    SELECT (member_role = 'admin') INTO v_is_admin FROM public.member_profiles WHERE member_id = p_actor_id;
     IF NOT COALESCE(v_is_admin, FALSE) THEN
         RAISE EXCEPTION 'Only administrators can perform duty overrides.' USING ERRCODE = '42501';
     END IF;

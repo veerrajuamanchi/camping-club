@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.trip_expenses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     trip_id UUID NOT NULL REFERENCES public.camping_trips(id) ON DELETE CASCADE,
     expense_type TEXT NOT NULL CHECK (expense_type IN ('cabin_deposit', 'carpool_mileage', 'shared_receipt', 'other')),
-    payer_member_id UUID NOT NULL REFERENCES public.members(id) ON DELETE RESTRICT,
+    payer_member_id UUID NOT NULL REFERENCES public.member_profiles(member_id) ON DELETE RESTRICT,
     amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
     description TEXT NOT NULL,
     incurred_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_trip_expenses_payer ON public.trip_expenses(payer
 CREATE TABLE IF NOT EXISTS public.trip_expense_allocations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     expense_id UUID NOT NULL REFERENCES public.trip_expenses(id) ON DELETE CASCADE,
-    member_id UUID NOT NULL REFERENCES public.members(id) ON DELETE RESTRICT,
+    member_id UUID NOT NULL REFERENCES public.member_profiles(member_id) ON DELETE RESTRICT,
     allocated_cents INTEGER NOT NULL CHECK (allocated_cents >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT trip_expense_allocations_unique UNIQUE (expense_id, member_id)
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS public.settlement_runs (
     total_expenses_cents INTEGER NOT NULL CHECK (total_expenses_cents >= 0),
     algorithm_used TEXT NOT NULL DEFAULT 'exact' CHECK (algorithm_used IN ('exact', 'greedy_fallback')),
     snapshot_hash TEXT NOT NULL,
-    created_by UUID REFERENCES public.members(id),
+    created_by UUID REFERENCES public.member_profiles(member_id),
     finalized_at TIMESTAMPTZ,
     settled_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_settlement_runs_trip ON public.settlement_runs(tr
 CREATE TABLE IF NOT EXISTS public.settlement_balances (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     settlement_run_id UUID NOT NULL REFERENCES public.settlement_runs(id) ON DELETE CASCADE,
-    member_id UUID NOT NULL REFERENCES public.members(id) ON DELETE RESTRICT,
+    member_id UUID NOT NULL REFERENCES public.member_profiles(member_id) ON DELETE RESTRICT,
     total_paid_cents INTEGER NOT NULL DEFAULT 0,
     total_allocated_cents INTEGER NOT NULL DEFAULT 0,
     net_balance_cents INTEGER NOT NULL,
@@ -70,14 +70,14 @@ CREATE INDEX IF NOT EXISTS idx_settlement_balances_member ON public.settlement_b
 CREATE TABLE IF NOT EXISTS public.settlement_transfers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     settlement_run_id UUID NOT NULL REFERENCES public.settlement_runs(id) ON DELETE CASCADE,
-    payer_member_id UUID NOT NULL REFERENCES public.members(id) ON DELETE RESTRICT,
-    recipient_member_id UUID NOT NULL REFERENCES public.members(id) ON DELETE RESTRICT,
+    payer_member_id UUID NOT NULL REFERENCES public.member_profiles(member_id) ON DELETE RESTRICT,
+    recipient_member_id UUID NOT NULL REFERENCES public.member_profiles(member_id) ON DELETE RESTRICT,
     amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
     status TEXT NOT NULL DEFAULT 'outstanding' CHECK (status IN ('outstanding', 'sent', 'confirmed', 'disputed')),
     marked_sent_at TIMESTAMPTZ,
     confirmed_received_at TIMESTAMPTZ,
     payment_method TEXT CHECK (payment_method IS NULL OR payment_method IN ('zelle', 'venmo', 'paypal', 'apple_cash', 'cash', 'other')),
-    admin_override_by UUID REFERENCES public.members(id),
+    admin_override_by UUID REFERENCES public.member_profiles(member_id),
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -285,7 +285,7 @@ DECLARE
     v_bal RECORD;
     v_tx RECORD;
 BEGIN
-    SELECT (member_role = 'admin') INTO v_is_admin FROM public.members WHERE id = p_actor_id;
+    SELECT (member_role = 'admin') INTO v_is_admin FROM public.member_profiles WHERE member_id = p_actor_id;
     IF NOT COALESCE(v_is_admin, FALSE) THEN
         RAISE EXCEPTION 'Only administrators can finalize settlements.' USING ERRCODE = '42501';
     END IF;
