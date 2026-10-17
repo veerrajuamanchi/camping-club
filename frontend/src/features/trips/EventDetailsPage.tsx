@@ -7,6 +7,7 @@ import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 import { DailyWorkloadProgress, dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
 import { formatCabinBookingStatus } from "./TripCalendarPage";
+import { TripLogisticsTab } from "./TripLogisticsTab";
 
 type TripDetails = {
   tripId: string;
@@ -331,6 +332,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     daysUntilTrip !== null && daysUntilTrip >= 0 && daysUntilTrip <= 30;
   const isComing = details.myRsvp?.response === "coming";
   const isNotComing = details.myRsvp?.response === "not_coming";
+  const confirmedAttendees = (details.participantEntries ?? [])
+    .filter((p) => p.response === "coming")
+    .map((p) => ({ memberId: p.memberId, displayName: p.displayName }));
   const rsvpStatusLabel = details.myWaitlistPosition
     ? "Waitlisted"
     : isComing
@@ -874,44 +878,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       )}
 
       {tab === "logistics" && (
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-            <h2 style={{ margin: 0 }}>Logistics &amp; Packing</h2>
-            {isAdmin && (
-              <button
-                type="button"
-                className="secondary-button"
-                style={{ fontSize: "0.85rem", padding: "0.3rem 0.75rem" }}
-                onClick={() => setShowEditLogistics(true)}
-              >
-                ✏️ Edit Logistics &amp; Packing
-              </button>
-            )}
-          </div>
-
-          <div style={{ marginBottom: "1.25rem" }}>
-            <h3>Trip Notes &amp; Packing Recommendations</h3>
-            {details.additionalInformation ? (
-              <p style={{ whiteSpace: "pre-wrap" }}>{details.additionalInformation}</p>
-            ) : (
-              <p style={{ color: "#6b7280" }}>No notes or packing checklist added yet.</p>
-            )}
-          </div>
-
-          {details.campsite?.reservationInstructions && (
-            <div style={{ marginBottom: "1.25rem" }}>
-              <h3>Reservation &amp; Check-In Instructions</h3>
-              <p style={{ whiteSpace: "pre-wrap" }}>{details.campsite.reservationInstructions}</p>
-            </div>
-          )}
-
-          {details.campsite?.directions && (
-            <div style={{ marginBottom: "1.25rem" }}>
-              <h3>Driving &amp; Travel Directions</h3>
-              <p style={{ whiteSpace: "pre-wrap" }}>{details.campsite.directions}</p>
-            </div>
-          )}
-        </div>
+        <TripLogisticsTab
+          tripId={details.tripId}
+          isConfirmedAttendee={isComing}
+          isAdmin={isAdmin}
+          currentMemberId={authProfileMemberId}
+          confirmedAttendees={confirmedAttendees}
+          tripNotes={details.additionalInformation}
+          reservationInstructions={details.campsite?.reservationInstructions}
+          drivingDirections={details.campsite?.directions}
+          api={api}
+          onEditLogistics={() => setShowEditLogistics(true)}
+        />
       )}
 
       {tab === "financials" && (

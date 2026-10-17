@@ -265,6 +265,19 @@ export function TripTasksAndMealsTab({
 
   const sortedDates = Object.keys(groupedByDate).sort();
 
+  // Count unfilled duties across enabled slots for T-48h override mode
+  let unfilledDutiesCount = 0;
+  for (const slot of enabledSlots) {
+    for (const duty of slot.duties ?? []) {
+      if (duty.is_active) {
+        const claimedCount = assignments.filter((a) => a.slot_duty_id === duty.id).length;
+        if (claimedCount < duty.capacity) {
+          unfilledDutiesCount += duty.capacity - claimedCount;
+        }
+      }
+    }
+  }
+
   return (
     <div className="tasks-and-meals-tab stack" style={{ gap: "1.5rem" }}>
       {/* Alert Banners */}
@@ -276,6 +289,30 @@ export function TripTasksAndMealsTab({
       {successMsg && (
         <div className="card" role="status" style={{ background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46", margin: 0 }}>
           {successMsg}
+        </div>
+      )}
+
+      {/* T-48h Duty Override Mode Banner */}
+      {isAdmin && unfilledDutiesCount > 0 && (
+        <div
+          role="status"
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            color: "#92400e",
+            padding: "0.85rem 1.25rem",
+            borderRadius: "8px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.5rem",
+          }}
+        >
+          <div>
+            <strong>⚡ T-48h Duty Override Mode:</strong> There are <strong>{unfilledDutiesCount} open duty slot(s)</strong> remaining.
+            As Administrator, you can force-assign campers below to ensure all meals and chores are covered before departure.
+          </div>
         </div>
       )}
 
