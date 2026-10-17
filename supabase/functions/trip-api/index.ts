@@ -19,6 +19,7 @@ const actionNames = [
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation", "get_trip_lifecycle",
+  "get_trip_logistics", "manage_trip_commitment", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -58,6 +59,42 @@ const inputSchemas = {
     cancellationNotes: z.string().max(2000).nullable().optional(),
   }).strict(),
   get_trip_lifecycle: z.object({ tripId: uuid }).strict(),
+  get_trip_logistics: z.object({ tripId: uuid }).strict(),
+  manage_trip_commitment: z.object({
+    tripId: uuid,
+    action: z.enum(["claim", "unclaim", "admin_create", "admin_update", "admin_delete"]),
+    commitmentId: uuid.optional(),
+    category: z.enum(["gear", "food", "supplies", "shelter", "safety"]).optional(),
+    itemName: z.string().trim().min(1).max(200).optional(),
+    quantityDescription: z.string().trim().max(200).nullable().optional(),
+    isCritical: z.boolean().optional(),
+    assignedMemberId: uuid.nullable().optional(),
+  }).strict(),
+  admin_manage_carpool: z.object({
+    tripId: uuid,
+    action: z.enum(["admin_create_carpool", "admin_update_carpool", "admin_delete_carpool"]),
+    carpoolId: uuid.optional(),
+    driverMemberId: uuid.optional(),
+    vehicleDescription: z.string().trim().min(1).max(200).optional(),
+    maxSeats: z.number().int().min(1).max(20).optional(),
+    startingMileage: z.number().nonnegative().nullable().optional(),
+    endingMileage: z.number().nonnegative().nullable().optional(),
+    departureDetails: z.string().trim().max(1000).nullable().optional(),
+    riderMemberIds: z.array(uuid).optional(),
+  }).strict(),
+  record_carpool_mileage: z.object({
+    tripId: uuid,
+    carpoolId: uuid,
+    startingMileage: z.number().nonnegative().nullable().optional(),
+    endingMileage: z.number().nonnegative().nullable().optional(),
+  }).strict(),
+  admin_override_duty: z.object({
+    tripId: uuid,
+    dutyId: uuid,
+    targetMemberId: uuid,
+    action: z.enum(["assign", "unassign"]),
+    reason: z.string().trim().max(500).optional(),
+  }).strict(),
   admin_set_daily_workload_target: z.object({ tripId: uuid, target: z.number().min(0.5).max(100).multipleOf(0.5).nullable(), expectedVersion: z.number().int().positive() }).strict(),
   get_calendar: z.object({}).strict(),
   get_constitution: z.object({ tripId: uuid.optional() }).strict(),
@@ -266,6 +303,7 @@ const adminActions = new Set<Action>([
   "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
   "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
+  "admin_manage_carpool", "admin_override_duty",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -276,6 +314,7 @@ const mutatingActions = new Set<Action>([
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
+  "manage_trip_commitment", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -291,7 +330,7 @@ function databaseStatus(code: string | undefined): number {
 }
 
 function aggregateId(action: Action, input: Record<string, unknown>, memberId: string): string {
-  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId"]) if (typeof input[key] === "string") return input[key] as string;
+  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId", "commitmentId", "carpoolId", "dutyId"]) if (typeof input[key] === "string") return input[key] as string;
   return memberId;
 }
 
@@ -727,6 +766,124 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   };
 }
 
+async function getTripLogistics(member: Member, tripId: string): Promise<Record<string, unknown>> {
+  const [tripResult, commitmentsResult, carpoolsResult] = await Promise.all([
+    service.from("camping_trips")
+      .select("id, task_quota_target, deposit_amount_cents, title, starts_on, ends_on, version")
+      .eq("id", tripId)
+      .is("deleted_at", null)
+      .single(),
+    service.from("trip_commitments")
+      .select("id, trip_id, category, item_name, quantity_description, assigned_member_id, is_critical, created_at, updated_at")
+      .eq("trip_id", tripId)
+      .order("category")
+      .order("item_name"),
+    service.from("trip_carpools")
+      .select(`
+        id, trip_id, driver_member_id, vehicle_description, max_seats,
+        starting_mileage, ending_mileage, departure_details, created_at, updated_at,
+        riders:trip_carpool_riders(id, carpool_id, rider_member_id)
+      `)
+      .eq("trip_id", tripId)
+      .order("created_at"),
+  ]);
+  checkError(tripResult.error);
+  checkError(commitmentsResult.error);
+  checkError(carpoolsResult.error);
+
+  const rawCommitments = commitmentsResult.data ?? [];
+  const rawCarpools = carpoolsResult.data ?? [];
+
+  const memberIdSet = new Set<string>();
+  for (const c of rawCommitments) {
+    if (c.assigned_member_id) memberIdSet.add(c.assigned_member_id);
+  }
+  for (const cp of rawCarpools) {
+    if (cp.driver_member_id) memberIdSet.add(cp.driver_member_id);
+    for (const r of ((cp as any).riders ?? [])) {
+      if (r.rider_member_id) memberIdSet.add(r.rider_member_id);
+    }
+  }
+
+  const { data: memberProfiles } = memberIdSet.size > 0
+    ? await service.from("member_profiles").select("member_id, display_name").in("member_id", Array.from(memberIdSet))
+    : { data: [] };
+
+  const nameMap = new Map((memberProfiles ?? []).map((m: any) => [m.member_id, m.display_name]));
+
+  const commitments = rawCommitments.map((c: any) => ({
+    id: c.id,
+    tripId: c.trip_id,
+    category: c.category,
+    itemName: c.item_name,
+    quantityDescription: c.quantity_description,
+    assignedMemberId: c.assigned_member_id,
+    assignedMemberName: c.assigned_member_id ? (nameMap.get(c.assigned_member_id) ?? "Member") : null,
+    isCritical: c.is_critical,
+    isMine: c.assigned_member_id === member.member_id,
+    createdAt: c.created_at,
+    updatedAt: c.updated_at,
+  }));
+
+  const carpools = rawCarpools.map((cp: any) => {
+    const riders = ((cp as any).riders ?? []).map((r: { id: string; rider_member_id: string }) => ({
+      id: r.id,
+      riderMemberId: r.rider_member_id,
+      displayName: nameMap.get(r.rider_member_id) ?? "Member",
+      isMe: r.rider_member_id === member.member_id,
+    }));
+    const totalMiles = (cp.ending_mileage != null && cp.starting_mileage != null)
+      ? Math.max(0, Number(cp.ending_mileage) - Number(cp.starting_mileage))
+      : null;
+
+    return {
+      id: cp.id,
+      tripId: cp.trip_id,
+      driverMemberId: cp.driver_member_id,
+      driverName: nameMap.get(cp.driver_member_id) ?? "Driver",
+      vehicleDescription: cp.vehicle_description,
+      maxSeats: cp.max_seats,
+      occupiedSeats: riders.length + 1,
+      availableSeats: Math.max(0, cp.max_seats - (riders.length + 1)),
+      startingMileage: cp.starting_mileage != null ? Number(cp.starting_mileage) : null,
+      endingMileage: cp.ending_mileage != null ? Number(cp.ending_mileage) : null,
+      totalMiles,
+      departureDetails: cp.departure_details,
+      isMyCarpool: cp.driver_member_id === member.member_id,
+      riders,
+    };
+  });
+
+  const myCarpoolDriver = carpools.find((cp: any) => cp.driverMemberId === member.member_id);
+  const myCarpoolRider = carpools.find((cp: any) => cp.riders.some((r: any) => r.riderMemberId === member.member_id));
+
+  let carpoolRole: "driver" | "rider" | "unassigned" = "unassigned";
+  let carpoolDetails: string | null = null;
+  if (myCarpoolDriver) {
+    carpoolRole = "driver";
+    carpoolDetails = `Driver (${myCarpoolDriver.vehicleDescription})`;
+  } else if (myCarpoolRider) {
+    carpoolRole = "rider";
+    carpoolDetails = `Riding with ${myCarpoolRider.driverName} (${myCarpoolRider.vehicleDescription})`;
+  }
+
+  const myCommitments = commitments.filter((c: any) => c.assignedMemberId === member.member_id);
+  const criticalMissing = commitments.filter((c: any) => c.isCritical && !c.assignedMemberId);
+
+  return {
+    tripId,
+    commitments,
+    carpools,
+    memberReadiness: {
+      carpoolRole,
+      carpoolDetails,
+      myCommitmentsCount: myCommitments.length,
+      criticalMissingCount: criticalMissing.length,
+      totalCarpoolsCount: carpools.length,
+    },
+  };
+}
+
 async function getConstitution(member: Member, tripId?: string): Promise<Record<string, unknown>> {
   const definitionQuery = service.from("rule_definitions").select("id,stable_key,category,scope,trip_id,active,created_at").order("stable_key");
   const { data: allDefinitions, error: definitionsError } = await definitionQuery;
@@ -814,6 +971,13 @@ Deno.serve(async (request) => {
         return errorResponse(request, 404, "trip_not_found", requestId);
       }
       return errorResponse(request, 500, "trip_details_read_failed", requestId);
+    }
+  }
+  if (action === "get_trip_logistics") {
+    try {
+      return json(request, 200, { ...(await getTripLogistics(member, input.tripId as string)), requestId });
+    } catch {
+      return errorResponse(request, 500, "trip_logistics_read_failed", requestId);
     }
   }
   if (action === "admin_list_master_responsibilities") {
@@ -1035,6 +1199,61 @@ Deno.serve(async (request) => {
       rpcName = "phase3_get_trip_lifecycle";
       rpcArgs = {
         p_trip_id: input.tripId,
+      };
+      break;
+    case "manage_trip_commitment":
+      rpcName = "phase4_manage_commitment";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_action: input.action,
+        p_commitment_id: input.commitmentId ?? null,
+        p_category: input.category ?? null,
+        p_item_name: input.itemName ?? null,
+        p_quantity: input.quantityDescription ?? null,
+        p_is_critical: input.isCritical ?? false,
+        p_assigned_member_id: input.assignedMemberId ?? null,
+        p_actor_id: member.member_id,
+        p_is_admin: member.member_role === "admin",
+      };
+      break;
+    case "admin_manage_carpool":
+      rpcName = "phase4_manage_carpool";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_action: input.action,
+        p_carpool_id: input.carpoolId ?? null,
+        p_driver_member_id: input.driverMemberId ?? null,
+        p_vehicle_description: input.vehicleDescription ?? null,
+        p_max_seats: input.maxSeats ?? 4,
+        p_starting_mileage: input.startingMileage ?? null,
+        p_ending_mileage: input.endingMileage ?? null,
+        p_departure_details: input.departureDetails ?? null,
+        p_rider_member_ids: input.riderMemberIds ?? [],
+        p_actor_id: member.member_id,
+        p_is_admin: member.member_role === "admin",
+      };
+      break;
+    case "record_carpool_mileage":
+      rpcName = "phase4_manage_carpool";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_action: "record_mileage",
+        p_carpool_id: input.carpoolId,
+        p_starting_mileage: input.startingMileage ?? null,
+        p_ending_mileage: input.endingMileage ?? null,
+        p_actor_id: member.member_id,
+        p_is_admin: member.member_role === "admin",
+      };
+      break;
+    case "admin_override_duty":
+      rpcName = "phase4_admin_override_duty";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_duty_id: input.dutyId,
+        p_target_member_id: input.targetMemberId,
+        p_action: input.action,
+        p_actor_id: member.member_id,
+        p_reason: input.reason ?? "Administrator duty override",
       };
       break;
     case "admin_configure_club":

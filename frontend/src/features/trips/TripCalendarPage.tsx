@@ -542,6 +542,55 @@ function EventCard({
         </p>
       )}
 
+      {isComing && (
+        <div
+          className="trip-readiness-scorecard"
+          style={{
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: "8px",
+            padding: "0.75rem 1rem",
+            margin: "0.75rem 0",
+            fontSize: "0.84rem",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+            <span style={{ fontWeight: 600, color: "#1e293b" }}>🎯 Trip Readiness Scorecard</span>
+            <span style={{ fontSize: "0.78rem", color: "#64748b" }}>5 Core Logistics Checkpoints</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.4rem" }}>
+            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+              <span style={{ color: "#166534", fontWeight: 600 }}>✓ Going</span>
+              <div style={{ fontSize: "0.74rem", color: "#64748b" }}>RSVP Confirmed</div>
+            </div>
+            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+              <span style={{ color: "#0369a1", fontWeight: 600 }}>💵 $50 Deposit</span>
+              <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Cabin Contribution</div>
+            </div>
+            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+              <Link to={`/trips/${trip.tripId}?tab=tasks`} style={{ textDecoration: "none", color: "inherit" }}>
+                <span style={{ color: (trip.myDutyCount ?? 0) >= (trip.taskQuotaTarget ?? 2) ? "#166534" : "#b45309", fontWeight: 600 }}>
+                  {(trip.myDutyCount ?? 0) >= (trip.taskQuotaTarget ?? 2) ? "✓ Duties Set" : "⚠️ Duties Pending"}
+                </span>
+                <div style={{ fontSize: "0.74rem", color: "#64748b" }}>{trip.myDutyCount ?? 0} of {trip.taskQuotaTarget ?? 2} chosen</div>
+              </Link>
+            </div>
+            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+              <Link to={`/trips/${trip.tripId}?tab=logistics`} style={{ textDecoration: "none", color: "inherit" }}>
+                <span style={{ color: "#0f766e", fontWeight: 600 }}>🚗 Carpool</span>
+                <div style={{ fontSize: "0.74rem", color: "#64748b" }}>View Driver &amp; Pool</div>
+              </Link>
+            </div>
+            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+              <Link to={`/trips/${trip.tripId}?tab=logistics`} style={{ textDecoration: "none", color: "inherit" }}>
+                <span style={{ color: "#7c3aed", fontWeight: 600 }}>🎒 Gear &amp; Food</span>
+                <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Claim Items</div>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="event-card-footer">
         <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
           <span style={{ fontSize: "0.82rem", color: "#6b7280" }}>RSVP:</span>
