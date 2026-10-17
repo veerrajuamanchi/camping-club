@@ -18,6 +18,7 @@ const actionNames = [
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
+  "admin_transition_trip_lifecycle", "admin_update_cabin_reservation", "get_trip_lifecycle",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -33,6 +34,30 @@ const optionalUrl = z.string().trim()
   .default(null);
 
 const inputSchemas = {
+  admin_transition_trip_lifecycle: z.object({
+    tripId: uuid,
+    toStatus: z.enum([
+      "rsvp_open", "confirmed", "in_progress", "completed",
+      "financially_finalized", "financially_settled", "archived", "cancelled"
+    ]),
+    reason: reason.optional(),
+    expectedVersion: z.number().int().positive().optional(),
+  }).strict(),
+  admin_update_cabin_reservation: z.object({
+    tripId: uuid,
+    status: z.enum([
+      "not_booked", "booked", "pending", "sites_available",
+      "no_vacancy", "cancellation_requested", "cancellation_confirmed", "unresolved"
+    ]),
+    reservationReference: z.string().trim().max(100).nullable().optional(),
+    providerLabel: z.string().trim().max(100).nullable().optional(),
+    paidByMemberId: uuid.nullable().optional(),
+    reservationAmountCents: z.number().int().nonnegative().optional(),
+    cabinCount: z.number().int().positive().optional(),
+    perCabinCapacity: z.number().int().positive().optional(),
+    cancellationNotes: z.string().max(2000).nullable().optional(),
+  }).strict(),
+  get_trip_lifecycle: z.object({ tripId: uuid }).strict(),
   admin_set_daily_workload_target: z.object({ tripId: uuid, target: z.number().min(0.5).max(100).multipleOf(0.5).nullable(), expectedVersion: z.number().int().positive() }).strict(),
   get_calendar: z.object({}).strict(),
   get_constitution: z.object({ tripId: uuid.optional() }).strict(),
@@ -240,6 +265,7 @@ const adminActions = new Set<Action>([
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
   "admin_delete_campsite", "admin_set_daily_workload_target",
+  "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -249,6 +275,7 @@ const mutatingActions = new Set<Action>([
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
+  "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -481,7 +508,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
 
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
   const tripResult = await service.from("camping_trips")
-    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,camping_type,task_quota_target,daily_workload_target,deleted_at,version")
+    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,trip_status,camping_type,task_quota_target,daily_workload_target,trip_mileage_rate_cents,deposit_amount_cents,deleted_at,version")
     .eq("id", tripId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -501,7 +528,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     checkError(refreshError);
   }
 
-  const [campsiteResult, bundleResult, rsvpResult, waitlistResult, dutiesResult] = await Promise.all([
+  const [campsiteResult, bundleResult, rsvpResult, waitlistResult, dutiesResult, cabinReservationResult] = await Promise.all([
     trip.selected_campsite_id
       ? service.from("campsites")
           .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,version")
@@ -527,6 +554,11 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       .eq("trip_id", tripId)
       .eq("member_id", member.member_id)
       .in("status", ["claimed", "assigned_by_admin"]),
+    service.from("cabin_reservations")
+      .select("id,status,reservation_reference,provider_label,paid_by_member_id,reservation_amount_cents,cabin_count,per_cabin_capacity,cancellation_notes,updated_at")
+      .eq("trip_id", tripId)
+      .maybeSingle()
+      .catch(() => ({ data: null, error: null })),
   ]);
   checkError(campsiteResult.error);
   checkError(bundleResult.error);
@@ -623,6 +655,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     monthKey: String(trip.month_key).slice(0, 7),
     title: trip.title ?? null,
     eventStatus: trip.event_status ?? "tentative",
+    tripStatus: trip.trip_status ?? trip.event_status ?? "rsvp_open",
     campingType: trip.camping_type ?? "cabin",
     taskQuotaTarget: (trip as any).task_quota_target ?? 2,
     myDutyCount: dutiesResult.count ?? 0,
@@ -647,6 +680,9 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     cabinBookingStatus: trip.cabin_booking_status,
     selectedCampsiteId: trip.selected_campsite_id,
     additionalInformation: trip.additional_information,
+    tripMileageRateCents: trip.trip_mileage_rate_cents ?? 50,
+    depositAmountCents: trip.deposit_amount_cents ?? 5000,
+    cabinReservation: cabinReservationResult?.data ?? null,
     version: trip.version,
     campsite: campsite ? {
       campsiteId: campsite.id,
@@ -969,6 +1005,37 @@ Deno.serve(async (request) => {
     case "admin_set_daily_workload_target":
       rpcName = "phase3_set_daily_workload_target";
       rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_target: input.target, p_expected_version: input.expectedVersion, p_request_id: key };
+      break;
+    case "admin_transition_trip_lifecycle":
+      rpcName = "phase3_transition_trip_lifecycle";
+      rpcArgs = {
+        p_actor_id: member.member_id,
+        p_trip_id: input.tripId,
+        p_to_status: input.toStatus,
+        p_reason: input.reason ?? null,
+        p_expected_version: input.expectedVersion ?? null,
+      };
+      break;
+    case "admin_update_cabin_reservation":
+      rpcName = "phase3_update_cabin_reservation";
+      rpcArgs = {
+        p_actor_id: member.member_id,
+        p_trip_id: input.tripId,
+        p_status: input.status,
+        p_reservation_reference: input.reservationReference ?? null,
+        p_provider_label: input.providerLabel ?? null,
+        p_paid_by_member_id: input.paidByMemberId ?? null,
+        p_amount_cents: input.reservationAmountCents ?? 0,
+        p_cabin_count: input.cabinCount ?? 1,
+        p_per_cabin_capacity: input.perCabinCapacity ?? 6,
+        p_notes: input.cancellationNotes ?? null,
+      };
+      break;
+    case "get_trip_lifecycle":
+      rpcName = "phase3_get_trip_lifecycle";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+      };
       break;
     case "admin_configure_club":
       rpcName = "phase2_configure_club";

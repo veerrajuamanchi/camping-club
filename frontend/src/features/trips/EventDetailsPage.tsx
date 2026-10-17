@@ -12,7 +12,21 @@ type TripDetails = {
   tripId: string;
   monthKey: string;
   title?: string | null;
-  eventStatus?: "tentative" | "confirmed" | "cancelled";
+  eventStatus?: "tentative" | "confirmed" | "cancelled" | "rsvp_open" | "in_progress" | "completed" | "financially_finalized" | "financially_settled" | "archived";
+  tripStatus?: "rsvp_open" | "confirmed" | "in_progress" | "completed" | "financially_finalized" | "financially_settled" | "archived" | "cancelled";
+  tripMileageRateCents?: number;
+  depositAmountCents?: number;
+  cabinReservation?: {
+    id: string;
+    status: string;
+    reservation_reference?: string | null;
+    provider_label?: string | null;
+    paid_by_member_id?: string | null;
+    reservation_amount_cents?: number;
+    cabin_count?: number;
+    per_cabin_capacity?: number;
+    cancellation_notes?: string | null;
+  } | null;
   campingType?: "cabin" | "tent" | "rv" | "boat";
   taskQuotaTarget?: number;
   myDutyCount?: number;
@@ -80,14 +94,26 @@ const campingTypes = [
 ];
 
 const eventStatuses = [
+  { value: "rsvp_open", label: "RSVP Open" },
   { value: "tentative", label: "Tentative" },
   { value: "confirmed", label: "Confirmed" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "completed", label: "Completed" },
+  { value: "financially_finalized", label: "Financially Finalized" },
+  { value: "financially_settled", label: "Financially Settled" },
+  { value: "archived", label: "Archived" },
   { value: "cancelled", label: "Cancelled" },
 ];
 
 const cabinBookingStatuses = [
+  { value: "not_booked", label: "Not Booked" },
   { value: "booked", label: "Booked" },
   { value: "pending", label: "Pending (sites available)" },
+  { value: "sites_available", label: "Sites Available" },
+  { value: "no_vacancy", label: "No Vacancy" },
+  { value: "cancellation_requested", label: "Cancellation Requested" },
+  { value: "cancellation_confirmed", label: "Cancellation Confirmed" },
+  { value: "unresolved", label: "Unresolved" },
 ];
 
 function monthName(monthKey: string): string {
@@ -326,17 +352,19 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     ? `${details.campsite.name}${details.campsite.locationDescription ? ` · ${details.campsite.locationDescription}` : ""}`
     : "TBA";
 
-  const eventStatusLabel = details.eventStatus === "confirmed"
-    ? "Confirmed"
-    : details.eventStatus === "cancelled"
-      ? "Cancelled"
-      : details.eventStatus === "tentative"
-        ? "Tentative"
-        : (isDraft
-          ? "Pending"
-          : details.pollStatus === "open"
-            ? (details.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
-            : (details.pollStatus === "closed" ? "Confirmed" : "Pending"));
+  const effectiveStatus = details.tripStatus || details.eventStatus || "rsvp_open";
+  const statusLabels: Record<string, string> = {
+    rsvp_open: "RSVP Open",
+    tentative: "Tentative",
+    confirmed: "Confirmed",
+    in_progress: "In Progress",
+    completed: "Completed",
+    financially_finalized: "Financially Finalized",
+    financially_settled: "Financially Settled",
+    archived: "Archived",
+    cancelled: "Cancelled",
+  };
+  const eventStatusLabel = statusLabels[effectiveStatus] || (isDraft ? "Pending" : "RSVP Open");
 
   const formattedDeadlinePST = details.pollDeadlineAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -354,6 +382,23 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     ? details.campingType.charAt(0).toUpperCase() + details.campingType.slice(1)
     : "Cabin";
 
+  async function handleLifecycleTransition(nextStatus: string, reasonPrompt?: string) {
+    if (!details) return;
+    setLoading(true);
+    try {
+      await api("admin_transition_trip_lifecycle", {
+        tripId: details.tripId,
+        toStatus: nextStatus,
+        reason: reasonPrompt || `Administrator advanced trip to ${nextStatus}`,
+      });
+      await refresh();
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message || "Failed to transition trip lifecycle.";
+      setError(msg);
+      setLoading(false);
+    }
+  }
+
   return (
     <section className="event-details">
       <Link to="/" className="back-link">
@@ -368,7 +413,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
             <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
               🏕️ {campingTypeLabel}
             </span>
-            <span className={`event-status-pill status-${details.eventStatus === "confirmed" ? "confirmed" : details.eventStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : details.pollStatus}`}>
+            <span className={`event-status-pill status-${effectiveStatus === "confirmed" ? "confirmed" : effectiveStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : details.pollStatus}`}>
               Event Status: {eventStatusLabel}
             </span>
             <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
@@ -411,7 +456,67 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
               <span className="status-badge-not-going">Waitlist #{details.myWaitlistPosition}</span>
             )}
             {isAdmin && (
-              <div style={{ display: "flex", gap: "0.4rem", marginLeft: "auto", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "0.4rem", marginLeft: "auto", flexWrap: "wrap", alignItems: "center" }}>
+                {(effectiveStatus === "rsvp_open" || effectiveStatus === "tentative") && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem" }}
+                    onClick={() => void handleLifecycleTransition("confirmed")}
+                  >
+                    ✓ Confirm Trip
+                  </button>
+                )}
+                {effectiveStatus === "confirmed" && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", background: "#2563eb" }}
+                    onClick={() => void handleLifecycleTransition("in_progress")}
+                  >
+                    🚀 Start Trip
+                  </button>
+                )}
+                {effectiveStatus === "in_progress" && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", background: "#059669" }}
+                    onClick={() => void handleLifecycleTransition("completed")}
+                  >
+                    🏁 Complete Trip
+                  </button>
+                )}
+                {effectiveStatus === "completed" && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", background: "#7c3aed" }}
+                    onClick={() => void handleLifecycleTransition("financially_finalized")}
+                  >
+                    🔒 Finalize Finances
+                  </button>
+                )}
+                {effectiveStatus === "financially_finalized" && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", background: "#16a34a" }}
+                    onClick={() => void handleLifecycleTransition("financially_settled")}
+                  >
+                    ✅ Settle Balances
+                  </button>
+                )}
+                {effectiveStatus === "financially_settled" && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem" }}
+                    onClick={() => void handleLifecycleTransition("archived")}
+                  >
+                    📦 Archive Trip
+                  </button>
+                )}
                 <button
                   type="button"
                   className="secondary-button"
@@ -898,8 +1003,8 @@ function EditTripDetailsModal({
   const [cabinCount, setCabinCount] = useState(details.cabinCount?.toString() ?? "");
   const [perCabinCapacity, setPerCabinCapacity] = useState(details.perCabinCapacity?.toString() ?? "6");
   const [campingType, setCampingType] = useState<"cabin" | "tent" | "rv" | "boat">(details.campingType ?? "cabin");
-  const [eventStatus, setEventStatus] = useState<"tentative" | "confirmed" | "cancelled">(details.eventStatus ?? "tentative");
-  const [bookingStatus, setBookingStatus] = useState<"booked" | "pending">(details.cabinBookingStatus === "booked" ? "booked" : "pending");
+  const [eventStatus, setEventStatus] = useState<string>(details.tripStatus || details.eventStatus || "rsvp_open");
+  const [bookingStatus, setBookingStatus] = useState<string>(details.cabinBookingStatus || "not_booked");
   const [information, setInformation] = useState(details.additionalInformation ?? "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
