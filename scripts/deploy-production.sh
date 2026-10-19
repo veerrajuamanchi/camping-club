@@ -20,12 +20,12 @@ npx supabase db push --project-ref "${PROJECT_REF}"
 
 echo "2. Deploying Edge Functions..."
 echo "  Deploying trip-api..."
-npx supabase functions deploy trip-api --project-ref "${PROJECT_REF}"
+npx supabase functions deploy trip-api --project-ref "${PROJECT_REF}" --import-map supabase/functions/deno.json
 
 echo "  Deploying member-api..."
-npx supabase functions deploy member-api --project-ref "${PROJECT_REF}"
+npx supabase functions deploy member-api --project-ref "${PROJECT_REF}" --import-map supabase/functions/deno.json
 
 echo "  Deploying auth-api..."
-npx supabase functions deploy auth-api --project-ref "${PROJECT_REF}"
+npx supabase functions deploy auth-api --project-ref "${PROJECT_REF}" --import-map supabase/functions/deno.json
 
 echo "=== Production Deployment Complete ==="
