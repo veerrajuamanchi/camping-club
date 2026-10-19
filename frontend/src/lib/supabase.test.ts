@@ -262,5 +262,26 @@ describe("invokeTripApi", () => {
       headers: { "Idempotency-Key": "config-key" },
     });
   });
+
+  it("attaches Idempotency-Key header for Phase 4 & 5 commitment, logistics, and expense actions", async () => {
+    if (!supabase) throw new Error("Supabase client expected to be initialized");
+    const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions), "invoke").mockResolvedValue({
+      data: { data: { success: true } },
+      error: null,
+      response: new Response(JSON.stringify({ data: { success: true } }), { status: 200 }),
+    });
+
+    await invokeTripApi("manage_trip_commitment", { tripId: "11111111-1111-4111-8111-111111111111", action: "admin_create" }, "commit-key");
+    expect(invokeSpy).toHaveBeenLastCalledWith("trip-api", {
+      body: { action: "manage_trip_commitment", input: { tripId: "11111111-1111-4111-8111-111111111111", action: "admin_create" } },
+      headers: { "Idempotency-Key": "commit-key" },
+    });
+
+    await invokeTripApi("admin_manage_trip_expense", { tripId: "11111111-1111-4111-8111-111111111111", action: "create" }, "expense-key");
+    expect(invokeSpy).toHaveBeenLastCalledWith("trip-api", {
+      body: { action: "admin_manage_trip_expense", input: { tripId: "11111111-1111-4111-8111-111111111111", action: "create" } },
+      headers: { "Idempotency-Key": "expense-key" },
+    });
+  });
 });
 

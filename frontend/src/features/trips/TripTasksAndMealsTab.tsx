@@ -444,204 +444,234 @@ export function TripTasksAndMealsTab({
         </div>
       ) : (
         sortedDates.map((dateStr) => {
-          const slotsForDate = groupedByDate[dateStr];
+          const slotsForDate = groupedByDate[dateStr] ?? [];
           const formattedDate = new Date(`${dateStr}T12:00:00Z`).toLocaleDateString("en-US", {
             weekday: "long",
             month: "short",
             day: "numeric",
           });
 
+          // Flatten active duties for this date, keeping slot metadata
+          const dutiesForDate = slotsForDate.flatMap((slot) =>
+            (slot.duties ?? []).filter((d) => d.is_active).map((duty) => ({
+              ...duty,
+              slotLabel: slot.label,
+              slotType: slot.slot_type,
+              timeBlock: slot.time_block,
+            }))
+          );
+
+          // Check if current volunteer has met their required chore(s) for this day
+          const dayWorkload = dailyWorkload?.days?.find((d) => d.date === dateStr);
+          const myAssignmentsOnThisDay = dutiesForDate.filter((d) =>
+            assignments.some((a) => a.slot_duty_id === d.id && a.member_id === currentMemberId)
+          );
+          const isDoneForThisDay = isConfirmedAttendee && (
+            (dailyWorkload?.target != null ? dayWorkload?.status === "target_met" : myAssignmentsOnThisDay.length >= 1)
+          );
+
           return (
             <div key={dateStr} className="date-matrix-group stack" style={{ gap: "0.75rem" }}>
-              <h3 style={{ margin: "0.5rem 0 0 0", fontSize: "1.15rem", color: "#1e293b", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.4rem" }}>
-                📅 {formattedDate}
-              </h3>
-
-              {slotsForDate.map((slot) => {
-                const activeDuties = (slot.duties ?? []).filter((d) => d.is_active);
-
-                return (
-                  <div
-                    key={slot.id}
-                    className="card time-slot-card"
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.4rem" }}>
+                <h3 style={{ margin: "0.5rem 0 0 0", fontSize: "1.15rem", color: "#1e293b" }}>
+                  📅 {formattedDate}
+                </h3>
+                {isDoneForThisDay && (
+                  <span
+                    className="badge"
                     style={{
-                      borderLeft: `4px solid ${slot.slot_type === "meal" ? "#f59e0b" : "#3b82f6"}`,
-                      padding: "1rem 1.25rem",
+                      fontSize: "0.8rem",
+                      background: "#dcfce7",
+                      color: "#15803d",
+                      border: "1px solid #86efac",
+                      fontWeight: 600,
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          <span style={{ fontSize: "1.2rem" }}>{slot.slot_type === "meal" ? "🍳" : "🧹"}</span>
-                          <strong style={{ fontSize: "1.05rem", color: "#0f172a" }}>{slot.label}</strong>
-                          <span
-                            className="badge"
-                            style={{
-                              fontSize: "0.75rem",
-                              textTransform: "uppercase",
-                              background: slot.slot_type === "meal" ? "#fef3c7" : "#e0e7ff",
-                              color: slot.slot_type === "meal" ? "#92400e" : "#3730a3",
-                            }}
-                          >
-                            {slot.slot_type}
-                          </span>
+                    ✓ Daily chores selected
+                  </span>
+                )}
+              </div>
+
+              {dutiesForDate.length === 0 ? (
+                <div className="card" style={{ padding: "1.25rem", color: "#64748b", fontStyle: "italic" }}>
+                  <p style={{ margin: 0 }}>No meal or chore slots scheduled for this day.</p>
+                </div>
+              ) : (
+                <div className="duties-list" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {dutiesForDate.map((duty) => {
+                    const dutyAssignments = assignments.filter((a) => a.slot_duty_id === duty.id);
+                    const spotsTaken = dutyAssignments.length;
+                    const spotsAvailable = Math.max(0, duty.capacity - spotsTaken);
+                    const isFull = spotsAvailable === 0;
+
+                    const myAssignment = dutyAssignments.find((a) => a.member_id === currentMemberId);
+                    const iHaveClaimed = Boolean(myAssignment);
+                    const isGreyedOut = isDoneForThisDay && !iHaveClaimed;
+
+                    return (
+                      <div
+                        key={duty.id}
+                        className="duty-item-row"
+                        style={{
+                          background: iHaveClaimed ? "#f0fdf4" : isGreyedOut ? "#f8fafc" : "#ffffff",
+                          border: `1px solid ${iHaveClaimed ? "#86efac" : "#e2e8f0"}`,
+                          borderRadius: "8px",
+                          padding: "0.75rem 1rem",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "0.75rem",
+                          opacity: isGreyedOut ? 0.6 : 1,
+                        }}
+                      >
+                        <div style={{ flex: "1 1 250px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: "0.95rem", color: "#1e293b" }}>
+                              {duty.responsibility?.title ?? "Responsibility"}
+                            </strong>
+                            <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                              ({duty.workload_weight}x weight)
+                            </span>
+                            {duty.slotLabel && (
+                              <span
+                                className="badge"
+                                style={{
+                                  fontSize: "0.75rem",
+                                  background: duty.slotType === "meal" ? "#fef3c7" : "#e0e7ff",
+                                  color: duty.slotType === "meal" ? "#92400e" : "#3730a3",
+                                }}
+                              >
+                                {duty.slotLabel}
+                              </span>
+                            )}
+                          </div>
+                          {duty.responsibility?.description && (
+                            <p style={{ margin: "0.2rem 0 0 0", fontSize: "0.825rem", color: "#475569" }}>
+                              {duty.responsibility.description}
+                            </p>
+                          )}
+
+                          {/* Volunteers List */}
+                          <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}>
+                            <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 500 }}>Volunteers:</span>
+                            {dutyAssignments.length === 0 ? (
+                              <span style={{ fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic" }}>
+                                None yet ({spotsAvailable} spots open)
+                              </span>
+                            ) : (
+                              dutyAssignments.map((a) => (
+                                <span
+                                  key={a.id}
+                                  style={{
+                                    fontSize: "0.8rem",
+                                    padding: "0.2rem 0.55rem",
+                                    background: a.member_id === currentMemberId ? "#dbeafe" : "#f1f5f9",
+                                    color: a.member_id === currentMemberId ? "#1d4ed8" : "#334155",
+                                    borderRadius: "6px",
+                                    fontWeight: a.member_id === currentMemberId ? 600 : 400,
+                                    border: a.member_id === currentMemberId ? "1px solid #93c5fd" : "1px solid #e2e8f0",
+                                  }}
+                                >
+                                  {a.member?.display_name ?? "Member"}
+                                  {a.member_id === currentMemberId && " (You)"}
+                                </span>
+                              ))
+                            )}
+                          </div>
                         </div>
-                        <span style={{ fontSize: "0.8rem", color: "#64748b" }}>Time block: {slot.time_block}</span>
-                      </div>
-                    </div>
 
-                    {/* Duties under this slot */}
-                    <div className="duties-list" style={{ marginTop: "0.85rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {activeDuties.length === 0 ? (
-                        <p style={{ margin: 0, fontSize: "0.85rem", color: "#94a3b8", fontStyle: "italic" }}>
-                          No specific duties assigned to this slot.
-                        </p>
-                      ) : (
-                        activeDuties.map((duty) => {
-                          const dutyAssignments = assignments.filter((a) => a.slot_duty_id === duty.id);
-                          const spotsTaken = dutyAssignments.length;
-                          const spotsAvailable = Math.max(0, duty.capacity - spotsTaken);
-                          const isFull = spotsAvailable === 0;
-
-                          const myAssignment = dutyAssignments.find((a) => a.member_id === currentMemberId);
-                          const iHaveClaimed = Boolean(myAssignment);
-
-                          return (
-                            <div
-                              key={duty.id}
-                              className="duty-item-row"
+                        {/* Capacity Counter & Action Buttons */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                          <div style={{ textAlign: "right" }}>
+                            <span
                               style={{
-                                background: "#f8fafc",
-                                border: "1px solid #e2e8f0",
-                                borderRadius: "8px",
-                                padding: "0.75rem 1rem",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                flexWrap: "wrap",
-                                gap: "0.75rem",
+                                fontSize: "0.85rem",
+                                fontWeight: 600,
+                                color: isFull ? "#dc2626" : "#16a34a",
+                                display: "block",
                               }}
                             >
-                              <div style={{ flex: "1 1 250px" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                                  <strong style={{ fontSize: "0.95rem", color: "#1e293b" }}>
-                                    {duty.responsibility?.title ?? "Responsibility"}
-                                  </strong>
-                                  <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                                    ({duty.workload_weight}x weight)
-                                  </span>
-                                </div>
-                                {duty.responsibility?.description && (
-                                  <p style={{ margin: "0.2rem 0 0 0", fontSize: "0.825rem", color: "#475569" }}>
-                                    {duty.responsibility.description}
-                                  </p>
-                                )}
+                              {spotsTaken} / {duty.capacity} filled
+                            </span>
+                            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                              {isFull ? "Full" : `${spotsAvailable} open`}
+                            </span>
+                          </div>
 
-                                {/* Volunteers List */}
-                                <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}>
-                                  <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 500 }}>Volunteers:</span>
-                                  {dutyAssignments.length === 0 ? (
-                                    <span style={{ fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic" }}>
-                                      None yet ({spotsAvailable} spots open)
-                                    </span>
-                                  ) : (
-                                    dutyAssignments.map((a) => (
-                                      <span
-                                        key={a.id}
-                                        style={{
-                                          fontSize: "0.8rem",
-                                          padding: "0.2rem 0.55rem",
-                                          background: a.member_id === currentMemberId ? "#dbeafe" : "#f1f5f9",
-                                          color: a.member_id === currentMemberId ? "#1d4ed8" : "#334155",
-                                          borderRadius: "6px",
-                                          fontWeight: a.member_id === currentMemberId ? 600 : 400,
-                                          border: a.member_id === currentMemberId ? "1px solid #93c5fd" : "1px solid #e2e8f0",
-                                        }}
-                                      >
-                                        {a.member?.display_name ?? "Member"}
-                                        {a.member_id === currentMemberId && " (You)"}
-                                      </span>
-                                    ))
-                                  )}
-                                </div>
-                              </div>
+                          {iHaveClaimed && myAssignment ? (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={isPending}
+                              onClick={() => handleDropDuty(myAssignment.id)}
+                              style={{
+                                fontSize: "0.85rem",
+                                padding: "0.35rem 0.75rem",
+                                color: "#b91c1c",
+                                borderColor: "#fca5a5",
+                              }}
+                            >
+                              Drop Task
+                            </button>
+                          ) : isGreyedOut ? (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled
+                              style={{
+                                fontSize: "0.85rem",
+                                padding: "0.35rem 0.75rem",
+                                opacity: 0.55,
+                                cursor: "not-allowed",
+                                background: "#f1f5f9",
+                                color: "#64748b",
+                                borderColor: "#cbd5e1",
+                              }}
+                              title="You have selected your required chores for this day. Drop your claimed chore to select another."
+                            >
+                              Done for Day
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="primary-button"
+                              disabled={isPending || isFull || !isConfirmedAttendee}
+                              onClick={() => handleClaimDuty(duty.id, false)}
+                              style={{ fontSize: "0.85rem", padding: "0.35rem 0.75rem" }}
+                              title={
+                                !isConfirmedAttendee
+                                  ? "Only confirmed Going attendees can volunteer"
+                                  : isFull
+                                  ? "This responsibility is full"
+                                  : "Volunteer for this responsibility"
+                              }
+                            >
+                              {isFull ? "Full" : "Volunteer"}
+                            </button>
+                          )}
 
-                              {/* Capacity Counter & Action Buttons */}
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                                <div style={{ textAlign: "right" }}>
-                                  <span
-                                    style={{
-                                      fontSize: "0.85rem",
-                                      fontWeight: 600,
-                                      color: isFull ? "#dc2626" : "#16a34a",
-                                      display: "block",
-                                    }}
-                                  >
-                                    {spotsTaken} / {duty.capacity} filled
-                                  </span>
-                                  <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                                    {isFull ? "Full" : `${spotsAvailable} open`}
-                                  </span>
-                                </div>
-
-                                {iHaveClaimed && myAssignment ? (
-                                  <button
-                                    type="button"
-                                    className="secondary-button"
-                                    disabled={isPending}
-                                    onClick={() => handleDropDuty(myAssignment.id)}
-                                    style={{
-                                      fontSize: "0.85rem",
-                                      padding: "0.35rem 0.75rem",
-                                      color: "#b91c1c",
-                                      borderColor: "#fca5a5",
-                                    }}
-                                  >
-                                    Drop Task
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="primary-button"
-                                    disabled={isPending || isFull || !isConfirmedAttendee}
-                                    onClick={() => handleClaimDuty(duty.id, false)}
-                                    style={{ fontSize: "0.85rem", padding: "0.35rem 0.75rem" }}
-                                    title={
-                                      !isConfirmedAttendee
-                                        ? "Only confirmed Going attendees can volunteer"
-                                        : isFull
-                                        ? "This responsibility is full"
-                                        : "Volunteer for this responsibility"
-                                    }
-                                  >
-                                    {isFull ? "Full" : "Volunteer"}
-                                  </button>
-                                )}
-
-                                {isAdmin && (
-                                  <button
-                                    type="button"
-                                    className="secondary-button"
-                                    disabled={isPending || isFull}
-                                    onClick={() => {
-                                      setAssigningDuty(duty);
-                                      setSelectedMemberToAssign("");
-                                    }}
-                                    style={{ fontSize: "0.8rem", padding: "0.35rem 0.6rem" }}
-                                    title="Assign a confirmed camper to this duty"
-                                  >
-                                    Assign…
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              disabled={isPending || isFull}
+                              onClick={() => {
+                                setAssigningDuty(duty);
+                                setSelectedMemberToAssign("");
+                              }}
+                              style={{ fontSize: "0.8rem", padding: "0.35rem 0.6rem" }}
+                              title="Assign a confirmed camper to this duty"
+                            >
+                              Assign…
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })

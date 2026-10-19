@@ -277,6 +277,65 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     });
   });
 
+  it("allows selecting specific participants to document and split the expense", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") {
+        return Promise.resolve(mockDraftFinancials);
+      }
+      if (action === "admin_manage_trip_expense") {
+        return Promise.resolve({ success: true, expense_id: "exp-3" });
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
+    await user.click(addBtn);
+
+    await user.type(screen.getByPlaceholderText(/e\.g\. S'mores, firewood, groceries/i), "Steak for Dave and Sarah");
+    await user.type(screen.getByPlaceholderText("25.00"), "40.00");
+
+    // Deselect Alice Admin
+    const aliceCheckbox = screen.getByLabelText(/Alice Admin/i);
+    expect(aliceCheckbox).toBeChecked();
+    await user.click(aliceCheckbox);
+    expect(aliceCheckbox).not.toBeChecked();
+
+    const form = screen.getByText(/\+ Record Shared Expense/i).closest("div")?.querySelector("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form!);
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        "admin_manage_trip_expense",
+        expect.objectContaining({
+          action: "create",
+          amountCents: 4000,
+          description: "Steak for Dave and Sarah",
+          allocations: [
+            { memberId: "member-1", allocatedCents: 2000 },
+            { memberId: "member-2", allocatedCents: 2000 },
+          ],
+        })
+      );
+    });
+  });
+
   it("allows admin to lock and finalize settlement", async () => {
     const user = userEvent.setup();
     const mockApi = vi.fn().mockImplementation((action: string) => {

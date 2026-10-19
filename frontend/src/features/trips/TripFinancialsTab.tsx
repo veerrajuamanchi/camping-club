@@ -128,6 +128,17 @@ export function TripFinancialsTab({
   const [amountStr, setAmountStr] = useState("");
   const [incurredDate, setIncurredDate] = useState(new Date().toISOString().slice(0, 10));
   const [receiptUrl, setReceiptUrl] = useState("");
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
+
+  const openAddExpenseModal = () => {
+    setDesc("");
+    setPayerId(currentMemberId ?? (confirmedAttendees[0]?.memberId || ""));
+    setAmountStr("");
+    setReceiptUrl("");
+    setIncurredDate(new Date().toISOString().slice(0, 10));
+    setSelectedParticipantIds(confirmedAttendees.map((a) => a.memberId));
+    setShowAddExpenseModal(true);
+  };
 
   // Mark Sent Modal
   const [showMarkSentModal, setShowMarkSentModal] = useState(false);
@@ -164,16 +175,20 @@ export function TripFinancialsTab({
     }
     const amountCents = Math.round(dollars * 100);
 
-    // Split equally among confirmed attendees
-    const n = confirmedAttendees.length;
+    // Split equally among selected participants (or all confirmed if none explicitly chosen)
+    const participantsToSplit = selectedParticipantIds.length > 0
+      ? selectedParticipantIds
+      : confirmedAttendees.map((a) => a.memberId);
+
+    const n = participantsToSplit.length;
     if (n === 0) {
-      setErrorMsg("Cannot create expense: No confirmed attendees found.");
+      setErrorMsg("Please select at least one participant to split this expense.");
       return;
     }
     const base = Math.floor(amountCents / n);
     const rem = amountCents % n;
-    const allocations = confirmedAttendees.map((att, idx) => ({
-      memberId: att.memberId,
+    const allocations = participantsToSplit.map((memberId, idx) => ({
+      memberId,
       allocatedCents: idx < rem ? base + 1 : base,
     }));
 
@@ -539,7 +554,7 @@ export function TripFinancialsTab({
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => setShowAddExpenseModal(true)}
+              onClick={openAddExpenseModal}
               style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", padding: "0.4rem 0.8rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}
             >
               + Add Shared Expense
@@ -731,9 +746,84 @@ export function TripFinancialsTab({
                 />
               </label>
 
-              <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b" }}>
-                This expense will be split equally among all {confirmedAttendees.length} confirmed campers.
-              </p>
+              <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>
+                    Split Between Participants:
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "4px" }}
+                    onClick={() => {
+                      if (selectedParticipantIds.length === confirmedAttendees.length) {
+                        setSelectedParticipantIds([]);
+                      } else {
+                        setSelectedParticipantIds(confirmedAttendees.map((a) => a.memberId));
+                      }
+                    }}
+                  >
+                    {selectedParticipantIds.length === confirmedAttendees.length ? "Deselect All" : "Select All"}
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    maxHeight: "160px",
+                    overflowY: "auto",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "6px",
+                    padding: "0.5rem",
+                    display: "grid",
+                    gap: "0.4rem",
+                    background: "#f8fafc",
+                  }}
+                >
+                  {confirmedAttendees.map((att) => {
+                    const isChecked = selectedParticipantIds.includes(att.memberId);
+                    return (
+                      <label
+                        key={att.memberId}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          fontSize: "0.85rem",
+                          cursor: "pointer",
+                          color: "#334155",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedParticipantIds((prev) => [...prev, att.memberId]);
+                            } else {
+                              setSelectedParticipantIds((prev) => prev.filter((id) => id !== att.memberId));
+                            }
+                          }}
+                        />
+                        <span>
+                          {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {selectedParticipantIds.length > 0 && parseFloat(amountStr) > 0 ? (
+                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: "#0369a1" }}>
+                    Splitting equally among {selectedParticipantIds.length} participant{selectedParticipantIds.length > 1 ? "s" : ""}: ~${(parseFloat(amountStr) / selectedParticipantIds.length).toFixed(2)} each.
+                  </p>
+                ) : (
+                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: selectedParticipantIds.length === 0 ? "#dc2626" : "#64748b" }}>
+                    {selectedParticipantIds.length === 0
+                      ? "⚠️ Please select at least one participant."
+                      : `Selected ${selectedParticipantIds.length} participant(s).`}
+                  </p>
+                )}
+              </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
                 <button type="button" onClick={() => setShowAddExpenseModal(false)}>

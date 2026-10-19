@@ -333,7 +333,7 @@ const adminActions = new Set<Action>([
   "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
   "admin_manage_carpool", "admin_override_duty",
-  "admin_manage_trip_expense", "admin_finalize_settlement",
+  "admin_finalize_settlement",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -1892,7 +1892,10 @@ Deno.serve(async (request) => {
         p_incurred_date: input.incurredDate ?? null,
         p_receipt_url: input.receiptUrl ?? null,
         p_source_reference_id: null,
-        p_allocations: input.allocations ?? [],
+        p_allocations: (input.allocations ?? []).map((a: any) => ({
+          member_id: a.memberId ?? a.member_id,
+          allocated_cents: a.allocatedCents ?? a.allocated_cents,
+        })),
         p_actor_id: member.member_id,
         p_is_admin: member.member_role === "admin",
       };

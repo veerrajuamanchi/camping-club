@@ -107,7 +107,7 @@ describe("TripTasksAndMealsTab", () => {
     expect(await screen.findByText("No meal or chore slots scheduled yet.")).toBeInTheDocument();
     matrix = mockTaskMatrixData;
     rerender(<TripTasksAndMealsTab {...props} refreshVersion={2} />);
-    expect(await screen.findByText("Friday Dinner")).toBeInTheDocument();
+    expect((await screen.findAllByText("Friday Dinner"))[0]).toBeInTheDocument();
   });
 
   it("ignores an older matrix response after the admin starts editing", async () => {
@@ -162,7 +162,7 @@ describe("TripTasksAndMealsTab", () => {
 
     expect(screen.getByText(/1 of 2 responsibilities selected \(Target reached\)/i)).toBeInTheDocument();
     expect(screen.getByText("+1x Credit")).toBeInTheDocument();
-    expect(screen.getByText("Friday Dinner")).toBeInTheDocument();
+    expect(screen.getAllByText("Friday Dinner").length).toBeGreaterThan(0);
     expect(screen.getByText("Main Dish Cook")).toBeInTheDocument();
     expect(screen.getByText("Kitchen Cleanup")).toBeInTheDocument();
     // Kitchen cleanup is full (capacity 1, 1 assigned)
@@ -408,5 +408,50 @@ describe("TripTasksAndMealsTab", () => {
 
     const volunteerBtn = screen.getByRole("button", { name: /^Volunteer$/i });
     expect(volunteerBtn).toBeDisabled();
+  });
+
+  it("greys out remaining open duties for the day once the member selects a chore for that day", async () => {
+    const dataWithMyClaimOnDate = {
+      ...mockTaskMatrixData,
+      activeAssignments: [
+        {
+          id: "assign-my-claim",
+          trip_id: "trip-1",
+          slot_duty_id: "duty-1",
+          member_id: "member-1",
+          status: "claimed" as const,
+          claimed_at: "2026-10-10T01:00:00Z",
+          member: {
+            member_id: "member-1",
+            display_name: "Alice (You)",
+          },
+        },
+      ],
+    };
+
+    const api = vi.fn().mockResolvedValue(dataWithMyClaimOnDate);
+
+    render(
+      <TripTasksAndMealsTab
+        tripId="trip-1"
+        isConfirmedAttendee={true}
+        isAdmin={false}
+        currentMemberId="member-1"
+        api={api}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Main Dish Cook")).toBeInTheDocument();
+    });
+
+    // The claimed duty has Drop Task
+    expect(screen.getByRole("button", { name: /Drop Task/i })).toBeInTheDocument();
+
+    // The other duty on that day has "Done for Day" disabled button
+    expect(screen.getByRole("button", { name: /Done for Day/i })).toBeDisabled();
+
+    // Daily chores selected badge is displayed
+    expect(screen.getByText("✓ Daily chores selected")).toBeInTheDocument();
   });
 });
