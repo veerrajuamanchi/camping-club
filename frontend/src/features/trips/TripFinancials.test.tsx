@@ -438,4 +438,37 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
       );
     });
   });
+
+  it("displays participant names next to checkboxes even when confirmedAttendees has empty display names", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") {
+        return Promise.resolve(mockDraftFinancials);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "" },
+          { memberId: "member-1", displayName: "" },
+          { memberId: "member-2", displayName: "" },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
+    await user.click(addBtn);
+
+    // Verify all names are recovered from balances and visible next to checkboxes
+    expect(screen.getByLabelText(/Alice Admin/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Dave K\./i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Sarah M\./i)).toBeInTheDocument();
+  });
 });

@@ -121,10 +121,22 @@ export function TripFinancialsTab({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
-  // Add Expense Modal
+  // Candidate attendees list merged from confirmedAttendees prop and fetched balances
+  const attendeesList = (
+    confirmedAttendees.length > 0
+      ? confirmedAttendees
+      : (data?.balances ?? []).map((b) => ({ memberId: b.memberId, displayName: b.displayName }))
+  ).map((att) => ({
+    memberId: att.memberId,
+    displayName:
+      att.displayName?.trim() ||
+      data?.balances?.find((b) => b.memberId === att.memberId)?.displayName?.trim() ||
+      "Camper",
+  }));
+
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [desc, setDesc] = useState("");
-  const [payerId, setPayerId] = useState(currentMemberId ?? (confirmedAttendees[0]?.memberId || ""));
+  const [payerId, setPayerId] = useState(currentMemberId ?? (attendeesList[0]?.memberId || ""));
   const [amountStr, setAmountStr] = useState("");
   const [incurredDate, setIncurredDate] = useState(new Date().toISOString().slice(0, 10));
   const [receiptUrl, setReceiptUrl] = useState("");
@@ -132,11 +144,11 @@ export function TripFinancialsTab({
 
   const openAddExpenseModal = () => {
     setDesc("");
-    setPayerId(currentMemberId ?? (confirmedAttendees[0]?.memberId || ""));
+    setPayerId(currentMemberId ?? (attendeesList[0]?.memberId || ""));
     setAmountStr("");
     setReceiptUrl("");
     setIncurredDate(new Date().toISOString().slice(0, 10));
-    setSelectedParticipantIds(confirmedAttendees.map((a) => a.memberId));
+    setSelectedParticipantIds(attendeesList.map((a) => a.memberId));
     setShowAddExpenseModal(true);
   };
 
@@ -175,10 +187,10 @@ export function TripFinancialsTab({
     }
     const amountCents = Math.round(dollars * 100);
 
-    // Split equally among selected participants (or all confirmed if none explicitly chosen)
+    // Split equally among selected participants (or all attendees if none explicitly chosen)
     const participantsToSplit = selectedParticipantIds.length > 0
       ? selectedParticipantIds
-      : confirmedAttendees.map((a) => a.memberId);
+      : attendeesList.map((a) => a.memberId);
 
     const n = participantsToSplit.length;
     if (n === 0) {
@@ -704,7 +716,7 @@ export function TripFinancialsTab({
               <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
                 <span>Who Paid?</span>
                 <select value={payerId} onChange={(e) => setPayerId(e.target.value)}>
-                  {confirmedAttendees.map((att) => (
+                  {attendeesList.map((att) => (
                     <option key={att.memberId} value={att.memberId}>
                       {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
                     </option>
@@ -754,32 +766,33 @@ export function TripFinancialsTab({
                   <button
                     type="button"
                     className="btn-secondary"
-                    style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "4px" }}
+                    style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
                     onClick={() => {
-                      if (selectedParticipantIds.length === confirmedAttendees.length) {
+                      if (selectedParticipantIds.length === attendeesList.length) {
                         setSelectedParticipantIds([]);
                       } else {
-                        setSelectedParticipantIds(confirmedAttendees.map((a) => a.memberId));
+                        setSelectedParticipantIds(attendeesList.map((a) => a.memberId));
                       }
                     }}
                   >
-                    {selectedParticipantIds.length === confirmedAttendees.length ? "Deselect All" : "Select All"}
+                    {selectedParticipantIds.length === attendeesList.length ? "Deselect All" : "Select All"}
                   </button>
                 </div>
 
                 <div
                   style={{
-                    maxHeight: "160px",
+                    maxHeight: "180px",
                     overflowY: "auto",
                     border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
+                    borderRadius: "8px",
                     padding: "0.5rem",
                     display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
                     gap: "0.4rem",
                     background: "#f8fafc",
                   }}
                 >
-                  {confirmedAttendees.map((att) => {
+                  {attendeesList.map((att) => {
                     const isChecked = selectedParticipantIds.includes(att.memberId);
                     return (
                       <label
@@ -787,15 +800,26 @@ export function TripFinancialsTab({
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: "0.5rem",
-                          fontSize: "0.85rem",
+                          gap: "0.6rem",
+                          fontSize: "0.9rem",
                           cursor: "pointer",
-                          color: "#334155",
+                          color: "#1e293b",
+                          padding: "0.4rem 0.5rem",
+                          borderRadius: "6px",
+                          background: isChecked ? "#f0fdf4" : "transparent",
+                          minHeight: "40px",
                         }}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
+                          style={{
+                            width: "20px",
+                            height: "20px",
+                            flexShrink: 0,
+                            margin: 0,
+                            cursor: "pointer",
+                          }}
                           onChange={(e) => {
                             if (e.target.checked) {
                               setSelectedParticipantIds((prev) => [...prev, att.memberId]);
@@ -804,7 +828,7 @@ export function TripFinancialsTab({
                             }
                           }}
                         />
-                        <span>
+                        <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word", fontWeight: isChecked ? 600 : 400 }}>
                           {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
                         </span>
                       </label>

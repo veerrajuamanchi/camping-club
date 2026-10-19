@@ -5,7 +5,7 @@ import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
 import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
-import { DailyWorkloadProgress, dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
+import { dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
 import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
@@ -337,7 +337,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const isNotComing = details.myRsvp?.response === "not_coming";
   const confirmedAttendees = (details.participantEntries ?? [])
     .filter((p) => p.response === "coming")
-    .map((p) => ({ memberId: p.memberId, displayName: p.displayName }));
+    .map((p) => {
+      const fallbackName = details.allMemberEntries?.find((m) => m.memberId === p.memberId)?.displayName;
+      return {
+        memberId: p.memberId,
+        displayName: p.displayName?.trim() || fallbackName || "Camper",
+      };
+    });
   const rsvpStatusLabel = details.myWaitlistPosition
     ? "Waitlisted"
     : isComing
@@ -706,8 +712,23 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
             </p>
 
             {isComing && (
-              details.myDailyWorkload?.target != null ? <DailyWorkloadProgress progress={details.myDailyWorkload} /> :
-              (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2) ? (
+              details.myDailyWorkload?.target != null ? (
+                details.myDailyWorkload.satisfied ? (
+                  <div style={{ margin: "0.75rem 0", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.88rem", color: "#166534" }}>
+                    ✓ <strong>Daily Chores Selected:</strong> You have selected your required chores for each event day.{" "}
+                    <button type="button" onClick={() => setTab("tasks")} style={{ background: "none", border: "none", color: "#15803d", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit", fontWeight: 600 }}>
+                      View or change your chores in Tasks &amp; Meals &rarr;
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ margin: "0.75rem 0", background: "#fef3c7", border: "1px solid #fde68a", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.88rem", color: "#92400e" }}>
+                    ⚠️ <strong>Action Needed:</strong> Please select chores worth {details.myDailyWorkload.target}x for each day.{" "}
+                    <button type="button" onClick={() => setTab("tasks")} style={{ background: "none", border: "none", color: "#b45309", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit", fontWeight: 700 }}>
+                      Choose your daily chores now &rarr;
+                    </button>
+                  </div>
+                )
+              ) : (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2) ? (
                 <div style={{ margin: "0.75rem 0", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.88rem", color: "#166534" }}>
                   ✓ <strong>Duties Quota Complete:</strong> You have selected {details.myDutyCount} of {details.taskQuotaTarget ?? 2} camping duties.{" "}
                   <button type="button" onClick={() => setTab("tasks")} style={{ background: "none", border: "none", color: "#15803d", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit", fontWeight: 600 }}>

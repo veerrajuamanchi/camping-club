@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useTransition } from "react";
-import { DailyWorkloadProgress, type DailyWorkload } from "./DailyWorkloadProgress";
+import type { DailyWorkload } from "./DailyWorkloadProgress";
 import type { TripApiType } from "./EventDetailsPage";
 import type { TripTimeSlot, TripSlotDuty } from "./AdminTimeSlotManagerModal";
 
@@ -263,7 +263,11 @@ export function TripTasksAndMealsTab({
     groupedByDate[slot.slot_date].push(slot);
   }
 
-  const sortedDates = Object.keys(groupedByDate).sort();
+  const allDateKeys = new Set([
+    ...Object.keys(groupedByDate),
+    ...(dailyWorkload?.days ?? []).map((d) => d.date),
+  ]);
+  const sortedDates = Array.from(allDateKeys).sort();
 
   // Count unfilled duties across enabled slots for T-48h override mode
   let unfilledDutiesCount = 0;
@@ -316,14 +320,20 @@ export function TripTasksAndMealsTab({
         </div>
       )}
 
-      {isAdmin && dailyWorkload && <form className="card" onSubmit={event => void saveDailyTarget(event)}>
-        <h3>Daily workload target</h3>
-        <label className="checkbox-label" style={{ minHeight: "44px" }}><input type="checkbox" checked={useDailyTarget} onChange={event => setUseDailyTarget(event.target.checked)} />Use a daily workload target for this trip</label>
-        {useDailyTarget && <label>Daily workload target (×)<input type="number" min="0.5" max="100" step="0.5" required value={dailyTargetInput} onChange={event => setDailyTargetInput(event.target.value)} /></label>}
-        <p>Daily targets use scheduled task weights. Members below target are excused when no eligible slots remain. RSVP stays saved.</p>
-        <button disabled={savingDailyTarget} style={{ minHeight: "44px" }}>{savingDailyTarget ? "Saving…" : "Save daily target"}</button>
-      </form>}
-      {dailyWorkload?.target != null && isConfirmedAttendee && <DailyWorkloadProgress progress={dailyWorkload} />}
+      {isAdmin && dailyWorkload && (
+        <details className="card" style={{ marginBottom: "0.5rem" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600, color: "#1e293b" }}>⚙️ Admin: Configure Daily Workload Target</summary>
+          <form onSubmit={event => void saveDailyTarget(event)} style={{ marginTop: "0.75rem", display: "grid", gap: "0.75rem" }}>
+            <label className="checkbox-label" style={{ minHeight: "44px", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input type="checkbox" checked={useDailyTarget} onChange={event => setUseDailyTarget(event.target.checked)} />
+              Use a daily workload target for this trip
+            </label>
+            {useDailyTarget && <label>Daily workload target (×)<input type="number" min="0.5" max="100" step="0.5" required value={dailyTargetInput} onChange={event => setDailyTargetInput(event.target.value)} /></label>}
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b" }}>Daily targets use scheduled task weights. Members below target are excused when no eligible slots remain. RSVP stays saved.</p>
+            <button disabled={savingDailyTarget} style={{ minHeight: "44px", width: "fit-content" }}>{savingDailyTarget ? "Saving…" : "Save daily target"}</button>
+          </form>
+        </details>
+      )}
       {/* Preserve the existing trip quota until the admin opts into a daily target. */}
       {dailyWorkload?.target == null && <div className="card quota-progress-card" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)", borderColor: "#bbf7d0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
@@ -466,30 +476,104 @@ export function TripTasksAndMealsTab({
           const myAssignmentsOnThisDay = dutiesForDate.filter((d) =>
             assignments.some((a) => a.slot_duty_id === d.id && a.member_id === currentMemberId)
           );
+          const dayWeightSelected = dayWorkload != null
+            ? dayWorkload.selectedWeight
+            : myAssignmentsOnThisDay.reduce((sum, d) => sum + (d.workload_weight ?? 1), 0);
+          const dayTarget = dailyWorkload?.target ?? 2;
+          const isNoTasksAvailable = dayWorkload?.status === "no_tasks_available";
+          const isNoTasksScheduled = dayWorkload?.status === "no_tasks_scheduled";
           const isDoneForThisDay = isConfirmedAttendee && (
-            (dailyWorkload?.target != null ? dayWorkload?.status === "target_met" : myAssignmentsOnThisDay.length >= 1)
+            (dailyWorkload?.target != null
+              ? (dayWeightSelected >= dayTarget || dayWorkload?.status === "target_met" || isNoTasksAvailable || isNoTasksScheduled)
+              : myAssignmentsOnThisDay.length >= 1)
           );
 
           return (
             <div key={dateStr} className="date-matrix-group stack" style={{ gap: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #e2e8f0", paddingBottom: "0.4rem" }}>
-                <h3 style={{ margin: "0.5rem 0 0 0", fontSize: "1.15rem", color: "#1e293b" }}>
-                  📅 {formattedDate}
-                </h3>
-                {isDoneForThisDay && (
-                  <span
-                    className="badge"
+              <div
+                style={{
+                  background: isDoneForThisDay ? "#f0fdf4" : "#f8fafc",
+                  border: `1px solid ${isDoneForThisDay ? "#bbf7d0" : "#cbd5e1"}`,
+                  borderRadius: "10px",
+                  padding: "0.75rem 1rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#1e293b" }}>
+                    📅 {formattedDate}
+                  </h3>
+                  <p
                     style={{
-                      fontSize: "0.8rem",
-                      background: "#dcfce7",
-                      color: "#15803d",
-                      border: "1px solid #86efac",
-                      fontWeight: 600,
+                      margin: "0.25rem 0 0 0",
+                      fontSize: "0.875rem",
+                      color: isDoneForThisDay ? "#166534" : "#475569",
+                      fontWeight: isDoneForThisDay ? 600 : 500,
                     }}
                   >
-                    ✓ Daily chores selected
-                  </span>
-                )}
+                    {dailyWorkload?.target != null ? (
+                      <>
+                        <span>{`${dayWeightSelected}× / ${dayTarget}×`}</span>
+                        {" · "}
+                        {isDoneForThisDay ? (
+                          isNoTasksAvailable ? (
+                            "No tasks available. No additional selection required."
+                          ) : isNoTasksScheduled ? (
+                            "No active tasks scheduled. No selection required."
+                          ) : (
+                            `Done selecting chores for this day (${dayWeightSelected}× of ${dayTarget}× selected).`
+                          )
+                        ) : (
+                          `Select chores worth ${dayTarget}× for this day (Select at least ${(dayTarget - dayWeightSelected).toFixed(1).replace(/\.0$/, "")}× more while slots remain).`
+                        )}
+                      </>
+                    ) : (
+                      isDoneForThisDay ? (
+                        "✓ You have selected chores for this day."
+                      ) : (
+                        "Select chores worth 2× for this day."
+                      )
+                    )}
+                  </p>
+                </div>
+                <div>
+                  {isDoneForThisDay && (
+                    <span
+                      className="badge"
+                      style={{
+                        fontSize: "0.8rem",
+                        background: "#dcfce7",
+                        color: "#15803d",
+                        border: "1px solid #86efac",
+                        fontWeight: 600,
+                        padding: "0.3rem 0.65rem",
+                        borderRadius: "9999px",
+                      }}
+                    >
+                      ✓ Daily chores selected
+                    </span>
+                  )}
+                  {dailyWorkload?.target != null && !isDoneForThisDay && (
+                    <span
+                      className="badge"
+                      style={{
+                        fontSize: "0.8rem",
+                        background: "#e0e7ff",
+                        color: "#3730a3",
+                        border: "1px solid #c7d2fe",
+                        fontWeight: 600,
+                        padding: "0.3rem 0.65rem",
+                        borderRadius: "9999px",
+                      }}
+                    >
+                      {`${dayWeightSelected}× / ${dayTarget}× selected`}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {dutiesForDate.length === 0 ? (

@@ -439,11 +439,13 @@ a { color: #1c2d24; text-decoration: none; }
 .admin-roster-item > span:first-of-type { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .admin-roster-item .status-badge-going { flex-shrink: 0; }
 
-/* Modal Overlay */
-.modal-overlay {
+/* Modal Overlay and Backdrop */
+.modal-overlay,
+.modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -458,21 +460,110 @@ a { color: #1c2d24; text-decoration: none; }
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
 }
-.modal-card h2 { margin-top: 0; }
+.modal-card h2,
+.modal-card h3 { margin-top: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
 @media (max-width: 600px) {
   .form-grid { grid-template-columns: 1fr; }
 }
-input, select, textarea {
+
+/* Form Inputs & Checkboxes */
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%;
   padding: 0.65rem 0.85rem;
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 0.95rem;
+  background: white;
+  color: #111827;
 }
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
+  flex: 0 0 1.25rem;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #1c2d24;
+}
+
 label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color: #374151; }
+
+/* Primary and Secondary button variants */
+.primary-button, .btn-primary {
+  background: #1c2d24;
+  color: white;
+  border: 1px solid #1c2d24;
+  border-radius: 9999px;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  transition: all 0.15s ease;
+}
+.primary-button:hover:not(:disabled), .btn-primary:hover:not(:disabled) {
+  opacity: 0.92;
+}
+.secondary-button, .btn-secondary {
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 9999px;
+  padding: 0.6rem 1.2rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  transition: all 0.15s ease;
+}
+.secondary-button:hover:not(:disabled), .btn-secondary:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* Event Details Scrollable Tabs */
+.event-tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.25rem 0.25rem 0.5rem;
+  margin-bottom: 1.25rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.event-tabs::-webkit-scrollbar {
+  display: none;
+}
+.event-tabs button {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 0.88rem;
+  padding: 0.55rem 1rem;
+  border-radius: 9999px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-weight: 600;
+  border: 1px solid #e5e7eb;
+  min-height: 44px;
+}
+.event-tabs button.active {
+  background: #1c2d24;
+  color: white;
+  border-color: #1c2d24;
+}
 
 /* Auth tabs and mode switcher */
 .auth-tab-group {
@@ -554,3 +645,55 @@ label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color
 .daily-responsibility-manager button { min-height: 44px; }
 .daily-responsibility-manager button[aria-label="Decrease capacity"],
 .daily-responsibility-manager button[aria-label="Increase capacity"] { min-width: 44px; }
+
+/* Mobile Responsive Optimizations */
+@media (max-width: 640px) {
+  html, body {
+    overflow-x: hidden;
+  }
+  .container {
+    width: min(100% - 1.25rem, 640px);
+    margin: 1rem auto 2.5rem;
+  }
+  .card {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+  .site-header {
+    padding: 0.65rem 1rem;
+  }
+  .brand-title {
+    font-size: 1.05rem;
+  }
+  .brand-slogan {
+    font-size: 0.75rem;
+  }
+  .feed-title, .hero-title {
+    font-size: 1.35rem;
+  }
+  .event-card-container {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+  .metric-boxes-grid, .metrics-grid {
+    gap: 0.5rem;
+  }
+  .metric-value {
+    font-size: 1.2rem;
+  }
+  .metric-label {
+    font-size: 0.72rem;
+  }
+  .modal-overlay,
+  .modal-backdrop {
+    padding: 0.75rem;
+  }
+  .modal-card {
+    padding: 1.15rem;
+    max-width: 100%;
+    border-radius: 14px;
+  }
+  button, .primary-button, .secondary-button, .btn-primary, .btn-secondary {
+    min-height: 44px;
+  }
+}
