@@ -27,6 +27,7 @@ test.describe("Mobile Usability and Responsive Layout Verification", () => {
       { path: "/admin/campsites", name: "admin-campsites" },
       { path: "/admin/members", name: "admin-members" },
       { path: "/admin/schedule-defaults", name: "admin-schedule" },
+      { path: "/admin/catalogs", name: "admin-catalogs" },
     ];
 
     for (const route of routesToVerify) {
@@ -90,6 +91,50 @@ test.describe("Mobile Usability and Responsive Layout Verification", () => {
 
     // Screenshot after modal close
     const screenshotPath = `test-results/screenshots/${testInfo.project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-campsites-modal-closed.png`;
+    await page.screenshot({ path: screenshotPath });
+  });
+
+  test("verifies master catalog directory and modals operate smoothly on mobile without horizontal clipping", async ({
+    page,
+  }, testInfo) => {
+    await authenticateSession(page, adminUser);
+    await page.goto("/admin/catalogs");
+    await page.waitForLoadState("networkidle");
+
+    // Verify tabs are clickable and accessible
+    const foodTab = page.getByRole("tab", { name: /Food & Groceries/i });
+    await expect(foodTab).toBeVisible();
+    await foodTab.click();
+
+    const gearTab = page.getByRole("tab", { name: /Camping Gear/i });
+    await expect(gearTab).toBeVisible();
+    await gearTab.click();
+
+    // Open Add Gear modal
+    await page.getByRole("button", { name: "+ Add Gear" }).click();
+    const modal = page.locator(".modal-card");
+    await expect(modal).toBeVisible();
+
+    // Verify modal does not horizontally exceed viewport
+    const modalOverflow = await page.evaluate(() => {
+      const modalEl = document.querySelector(".modal-card");
+      if (!modalEl) return false;
+      const rect = modalEl.getBoundingClientRect();
+      return rect.width > window.innerWidth || rect.right > window.innerWidth;
+    });
+    expect(modalOverflow, "Modal horizontally overflows viewport").toBe(false);
+
+    // Verify form elements are focusable and usable
+    const nameInput = modal.getByLabel("Item Name *");
+    await expect(nameInput).toBeVisible();
+    await nameInput.fill("Mobile Headlamp (Ultra-Bright 450lm)");
+
+    // Cancel modal cleanly
+    await modal.getByRole("button", { name: "Cancel" }).click();
+    await expect(modal).toBeHidden();
+
+    // Screenshot after modal close
+    const screenshotPath = `test-results/screenshots/${testInfo.project.name.replace(/[^a-zA-Z0-9_-]/g, "_")}-catalogs-modal-closed.png`;
     await page.screenshot({ path: screenshotPath });
   });
 });

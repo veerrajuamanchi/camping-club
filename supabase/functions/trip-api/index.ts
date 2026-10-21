@@ -1579,7 +1579,7 @@ Deno.serve(async (request) => {
           .select(`
             member_id,
             response,
-            member:member_profiles!member_id(
+            member:member_profiles!trip_rsvps_member_id_fkey(
               member_id,
               display_name
             )

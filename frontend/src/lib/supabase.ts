@@ -80,8 +80,10 @@ const tripMutationActions = new Set([
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
-  "manage_trip_commitment", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
+  "manage_trip_commitment", "manage_trip_commitments", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
   "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
+  "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
+  "submit_deposit", "verify_deposit",
 ]);
 
 export async function invokeTripApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {
@@ -89,7 +91,12 @@ export async function invokeTripApi<T>(action: string, input?: unknown, idempote
   const headers = tripMutationActions.has(action)
     ? { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() }
     : undefined;
-  const { data, error, response } = await supabase.functions.invoke("trip-api", { body: { action, input }, headers });
+  let result = await supabase.functions.invoke("trip-api", { body: { action, input }, headers });
+  if (result.error && result.error.message === "Failed to send a request to the Edge Function") {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    result = await supabase.functions.invoke("trip-api", { body: { action, input }, headers });
+  }
+  const { data, error, response } = result;
   if (error || data?.error) {
     const { code: responseCode, message: responseMsg } = await responseErrorDetails(response);
     const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
@@ -101,9 +108,16 @@ export async function invokeTripApi<T>(action: string, input?: unknown, idempote
 
 export async function invokeAuthApi<T = unknown>(action: string, input?: unknown): Promise<T> {
   if (!supabase) throw new Error(configurationError ?? "Supabase is unavailable.");
-  const { data, error, response } = await supabase.functions.invoke("auth-api", {
+  let result = await supabase.functions.invoke("auth-api", {
     body: { action, input: input ?? {} },
   });
+  if (result.error && result.error.message === "Failed to send a request to the Edge Function") {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    result = await supabase.functions.invoke("auth-api", {
+      body: { action, input: input ?? {} },
+    });
+  }
+  const { data, error, response } = result;
   if (error || data?.error) {
     const responseCode = await responseErrorCode(response);
     const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
