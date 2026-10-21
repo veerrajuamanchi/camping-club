@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router";
 
 export type PaymentMethod = "zelle" | "venmo" | "paypal" | "apple_cash";
 export type MemberProfileInput = {
@@ -15,6 +16,7 @@ export function MemberProfileForm({
   initialPhone = "",
   initialMethod = "venmo",
   busy = false,
+  isAdmin = false,
 }: {
   mode: "complete" | "edit";
   onSave: (input: MemberProfileInput) => Promise<void> | void;
@@ -22,6 +24,7 @@ export function MemberProfileForm({
   initialPhone?: string;
   initialMethod?: PaymentMethod;
   busy?: boolean;
+  isAdmin?: boolean;
 }) {
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [phoneE164, setPhoneE164] = useState(initialPhone);
@@ -54,6 +57,14 @@ export function MemberProfileForm({
         {error && <p role="alert">{error}</p>}
         <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
       </form>
+      {isAdmin && (
+        <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid #e2e8f0" }}>
+          <p style={{ fontWeight: 600, margin: "0 0 0.5rem 0", fontSize: "0.9rem" }}>Administrator Tools</p>
+          <Link to="/admin/catalogs" style={{ color: "#1c2d24", fontWeight: 600, fontSize: "0.9rem", textDecoration: "underline" }}>
+            📦 Manage Master Catalogs (Gear, Food, Duties) →
+          </Link>
+        </div>
+      )}
     </section>
   );
 }
