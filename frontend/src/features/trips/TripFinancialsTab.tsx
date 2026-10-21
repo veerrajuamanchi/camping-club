@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { TripApiType } from "./EventDetailsPage";
+import { calculateEqualAllocations } from "../../domain/settlementEngine";
 
 export type ExpenseAllocation = {
   memberId: string;
@@ -197,11 +198,11 @@ export function TripFinancialsTab({
       setErrorMsg("Please select at least one participant to split this expense.");
       return;
     }
-    const base = Math.floor(amountCents / n);
-    const rem = amountCents % n;
-    const allocations = participantsToSplit.map((memberId, idx) => ({
+    const equalAllocations = calculateEqualAllocations(amountCents, participantsToSplit);
+    const allocationMap = new Map(equalAllocations.map((a) => [a.memberId, a.allocatedCents]));
+    const allocations = participantsToSplit.map((memberId) => ({
       memberId,
-      allocatedCents: idx < rem ? base + 1 : base,
+      allocatedCents: allocationMap.get(memberId) ?? 0,
     }));
 
     try {
@@ -763,51 +764,57 @@ export function TripFinancialsTab({
                   <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>
                     Split Between Participants:
                   </span>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
-                    onClick={() => {
-                      if (selectedParticipantIds.length === attendeesList.length) {
-                        setSelectedParticipantIds([]);
-                      } else {
-                        setSelectedParticipantIds(attendeesList.map((a) => a.memberId));
-                      }
-                    }}
-                  >
-                    {selectedParticipantIds.length === attendeesList.length ? "Deselect All" : "Select All"}
-                  </button>
+                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
+                      onClick={() => setSelectedParticipantIds(attendeesList.map((a) => a.memberId))}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
+                      onClick={() => setSelectedParticipantIds([])}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
 
                 <div
+                  data-testid="expense-split-list"
                   style={{
-                    maxHeight: "180px",
+                    maxHeight: "220px",
                     overflowY: "auto",
                     border: "1px solid #cbd5e1",
                     borderRadius: "8px",
                     padding: "0.5rem",
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-                    gap: "0.4rem",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem",
                     background: "#f8fafc",
                   }}
                 >
                   {attendeesList.map((att) => {
                     const isChecked = selectedParticipantIds.includes(att.memberId);
+                    const displayName = att.displayName?.trim() || "Camper";
                     return (
                       <label
                         key={att.memberId}
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: "0.6rem",
-                          fontSize: "0.9rem",
+                          gap: "0.75rem",
+                          fontSize: "0.95rem",
                           cursor: "pointer",
-                          color: "#1e293b",
-                          padding: "0.4rem 0.5rem",
+                          padding: "0.5rem 0.75rem",
                           borderRadius: "6px",
-                          background: isChecked ? "#f0fdf4" : "transparent",
-                          minHeight: "40px",
+                          border: isChecked ? "1px solid #86efac" : "1px solid #e2e8f0",
+                          background: isChecked ? "#f0fdf4" : "#ffffff",
+                          minHeight: "44px",
                         }}
                       >
                         <input
@@ -828,8 +835,16 @@ export function TripFinancialsTab({
                             }
                           }}
                         />
-                        <span style={{ minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word", fontWeight: isChecked ? 600 : 400 }}>
-                          {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
+                        <span
+                          style={{
+                            minWidth: 0,
+                            overflowWrap: "anywhere",
+                            wordBreak: "break-word",
+                            color: "#0f172a",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {displayName} {att.memberId === currentMemberId ? "(You)" : ""}
                         </span>
                       </label>
                     );
