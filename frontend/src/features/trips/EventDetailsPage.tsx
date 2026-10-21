@@ -243,6 +243,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   async function handleVerifyDeposit(memberId: string) {
     if (!details) return;
     setDepositBusy(true);
+    setDepositMsg(null);
     try {
       await api("verify_deposit", {
         tripId: details.tripId,
@@ -250,8 +251,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         status: "confirmed_by_admin",
       });
       await refresh();
+      setDepositMsg("Deposit confirmed!");
     } catch {
-      alert("Failed to verify deposit.");
+      setDepositMsg("Failed to verify deposit.");
     } finally {
       setDepositBusy(false);
     }
@@ -412,8 +414,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const depositStatus = isCabinPayer ? "exempt" : (details.depositStatus ?? "unpaid");
   const isDepositDone = isCabinPayer || depositStatus === "confirmed" || depositStatus === "confirmed_by_admin" || depositStatus === "submitted_by_member";
   const isChoresDone = Boolean(
-    details.myDailyWorkload?.satisfied ||
-    (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2)
+    details.myDailyWorkload?.target != null
+      ? details.myDailyWorkload.satisfied
+      : (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2)
   );
 
   let requiredCompletedCount = 0;
@@ -427,8 +430,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const sharedVolunteerItems = details.commitments?.sharedVolunteer
     ?? details.commitmentsList?.filter((c) => c.commitmentType === "shared_volunteer" && c.isActive)
     ?? [];
-  const myClaimedGear = sharedVolunteerItems.filter((c) => c.assignedMemberId === authProfileMemberId || c.isMine);
-  const openFoodItems = sharedVolunteerItems.filter((c) => c.category === "food" && !c.assignedMemberId);
+  const FOOD_CATEGORIES = new Set(["food", "pantry", "produce", "dairy_meat", "bakery", "beverages", "campfire"]);
+  const isFood = (c: any) => Boolean(c.masterFoodId || FOOD_CATEGORIES.has(c.category));
+  const openFoodItems = sharedVolunteerItems.filter((c) => isFood(c) && !c.assignedMemberId);
+  const myClaimedGear = sharedVolunteerItems.filter((c) => !isFood(c) && (c.assignedMemberId === authProfileMemberId || c.isMine));
 
   const groupedRules = constitutionGroups.map((group) => ({
     ...group,
@@ -720,8 +725,8 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           <div
             className="card"
             style={{
-              background: requiredCompletedCount === 3 ? "#f0fdf4" : "#fffbeb",
-              border: `1.5px solid ${requiredCompletedCount === 3 ? "#86efac" : "#f59e0b"}`,
+              background: details.myRsvp?.response === "not_coming" ? "#f8fafc" : requiredCompletedCount === 3 ? "#f0fdf4" : "#fffbeb",
+              border: `1.5px solid ${details.myRsvp?.response === "not_coming" ? "#cbd5e1" : requiredCompletedCount === 3 ? "#86efac" : "#f59e0b"}`,
               padding: "1rem 1.25rem",
               borderRadius: "10px",
             }}
@@ -740,27 +745,78 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                 style={{
                   margin: 0,
                   fontWeight: 700,
-                  color: requiredCompletedCount === 3 ? "#166534" : "#92400e",
+                  color: details.myRsvp?.response === "not_coming" ? "#475569" : requiredCompletedCount === 3 ? "#166534" : "#92400e",
                   fontSize: "1.05rem",
                   letterSpacing: "0.3px",
                 }}
               >
-                ⚡ Required From You ({requiredCompletedCount} of 3 Completed)
+                {details.myRsvp?.response === "not_coming"
+                  ? "⚡ Required From You"
+                  : `⚡ Required From You (${requiredCompletedCount} of 3 Completed)`}
               </h2>
               <span
                 style={{
-                  background: requiredCompletedCount === 3 ? "#dcfce7" : "#fef3c7",
-                  color: requiredCompletedCount === 3 ? "#15803d" : "#b45309",
+                  background: details.myRsvp?.response === "not_coming" ? "#f1f5f9" : requiredCompletedCount === 3 ? "#dcfce7" : "#fef3c7",
+                  color: details.myRsvp?.response === "not_coming" ? "#64748b" : requiredCompletedCount === 3 ? "#15803d" : "#b45309",
                   fontSize: "0.75rem",
                   fontWeight: 700,
                   padding: "3px 8px",
                   borderRadius: "4px",
                 }}
               >
-                {requiredCompletedCount === 3 ? "All Done ✓" : "Action Needed"}
+                {details.myRsvp?.response === "not_coming"
+                  ? "Not Attending"
+                  : requiredCompletedCount === 3
+                  ? "All Done ✓"
+                  : "Action Needed"}
               </span>
             </div>
 
+            {details.myRsvp?.response === "not_coming" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <div
+                  data-testid="hub-rsvp-row"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#ffffff",
+                    padding: "0.6rem 0.85rem",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "#64748b", fontWeight: 700, marginRight: "0.35rem" }}>—</span>
+                    <strong>RSVP Status</strong>:{" "}
+                    <span style={{ color: "#64748b", fontWeight: 600 }}>Not Going</span>
+                  </div>
+                  <div>
+                    {canChangeRsvp && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                        onClick={() => {
+                          const rsvpEl = document.getElementById("rsvp-actions-card");
+                          if (rsvpEl) {
+                            rsvpEl.scrollIntoView({ behavior: "smooth" });
+                          }
+                          setRsvpChoice("coming");
+                        }}
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "#64748b" }}>
+                  You're not attending this event. No tasks or deposits required.
+                </p>
+              </div>
+            ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
               {/* Item 1: RSVP */}
               <div
@@ -931,6 +987,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                 </div>
               </div>
             </div>
+            )}
             {depositMsg && (
               <p style={{ margin: "0.5rem 0 0", fontSize: "0.825rem", color: "#15803d" }} role="status">
                 {depositMsg}
@@ -1881,6 +1938,16 @@ function PersonalPackingListModal({
   items: Array<{ itemName: string; category?: string; quantityDescription?: string | null }>;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div
       role="dialog"

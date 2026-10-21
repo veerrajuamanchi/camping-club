@@ -39,9 +39,9 @@ const mockTripHubData = {
     ],
   },
   myRsvp: {
-    response: "coming" as const,
+    response: "coming" as "coming" | "not_coming",
     version: 1,
-    acknowledgmentId: "ack-1",
+    acknowledgmentId: "ack-1" as string | null,
     updatedAt: "2026-10-01T00:00:00Z",
   },
   currentRuleBundle: {
@@ -433,5 +433,38 @@ describe("Task 5: Frontend 'My Trip Hub' Dashboard Refactor", () => {
     // The unselected chore (duty-2) should be greyed out and disabled
     const disabledBtn = screen.getByRole("button", { name: /Done for Day/i });
     expect(disabledBtn).toBeDisabled();
+  });
+
+  it("displays non-attending banner message when user RSVP is not_coming", async () => {
+    const notComingData = {
+      ...mockTripHubData,
+      myRsvp: {
+        response: "not_coming" as const,
+        version: 1,
+        acknowledgmentId: null,
+        updatedAt: "2026-10-01T00:00:00Z",
+      },
+    };
+
+    renderTripHub(notComingData);
+
+    expect(await screen.findByText(/You're not attending this event\. No tasks or deposits required\./i)).toBeInTheDocument();
+    expect(screen.queryByTestId("hub-deposit-row")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("hub-chores-row")).not.toBeInTheDocument();
+  });
+
+  it("closes personal packing checklist modal on Escape key press", async () => {
+    const user = userEvent.setup();
+    renderTripHub();
+
+    const viewListBtn = await screen.findByRole("button", { name: /View List|View Packing Checklist/i });
+    await user.click(viewListBtn);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    // Press Escape
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
