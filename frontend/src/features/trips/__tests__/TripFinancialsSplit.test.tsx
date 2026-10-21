@@ -121,12 +121,25 @@ describe("Task 4: Frontend Expense Split UI Improvements", () => {
     // Counter signals no participants selected
     expect(screen.getByText(/Please select at least one participant/i)).toBeInTheDocument();
 
+    // Verify submit button is disabled when 0 participants are selected
+    const saveBtn = screen.getByRole("button", { name: /Save Expense/i });
+    expect(saveBtn).toBeDisabled();
+
+    // Verify form submission is blocked and does not call API when 0 participants are selected
+    await user.type(screen.getByPlaceholderText("25.00"), "20.00");
+    const form = screen.getByText(/\+ Record Shared Expense/i).closest("div")?.querySelector("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form!);
+    expect(screen.getByText(/Please select at least one participant to split this expense/i)).toBeInTheDocument();
+    expect(mockApi).not.toHaveBeenCalledWith("admin_manage_trip_expense", expect.anything());
+
     // Click Select All
     await user.click(selectAllBtn);
     expect(aliceCheckbox).toBeChecked();
     expect(bobCheckbox).toBeChecked();
     expect(charlieCheckbox).toBeChecked();
-    expect(screen.getByText(/Selected 3 participant\(s\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Splitting equally among 3 participants: ~\$6\.67 each/i)).toBeInTheDocument();
+    expect(saveBtn).toBeEnabled();
   });
 
   it("shows real-time estimated per-person split calculation as amount and participants change", async () => {

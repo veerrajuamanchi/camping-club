@@ -188,16 +188,11 @@ export function TripFinancialsTab({
     }
     const amountCents = Math.round(dollars * 100);
 
-    // Split equally among selected participants (or all attendees if none explicitly chosen)
-    const participantsToSplit = selectedParticipantIds.length > 0
-      ? selectedParticipantIds
-      : attendeesList.map((a) => a.memberId);
-
-    const n = participantsToSplit.length;
-    if (n === 0) {
+    if (selectedParticipantIds.length === 0) {
       setErrorMsg("Please select at least one participant to split this expense.");
       return;
     }
+    const participantsToSplit = selectedParticipantIds;
     const equalAllocations = calculateEqualAllocations(amountCents, participantsToSplit);
     const allocationMap = new Map(equalAllocations.map((a) => [a.memberId, a.allocatedCents]));
     const allocations = participantsToSplit.map((memberId) => ({
@@ -851,24 +846,35 @@ export function TripFinancialsTab({
                   })}
                 </div>
 
-                {selectedParticipantIds.length > 0 && parseFloat(amountStr) > 0 ? (
-                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: "#0369a1" }}>
-                    Splitting equally among {selectedParticipantIds.length} participant{selectedParticipantIds.length > 1 ? "s" : ""}: ~${(parseFloat(amountStr) / selectedParticipantIds.length).toFixed(2)} each.
-                  </p>
-                ) : (
-                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: selectedParticipantIds.length === 0 ? "#dc2626" : "#64748b" }}>
-                    {selectedParticipantIds.length === 0
-                      ? "⚠️ Please select at least one participant."
-                      : `Selected ${selectedParticipantIds.length} participant(s).`}
-                  </p>
-                )}
+                {(() => {
+                  const previewAmountCents = Math.round((parseFloat(amountStr) || 0) * 100);
+                  if (selectedParticipantIds.length > 0 && previewAmountCents > 0) {
+                    const estPerPersonCents = Math.round(previewAmountCents / selectedParticipantIds.length);
+                    return (
+                      <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: "#0369a1" }}>
+                        Splitting equally among {selectedParticipantIds.length} participant{selectedParticipantIds.length > 1 ? "s" : ""}: ~{formatMoney(estPerPersonCents)} each.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: selectedParticipantIds.length === 0 ? "#dc2626" : "#64748b" }}>
+                      {selectedParticipantIds.length === 0
+                        ? "⚠️ Please select at least one participant."
+                        : `Selected ${selectedParticipantIds.length} participant(s).`}
+                    </p>
+                  );
+                })()}
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
                 <button type="button" onClick={() => setShowAddExpenseModal(false)}>
                   Cancel
                 </button>
-                <button type="submit" disabled={actionBusy} className="btn-primary">
+                <button
+                  type="submit"
+                  disabled={actionBusy || selectedParticipantIds.length === 0}
+                  className="btn-primary"
+                >
                   {actionBusy ? "Saving..." : "Save Expense"}
                 </button>
               </div>
