@@ -1,7 +1,24 @@
 import React, { useEffect, useState } from "react";
 import type { TripApiType } from "./EventDetailsPage";
 
-export type CommitmentCategory = "gear" | "food" | "supplies" | "shelter" | "safety";
+export type CommitmentCategory =
+  | "gear"
+  | "food"
+  | "supplies"
+  | "shelter"
+  | "safety"
+  | "sleep"
+  | "kitchen"
+  | "lighting"
+  | "tools"
+  | "clothing"
+  | "pantry"
+  | "produce"
+  | "dairy_meat"
+  | "bakery"
+  | "beverages"
+  | "campfire"
+  | "other";
 
 export type TripCommitment = {
   id: string;
@@ -13,6 +30,10 @@ export type TripCommitment = {
   assignedMemberName: string | null;
   isCritical: boolean;
   isMine: boolean;
+  commitmentType?: "individual_pack" | "shared_volunteer";
+  isActive?: boolean;
+  masterGearId?: string | null;
+  masterFoodId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -66,6 +87,18 @@ const CATEGORY_META: Record<CommitmentCategory, { label: string; icon: string }>
   supplies: { label: "Wood & Camp Supplies", icon: "🪵" },
   shelter: { label: "Tents & Canopies", icon: "⛺" },
   safety: { label: "First Aid & Safety", icon: "🩹" },
+  sleep: { label: "Sleeping Gear", icon: "🛏️" },
+  kitchen: { label: "Camp Kitchen", icon: "🍳" },
+  lighting: { label: "Lighting & Lanterns", icon: "🔦" },
+  tools: { label: "Tools & Equipment", icon: "🔨" },
+  clothing: { label: "Clothing & Weather", icon: "🧥" },
+  pantry: { label: "Pantry Staples", icon: "🥫" },
+  produce: { label: "Produce & Fresh", icon: "🥗" },
+  dairy_meat: { label: "Dairy & Meat", icon: "🥩" },
+  bakery: { label: "Bakery & Breads", icon: "🍞" },
+  beverages: { label: "Beverages & Drinks", icon: "☕" },
+  campfire: { label: "Campfire & S'mores", icon: "🔥" },
+  other: { label: "Other Supplies", icon: "📦" },
 };
 
 export function TripLogisticsTab({

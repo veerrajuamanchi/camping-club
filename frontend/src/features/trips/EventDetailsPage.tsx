@@ -19,6 +19,27 @@ type TripDetails = {
   tripMileageRateCents?: number;
   depositAmountCents?: number;
   cabinPayerMemberId?: string | null;
+  depositStatus?: "unpaid" | "submitted_by_member" | "confirmed" | "confirmed_by_admin" | "exempt";
+  rulesMarkdown?: string | null;
+  commitmentsList?: Array<{
+    id: string;
+    tripId: string;
+    category: string;
+    itemName: string;
+    quantityDescription: string | null;
+    assignedMemberId: string | null;
+    assignedMemberName: string | null;
+    isCritical: boolean;
+    masterGearId?: string | null;
+    masterFoodId?: string | null;
+    commitmentType?: "individual_pack" | "shared_volunteer";
+    isActive?: boolean;
+    isMine?: boolean;
+  }>;
+  commitments?: {
+    individualPack: Array<any>;
+    sharedVolunteer: Array<any>;
+  };
   cabinReservation?: {
     id: string;
     status: string;
@@ -73,7 +94,7 @@ type TripDetails = {
   perCabinCapacity: number;
   cabinCount: number | null;
   maxCapacity: number | null;
-  participantEntries: Array<{ memberId: string; displayName: string; response: string }>;
+  participantEntries: Array<{ memberId: string; displayName: string; response: string; depositStatus?: string }>;
   waitlistEntries: Array<{ memberId: string; displayName: string; position: number; createdAt: string }>;
   allMemberEntries?: Array<{ memberId: string; displayName: string; response: string; version: number }>;
   version: number;
@@ -176,6 +197,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const [showEditEventModal, setShowEditEventModal] = useState(false);
   const [showTimeSlotsModal, setShowTimeSlotsModal] = useState(false);
   const [showDutyPromptModal, setShowDutyPromptModal] = useState(false);
+  const [depositBusy, setDepositBusy] = useState(false);
+  const [depositMsg, setDepositMsg] = useState<string | null>(null);
+  const [showPackingModal, setShowPackingModal] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
@@ -183,7 +207,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     try {
       const [tripResult, constitutionResult] = await Promise.all([
         api<TripDetails>("get_trip_details", { tripId }),
-        api<{ definitions?: Array<{ stable_key: string; category: string }> }>("get_constitution", { tripId }).catch(() => null),
+        Promise.resolve(api<{ definitions?: Array<{ stable_key: string; category: string }> }>("get_constitution", { tripId })).catch(() => null),
       ]);
       setDetails(tripResult);
       if (constitutionResult?.definitions) {
@@ -198,6 +222,38 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       setError("Could not load trip details. Please try again.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSubmitDeposit() {
+    if (!details) return;
+    setDepositBusy(true);
+    setDepositMsg(null);
+    try {
+      await api("submit_deposit", { tripId: details.tripId });
+      await refresh();
+      setDepositMsg("Deposit marked sent! Pending verification.");
+    } catch {
+      setDepositMsg("Failed to submit deposit. Please try again.");
+    } finally {
+      setDepositBusy(false);
+    }
+  }
+
+  async function handleVerifyDeposit(memberId: string) {
+    if (!details) return;
+    setDepositBusy(true);
+    try {
+      await api("verify_deposit", {
+        tripId: details.tripId,
+        memberId,
+        status: "confirmed_by_admin",
+      });
+      await refresh();
+    } catch {
+      alert("Failed to verify deposit.");
+    } finally {
+      setDepositBusy(false);
     }
   }
 
@@ -351,6 +407,28 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       : isNotComing
         ? "Not Going"
         : "No response";
+
+  const isCabinPayer = details.cabinPayerMemberId === authProfileMemberId || details.depositStatus === "exempt";
+  const depositStatus = isCabinPayer ? "exempt" : (details.depositStatus ?? "unpaid");
+  const isDepositDone = isCabinPayer || depositStatus === "confirmed" || depositStatus === "confirmed_by_admin" || depositStatus === "submitted_by_member";
+  const isChoresDone = Boolean(
+    details.myDailyWorkload?.satisfied ||
+    (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2)
+  );
+
+  let requiredCompletedCount = 0;
+  if (isComing) requiredCompletedCount++;
+  if (isDepositDone) requiredCompletedCount++;
+  if (isChoresDone) requiredCompletedCount++;
+
+  const individualPackItems = details.commitments?.individualPack
+    ?? details.commitmentsList?.filter((c) => c.commitmentType === "individual_pack" && c.isActive)
+    ?? [];
+  const sharedVolunteerItems = details.commitments?.sharedVolunteer
+    ?? details.commitmentsList?.filter((c) => c.commitmentType === "shared_volunteer" && c.isActive)
+    ?? [];
+  const myClaimedGear = sharedVolunteerItems.filter((c) => c.assignedMemberId === authProfileMemberId || c.isMine);
+  const openFoodItems = sharedVolunteerItems.filter((c) => c.category === "food" && !c.assignedMemberId);
 
   const groupedRules = constitutionGroups.map((group) => ({
     ...group,
@@ -638,6 +716,423 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
 
       {tab === "overview" && (
         <div className="stack">
+          {/* Section 1: ⚡ REQUIRED FROM YOU */}
+          <div
+            className="card"
+            style={{
+              background: requiredCompletedCount === 3 ? "#f0fdf4" : "#fffbeb",
+              border: `1.5px solid ${requiredCompletedCount === 3 ? "#86efac" : "#f59e0b"}`,
+              padding: "1rem 1.25rem",
+              borderRadius: "10px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "0.85rem",
+                flexWrap: "wrap",
+                gap: "0.5rem",
+              }}
+            >
+              <h2
+                style={{
+                  margin: 0,
+                  fontWeight: 700,
+                  color: requiredCompletedCount === 3 ? "#166534" : "#92400e",
+                  fontSize: "1.05rem",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                ⚡ Required From You ({requiredCompletedCount} of 3 Completed)
+              </h2>
+              <span
+                style={{
+                  background: requiredCompletedCount === 3 ? "#dcfce7" : "#fef3c7",
+                  color: requiredCompletedCount === 3 ? "#15803d" : "#b45309",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  padding: "3px 8px",
+                  borderRadius: "4px",
+                }}
+              >
+                {requiredCompletedCount === 3 ? "All Done ✓" : "Action Needed"}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {/* Item 1: RSVP */}
+              <div
+                data-testid="hub-rsvp-row"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#ffffff",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  border: `1px solid ${isComing ? "#86efac" : "#fde68a"}`,
+                  gap: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <span style={{ color: isComing ? "#16a34a" : "#d97706", fontWeight: 700, marginRight: "0.35rem" }}>
+                    {isComing ? "✓" : "⚠️"}
+                  </span>
+                  <strong>RSVP Status</strong>:{" "}
+                  <span style={{ color: isComing ? "#16a34a" : "#b45309", fontWeight: 600 }}>
+                    {rsvpStatusLabel}
+                  </span>
+                </div>
+                <div>
+                  {canChangeRsvp && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                      onClick={() => {
+                        const rsvpEl = document.getElementById("rsvp-actions-card");
+                        if (rsvpEl) {
+                          rsvpEl.scrollIntoView({ behavior: "smooth" });
+                        }
+                        setRsvpChoice(isComing ? "not_coming" : "coming");
+                      }}
+                    >
+                      Change
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Item 2: $50 Deposit */}
+              <div
+                data-testid="hub-deposit-row"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#ffffff",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  border: `1.5px solid ${depositStatus === "exempt" || depositStatus === "confirmed" || depositStatus === "confirmed_by_admin" ? "#86efac" : depositStatus === "submitted_by_member" ? "#93c5fd" : "#f59e0b"}`,
+                  gap: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  {isCabinPayer || depositStatus === "exempt" ? (
+                    <>
+                      <span style={{ color: "#16a34a", fontWeight: 700, marginRight: "0.35rem" }}>✓</span>
+                      <strong>$50 Cabin Deposit</strong>:{" "}
+                      <span style={{ color: "#16a34a", fontWeight: 600 }}>Exempt (Cabin Payer)</span>
+                    </>
+                  ) : depositStatus === "confirmed" || depositStatus === "confirmed_by_admin" ? (
+                    <>
+                      <span style={{ color: "#16a34a", fontWeight: 700, marginRight: "0.35rem" }}>✓</span>
+                      <strong>$50 Cabin Deposit</strong>:{" "}
+                      <span style={{ color: "#16a34a", fontWeight: 600 }}>Confirmed</span>
+                    </>
+                  ) : depositStatus === "submitted_by_member" ? (
+                    <>
+                      <span style={{ color: "#2563eb", fontWeight: 700, marginRight: "0.35rem" }}>⏳</span>
+                      <strong>$50 Cabin Deposit</strong>:{" "}
+                      <span style={{ color: "#2563eb", fontWeight: 600 }}>Submitted (Pending Verification)</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ color: "#d97706", fontWeight: 700, marginRight: "0.35rem" }}>⚠️</span>
+                      <strong>$50 Cabin Deposit</strong>:{" "}
+                      <span style={{ color: "#b45309", fontWeight: 600 }}>Pending</span>
+                    </>
+                  )}
+                </div>
+                <div>
+                  {isCabinPayer || depositStatus === "exempt" ? (
+                    <span style={{ fontSize: "0.8rem", color: "#16a34a", fontWeight: 600, background: "#dcfce7", padding: "0.25rem 0.6rem", borderRadius: "9999px" }}>
+                      Payer Exempt
+                    </span>
+                  ) : depositStatus === "confirmed" || depositStatus === "confirmed_by_admin" ? (
+                    <span style={{ fontSize: "0.8rem", color: "#16a34a", fontWeight: 600, background: "#dcfce7", padding: "0.25rem 0.6rem", borderRadius: "9999px" }}>
+                      Confirmed ✓
+                    </span>
+                  ) : depositStatus === "submitted_by_member" ? (
+                    <span style={{ fontSize: "0.8rem", color: "#1d4ed8", fontWeight: 600, background: "#eff6ff", padding: "0.25rem 0.6rem", borderRadius: "9999px" }}>
+                      Submitted ⏳
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={depositBusy}
+                      onClick={() => void handleSubmitDeposit()}
+                      style={{
+                        padding: "0.35rem 0.75rem",
+                        fontSize: "0.825rem",
+                        borderRadius: "6px",
+                        background: "#d97706",
+                        color: "#ffffff",
+                        border: "none",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {depositBusy ? "Submitting…" : "I Have Sent $50"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Item 3: Daily Chores */}
+              <div
+                data-testid="hub-chores-row"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#ffffff",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  border: `1px solid ${isChoresDone ? "#86efac" : "#fde68a"}`,
+                  gap: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <span style={{ color: isChoresDone ? "#16a34a" : "#d97706", fontWeight: 700, marginRight: "0.35rem" }}>
+                    {isChoresDone ? "✓" : "⚠️"}
+                  </span>
+                  <strong>Daily Chores Workload</strong>:{" "}
+                  {isChoresDone ? (
+                    <span style={{ color: "#16a34a", fontWeight: 600 }}>
+                      {details.myDailyWorkload?.target != null ? `${details.myDailyWorkload.target}x target met` : "Target met"}
+                    </span>
+                  ) : (
+                    <span style={{ color: "#b45309", fontWeight: 600 }}>
+                      Action Needed {details.myDailyWorkload?.target != null ? `(Select ${details.myDailyWorkload.target}x chores for each day)` : "(Select your required duties)"}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  {isChoresDone ? (
+                    <span style={{ fontSize: "0.8rem", color: "#16a34a", fontWeight: 600, background: "#dcfce7", padding: "0.25rem 0.6rem", borderRadius: "9999px" }}>
+                      Complete
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                      onClick={() => setTab("tasks")}
+                    >
+                      Choose Chores &rarr;
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            {depositMsg && (
+              <p style={{ margin: "0.5rem 0 0", fontSize: "0.825rem", color: "#15803d" }} role="status">
+                {depositMsg}
+              </p>
+            )}
+          </div>
+
+          {/* Section 2: 📋 TRIP TO-DO & CONTRIBUTIONS (VOLUNTARY) */}
+          <div
+            className="card"
+            style={{
+              background: "#f0fdf4",
+              border: "1px solid #86efac",
+              padding: "1rem 1.25rem",
+              borderRadius: "10px",
+            }}
+          >
+            <div style={{ marginBottom: "0.85rem" }}>
+              <h2
+                style={{
+                  margin: 0,
+                  fontWeight: 700,
+                  color: "#166534",
+                  fontSize: "1.05rem",
+                  letterSpacing: "0.3px",
+                }}
+              >
+                📋 Trip To-Do &amp; Contributions (Voluntary)
+              </h2>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#4b5563" }}>
+                Help with camp gear, groceries, packing, and shared group costs.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {/* Shared Gear */}
+              <div
+                data-testid="todo-shared-gear"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#ffffff",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  border: "1px solid #bbf7d0",
+                  gap: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <span style={{ marginRight: "0.4rem" }}>⛺</span>
+                  <strong>Shared Gear</strong>:{" "}
+                  {myClaimedGear.length > 0 ? (
+                    <span>
+                      You signed up for{" "}
+                      <em>
+                        {myClaimedGear.map((g) => g.itemName).join(", ")}
+                      </em>
+                    </span>
+                  ) : (
+                    <span style={{ color: "#64748b" }}>Help bring shared camping equipment</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTab("logistics")}
+                  style={{
+                    padding: "0.3rem 0.7rem",
+                    fontSize: "0.8rem",
+                    borderRadius: "4px",
+                    border: "1px solid #10b981",
+                    background: "#ffffff",
+                    color: "#047857",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {myClaimedGear.length > 0 ? "+ Claim More" : "+ Claim Shared Gear"}
+                </button>
+              </div>
+
+              {/* Food & Groceries */}
+              <div
+                data-testid="todo-food-groceries"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#ffffff",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  border: "1px solid #bbf7d0",
+                  gap: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <span style={{ marginRight: "0.4rem" }}>🍎</span>
+                  <strong>Food &amp; Groceries</strong>:{" "}
+                  {openFoodItems.length > 0 ? (
+                    <span>
+                      {openFoodItems.length} open {openFoodItems.length === 1 ? "item" : "items"} needed
+                    </span>
+                  ) : (
+                    <span style={{ color: "#64748b" }}>All grocery staples claimed</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTab("logistics")}
+                  style={{
+                    padding: "0.3rem 0.7rem",
+                    fontSize: "0.8rem",
+                    borderRadius: "4px",
+                    border: "1px solid #10b981",
+                    background: "#ffffff",
+                    color: "#047857",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Volunteer Item
+                </button>
+              </div>
+
+              {/* Personal Packing Checklist */}
+              <div
+                data-testid="todo-personal-packing"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#ffffff",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  border: "1px solid #bbf7d0",
+                  gap: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <span style={{ marginRight: "0.4rem" }}>🎒</span>
+                  <strong>Your Packing Checklist</strong>:{" "}
+                  <span>{individualPackItems.length} {individualPackItems.length === 1 ? "item" : "items"} to bring</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPackingModal(true)}
+                  style={{
+                    padding: "0.3rem 0.7rem",
+                    fontSize: "0.8rem",
+                    borderRadius: "4px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    color: "#334155",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  View List 👁️
+                </button>
+              </div>
+
+              {/* Shared Expenses */}
+              <div
+                data-testid="todo-shared-expense"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#ffffff",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  border: "1px solid #bbf7d0",
+                  gap: "0.75rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <span style={{ marginRight: "0.4rem" }}>🧾</span>
+                  <strong>Shared Expenses</strong>: Bought supplies for the group? Post here
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTab("financials")}
+                  style={{
+                    padding: "0.3rem 0.7rem",
+                    fontSize: "0.8rem",
+                    borderRadius: "4px",
+                    background: "#1c2d24",
+                    color: "#ffffff",
+                    border: "none",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  + Post Expense
+                </button>
+              </div>
+            </div>
+          </div>
           {details.campsite && (
             <div className="card">
               <h2>Campsite Information</h2>
@@ -689,7 +1184,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
             </div>
           )}
 
-          <div className="card">
+          <div id="rsvp-actions-card" className="card">
             <h2>RSVP & Attendance</h2>
             <div style={{ marginBottom: "1rem", background: "#f8fafc", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
               <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#334155", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
@@ -821,9 +1316,50 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                 <h3>Who's going ({details.comingCount})</h3>
                 <div className="attendees-chips-grid">
                   {details.participantEntries.map((e) => (
-                    <span key={e.memberId} className="attendee-chip">
-                      {e.displayName}
-                    </span>
+                    <div
+                      key={e.memberId}
+                      className="attendee-chip"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}
+                    >
+                      <span>{e.displayName}</span>
+                      {e.depositStatus === "exempt" ? (
+                        <span style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 600 }}>
+                          (Payer Exempt)
+                        </span>
+                      ) : e.depositStatus === "confirmed" || e.depositStatus === "confirmed_by_admin" ? (
+                        <span style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 600 }}>
+                          ($50 Paid ✓)
+                        </span>
+                      ) : e.depositStatus === "submitted_by_member" ? (
+                        <span style={{ fontSize: "0.72rem", color: "#2563eb", fontWeight: 600 }}>
+                          ($50 Submitted ⏳)
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "0.72rem", color: "#b45309", fontWeight: 600 }}>
+                          (Deposit Pending)
+                        </span>
+                      )}
+                      {isAdmin && (e.depositStatus === "submitted_by_member" || e.depositStatus === "unpaid" || !e.depositStatus) && e.depositStatus !== "exempt" && (
+                        <button
+                          type="button"
+                          disabled={depositBusy}
+                          onClick={() => void handleVerifyDeposit(e.memberId)}
+                          style={{
+                            fontSize: "0.72rem",
+                            padding: "0.15rem 0.45rem",
+                            marginLeft: "0.2rem",
+                            borderRadius: "4px",
+                            background: "#16a34a",
+                            color: "#ffffff",
+                            border: "none",
+                            cursor: "pointer",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Verify Deposit
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -872,11 +1408,50 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
               </details>
             )}
           </div>
+
+          {details.rulesMarkdown && (
+            <div className="card">
+              <h2 style={{ fontSize: "1.1rem" }}>📜 Camping Constitution &amp; Trip Notes</h2>
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  fontSize: "0.875rem",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-wrap",
+                  color: "#1e293b",
+                }}
+              >
+                {details.rulesMarkdown}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {tab === "constitution" && (
         <div className="stack">
+          {details.rulesMarkdown && (
+            <div className="card" style={{ marginBottom: "1rem" }}>
+              <h2>📜 Camping Constitution &amp; Trip Notes</h2>
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  fontSize: "0.9rem",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-wrap",
+                  color: "#1e293b",
+                }}
+              >
+                {details.rulesMarkdown}
+              </div>
+            </div>
+          )}
           <div className="card">
             <h2>Camping Constitution</h2>
             {!details.currentRuleBundle && <p>No constitution bundle available for this trip.</p>}
@@ -988,6 +1563,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
           api={api}
           onClose={() => setShowTimeSlotsModal(false)}
           onRefreshParent={refresh}
+        />
+      )}
+
+      {showPackingModal && (
+        <PersonalPackingListModal
+          items={individualPackItems}
+          onClose={() => setShowPackingModal(false)}
         />
       )}
     </section>
@@ -1287,6 +1869,128 @@ function EditLogisticsModal({
             <button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function PersonalPackingListModal({
+  items,
+  onClose,
+}: {
+  items: Array<{ itemName: string; category?: string; quantityDescription?: string | null }>;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="packing-modal-title"
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        padding: "1rem",
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          maxWidth: "500px",
+          width: "100%",
+          maxHeight: "85vh",
+          overflowY: "auto",
+          background: "#ffffff",
+          borderRadius: "12px",
+          padding: "1.5rem",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h3 id="packing-modal-title" style={{ margin: 0, fontSize: "1.2rem", color: "#0f172a" }}>
+            🎒 Personal Packing Checklist
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              fontSize: "1.25rem",
+              cursor: "pointer",
+              padding: "0.25rem 0.5rem",
+              color: "#64748b",
+            }}
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p style={{ margin: "0 0 1rem 0", fontSize: "0.875rem", color: "#64748b" }}>
+          Selected by organizer for this trip. Every camper should pack these individual items:
+        </p>
+
+        {items.length === 0 ? (
+          <p style={{ color: "#94a3b8", fontStyle: "italic", fontSize: "0.9rem" }}>
+            No personal packing items listed for this trip yet.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {items.map((item, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "0.6rem 0.85rem",
+                  background: "#f8fafc",
+                  borderRadius: "6px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div>
+                  <strong style={{ color: "#1e293b", fontSize: "0.9rem" }}>{item.itemName}</strong>
+                  {item.quantityDescription && (
+                    <span style={{ fontSize: "0.8rem", color: "#64748b", marginLeft: "0.4rem" }}>
+                      ({item.quantityDescription})
+                    </span>
+                  )}
+                </div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    padding: "0.2rem 0.5rem",
+                    background: "#e2e8f0",
+                    color: "#475569",
+                    borderRadius: "4px",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {item.category ?? "gear"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+            style={{ padding: "0.4rem 1rem", fontSize: "0.875rem" }}
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

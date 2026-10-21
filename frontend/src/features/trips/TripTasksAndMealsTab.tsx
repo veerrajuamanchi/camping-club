@@ -472,6 +472,10 @@ export function TripTasksAndMealsTab({
           );
 
           // Check if current volunteer has met their required chore(s) for this day
+          const dayDate = new Date(`${dateStr}T12:00:00Z`);
+          const dayName = !isNaN(dayDate.getTime())
+            ? dayDate.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })
+            : "this day";
           const dayWorkload = dailyWorkload?.days?.find((d) => d.date === dateStr);
           const myAssignmentsOnThisDay = dutiesForDate.filter((d) =>
             assignments.some((a) => a.slot_duty_id === d.id && a.member_id === currentMemberId)
@@ -525,17 +529,17 @@ export function TripTasksAndMealsTab({
                           ) : isNoTasksScheduled ? (
                             "No active tasks scheduled. No selection required."
                           ) : (
-                            `Done selecting chores for this day (${dayWeightSelected}× of ${dayTarget}× selected).`
+                            `✓ Target Met for ${dayName}!`
                           )
                         ) : (
-                          `Select chores worth ${dayTarget}× for this day (Select at least ${(dayTarget - dayWeightSelected).toFixed(1).replace(/\.0$/, "")}× more while slots remain).`
+                          `Select chores worth ${dayTarget}× for ${dayName} (Select at least ${(dayTarget - dayWeightSelected).toFixed(1).replace(/\.0$/, "")}× more while slots remain).`
                         )}
                       </>
                     ) : (
                       isDoneForThisDay ? (
-                        "✓ You have selected chores for this day."
+                        `✓ Target Met for ${dayName}!`
                       ) : (
-                        "Select chores worth 2× for this day."
+                        `Select chores worth 2× for ${dayName}`
                       )
                     )}
                   </p>
