@@ -251,9 +251,9 @@ test("trip-api master catalogs, deposit tracking, and commitments extensions", a
       action: "create",
       name: gearName,
       description: "4-person waterproof tent",
-      gearType: "individual",
-      category: "shelter",
-      defaultQuantity: "1",
+      gearType: "shared",
+      category: "kitchen",
+      defaultQuantity: "3",
       isCritical: true,
       active: true,
     });
@@ -268,7 +268,7 @@ test("trip-api master catalogs, deposit tracking, and commitments extensions", a
     });
     assert.equal(unauthorizedRes.status, 403, "Non-admin should receive 403");
 
-    // Admin updates
+    // Admin updates ONLY name — omitted fields (gearType, category, defaultQuantity, isCritical) must remain intact
     const updateRes = await callTripApi("admin_manage_master_gear", admin.accessToken, {
       action: "update",
       id: createdId,
@@ -276,6 +276,10 @@ test("trip-api master catalogs, deposit tracking, and commitments extensions", a
     });
     assert.equal(updateRes.status, 200);
     assert.equal(updateRes.body.name || updateRes.body.item?.name, `${gearName} Updated`);
+    assert.equal(updateRes.body.gear_type, "shared", "Omitted gearType must remain unchanged on update");
+    assert.equal(updateRes.body.category, "kitchen", "Omitted category must remain unchanged on update");
+    assert.equal(updateRes.body.default_quantity, "3", "Omitted defaultQuantity must remain unchanged on update");
+    assert.equal(updateRes.body.is_critical, true, "Omitted isCritical must remain unchanged on update");
 
     // Admin deletes
     const deleteRes = await callTripApi("admin_manage_master_gear", admin.accessToken, {
@@ -291,14 +295,26 @@ test("trip-api master catalogs, deposit tracking, and commitments extensions", a
       action: "create",
       name: foodName,
       description: "Buttermilk mix",
-      category: "pantry",
-      defaultQuantity: "2 boxes",
-      isCritical: false,
+      category: "produce",
+      defaultQuantity: "5 bags",
+      isCritical: true,
       active: true,
     });
     assert.equal(createRes.status, 200, `Food create failed: ${JSON.stringify(createRes.body)}`);
     const foodId = createRes.body.id || createRes.body.item?.id;
     assert.ok(foodId);
+
+    // Update only name — category, quantity, isCritical must remain intact
+    const updateRes = await callTripApi("admin_manage_master_food", admin.accessToken, {
+      action: "update",
+      id: foodId,
+      name: `${foodName} Updated`,
+    });
+    assert.equal(updateRes.status, 200);
+    assert.equal(updateRes.body.name, `${foodName} Updated`);
+    assert.equal(updateRes.body.category, "produce", "Omitted category must remain unchanged on food update");
+    assert.equal(updateRes.body.default_quantity, "5 bags", "Omitted defaultQuantity must remain unchanged on food update");
+    assert.equal(updateRes.body.is_critical, true, "Omitted isCritical must remain unchanged on food update");
 
     const deleteRes = await callTripApi("admin_manage_master_food", admin.accessToken, {
       action: "delete",
@@ -401,5 +417,26 @@ test("trip-api master catalogs, deposit tracking, and commitments extensions", a
     const updatedDetails = await callTripApi("get_trip_details", attendee.accessToken, { tripId });
     const updatedCommitment = updatedDetails.body.commitmentsList.find((c) => c.id === commitment.id);
     assert.equal(updatedCommitment.isActive, false);
+  });
+
+  await t.test("manage_trip_commitments admin_create preserves commitmentType individual_pack", async () => {
+    const createRes = await callTripApi("manage_trip_commitments", admin.accessToken, {
+      tripId,
+      action: "admin_create",
+      itemName: "Bring Personal Headlamp",
+      commitmentType: "individual_pack",
+      category: "gear",
+      quantityDescription: "1 per person",
+      isCritical: false,
+    });
+    assert.equal(createRes.status, 200, `admin_create failed: ${JSON.stringify(createRes.body)}`);
+    assert.equal(createRes.body.commitment_type, "individual_pack", "Must preserve commitment_type individual_pack");
+
+    // Verify in get_trip_details
+    const detailsRes = await callTripApi("get_trip_details", attendee.accessToken, { tripId });
+    const created = detailsRes.body.commitmentsList.find((c) => c.itemName === "Bring Personal Headlamp");
+    assert.ok(created, "Expected created commitment to appear in trip details");
+    assert.equal(created.commitmentType, "individual_pack");
+    assert.ok(detailsRes.body.commitments.individualPack.some((c) => c.id === created.id));
   });
 });

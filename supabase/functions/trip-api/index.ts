@@ -1922,12 +1922,16 @@ Deno.serve(async (request) => {
         p_action: input.action,
         p_id: input.id ?? null,
         p_name: input.name ?? null,
-        p_description: input.description ?? null,
-        p_gear_type: input.gearType ?? "individual",
-        p_category: input.category ?? "other",
-        p_default_quantity: input.defaultQuantity ?? "1",
-        p_is_critical: input.isCritical ?? false,
-        p_active: typeof input.active === "boolean" ? input.active : true,
+        p_description: typeof input.description !== "undefined" ? input.description : null,
+        p_gear_type: input.action === "update" ? (input.gearType ?? null) : (input.gearType ?? "individual"),
+        p_category: input.action === "update" ? (input.category ?? null) : (input.category ?? "other"),
+        p_default_quantity: input.action === "update" ? (input.defaultQuantity ?? null) : (input.defaultQuantity ?? "1"),
+        p_is_critical: input.action === "update"
+          ? (typeof input.isCritical === "boolean" ? input.isCritical : null)
+          : (input.isCritical ?? false),
+        p_active: input.action === "update"
+          ? (typeof input.active === "boolean" ? input.active : null)
+          : (typeof input.active === "boolean" ? input.active : true),
         p_actor_id: member.member_id,
       };
       break;
@@ -1937,11 +1941,15 @@ Deno.serve(async (request) => {
         p_action: input.action,
         p_id: input.id ?? null,
         p_name: input.name ?? null,
-        p_description: input.description ?? null,
-        p_category: input.category ?? "pantry",
-        p_default_quantity: input.defaultQuantity ?? "1 pack",
-        p_is_critical: input.isCritical ?? false,
-        p_active: typeof input.active === "boolean" ? input.active : true,
+        p_description: typeof input.description !== "undefined" ? input.description : null,
+        p_category: input.action === "update" ? (input.category ?? null) : (input.category ?? "pantry"),
+        p_default_quantity: input.action === "update" ? (input.defaultQuantity ?? null) : (input.defaultQuantity ?? "1 pack"),
+        p_is_critical: input.action === "update"
+          ? (typeof input.isCritical === "boolean" ? input.isCritical : null)
+          : (input.isCritical ?? false),
+        p_active: input.action === "update"
+          ? (typeof input.active === "boolean" ? input.active : null)
+          : (typeof input.active === "boolean" ? input.active : true),
         p_actor_id: member.member_id,
       };
       break;
@@ -2152,18 +2160,54 @@ Deno.serve(async (request) => {
         }).eq("trip_id", input.tripId);
       }
     }
-    await service.rpc("seed_trip_commitments_from_master", {
+    const { error: seedErr } = await service.rpc("seed_trip_commitments_from_master", {
       p_trip_id: input.tripId,
       p_actor_id: member.member_id,
     });
+    if (seedErr) {
+      console.error("seed_trip_commitments_from_master error in admin_configure_trip:", seedErr);
+    }
   }
   if (action === "admin_create_custom_trip") {
     const createdTripId = (data as any)?.tripId ?? (data as any)?.trip_id ?? (data as any)?.id;
     if (createdTripId) {
-      await service.rpc("seed_trip_commitments_from_master", {
+      const { error: seedErr } = await service.rpc("seed_trip_commitments_from_master", {
         p_trip_id: createdTripId,
         p_actor_id: member.member_id,
       });
+      if (seedErr) {
+        console.error("seed_trip_commitments_from_master error in admin_create_custom_trip:", seedErr);
+      }
+    }
+  }
+  if ((action === "manage_trip_commitments" || action === "manage_trip_commitment") && input.action === "admin_create") {
+    const createdCommitmentId = (data as any)?.commitment_id ?? (data as any)?.id;
+    if (createdCommitmentId && (input.commitmentType || typeof input.isActive === "boolean")) {
+      const { error: patchError } = await service.from("trip_commitments").update({
+        ...(input.commitmentType && { commitment_type: input.commitmentType }),
+        ...(typeof input.isActive === "boolean" && { is_active: input.isActive }),
+      }).eq("id", createdCommitmentId);
+      if (patchError) {
+        console.error("Failed to update commitment_type / is_active on admin_create:", patchError);
+      } else if (data && typeof data === "object") {
+        if (input.commitmentType) (data as any).commitment_type = input.commitmentType;
+        if (typeof input.isActive === "boolean") (data as any).is_active = input.isActive;
+      }
+    }
+  }
+  if ((action === "manage_trip_commitments" || action === "manage_trip_commitment") && input.action === "admin_update") {
+    const commitmentId = input.commitmentId ?? (data as any)?.commitment_id;
+    if (commitmentId && (input.commitmentType || typeof input.isActive === "boolean")) {
+      const { error: patchError } = await service.from("trip_commitments").update({
+        ...(input.commitmentType && { commitment_type: input.commitmentType }),
+        ...(typeof input.isActive === "boolean" && { is_active: input.isActive }),
+      }).eq("id", commitmentId);
+      if (patchError) {
+        console.error("Failed to update commitment_type / is_active on admin_update:", patchError);
+      } else if (data && typeof data === "object") {
+        if (input.commitmentType) (data as any).commitment_type = input.commitmentType;
+        if (typeof input.isActive === "boolean") (data as any).is_active = input.isActive;
+      }
     }
   }
   try {
