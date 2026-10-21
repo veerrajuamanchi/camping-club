@@ -164,12 +164,14 @@ DECLARE
     v_actor public.member_profiles%ROWTYPE;
     v_record public.master_gear%ROWTYPE;
 BEGIN
-    IF p_actor_id IS NOT NULL THEN
-        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
-    ELSE
+    IF auth.uid() IS NOT NULL THEN
         SELECT * INTO v_actor FROM public.member_profiles
         WHERE (auth_user_id = auth.uid() OR member_id = auth.uid())
         LIMIT 1;
+    ELSIF p_actor_id IS NOT NULL THEN
+        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
+    ELSE
+        RAISE EXCEPTION 'unauthorized: session required' USING ERRCODE = '42501';
     END IF;
 
     IF v_actor.member_id IS NULL OR v_actor.member_role NOT IN ('admin', 'administrator') OR v_actor.account_status <> 'active' THEN
@@ -299,12 +301,14 @@ DECLARE
     v_actor public.member_profiles%ROWTYPE;
     v_record public.master_food_groceries%ROWTYPE;
 BEGIN
-    IF p_actor_id IS NOT NULL THEN
-        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
-    ELSE
+    IF auth.uid() IS NOT NULL THEN
         SELECT * INTO v_actor FROM public.member_profiles
         WHERE (auth_user_id = auth.uid() OR member_id = auth.uid())
         LIMIT 1;
+    ELSIF p_actor_id IS NOT NULL THEN
+        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
+    ELSE
+        RAISE EXCEPTION 'unauthorized: session required' USING ERRCODE = '42501';
     END IF;
 
     IF v_actor.member_id IS NULL OR v_actor.member_role NOT IN ('admin', 'administrator') OR v_actor.account_status <> 'active' THEN
@@ -418,12 +422,14 @@ DECLARE
     v_resp public.master_responsibilities%ROWTYPE;
     v_is_referenced BOOLEAN;
 BEGIN
-    IF p_actor_id IS NOT NULL THEN
-        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
-    ELSE
+    IF auth.uid() IS NOT NULL THEN
         SELECT * INTO v_actor FROM public.member_profiles
         WHERE (auth_user_id = auth.uid() OR member_id = auth.uid())
         LIMIT 1;
+    ELSIF p_actor_id IS NOT NULL THEN
+        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
+    ELSE
+        RAISE EXCEPTION 'unauthorized: session required' USING ERRCODE = '42501';
     END IF;
 
     IF v_actor.member_id IS NULL OR v_actor.member_role NOT IN ('admin', 'administrator') OR v_actor.account_status <> 'active' THEN
@@ -481,12 +487,14 @@ DECLARE
     v_rsvp public.trip_rsvps%ROWTYPE;
     v_new_status TEXT;
 BEGIN
-    IF p_actor_id IS NOT NULL THEN
-        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
-    ELSE
+    IF auth.uid() IS NOT NULL THEN
         SELECT * INTO v_actor FROM public.member_profiles
         WHERE (auth_user_id = auth.uid() OR member_id = auth.uid())
         LIMIT 1;
+    ELSIF p_actor_id IS NOT NULL THEN
+        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
+    ELSE
+        RAISE EXCEPTION 'unauthorized: session required' USING ERRCODE = '42501';
     END IF;
 
     IF v_actor.member_id IS NULL OR v_actor.account_status <> 'active' THEN
@@ -496,6 +504,10 @@ BEGIN
     SELECT * INTO v_trip FROM public.camping_trips WHERE id = p_trip_id AND deleted_at IS NULL;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'trip not found' USING ERRCODE = 'P0002';
+    END IF;
+
+    IF v_trip.event_status IN ('cancelled', 'completed') THEN
+        RAISE EXCEPTION 'cannot submit deposit for % trip', v_trip.event_status USING ERRCODE = '22023';
     END IF;
 
     SELECT * INTO v_rsvp FROM public.trip_rsvps WHERE trip_id = p_trip_id AND member_id = v_actor.member_id;
@@ -563,12 +575,14 @@ DECLARE
     v_actor public.member_profiles%ROWTYPE;
     v_rsvp public.trip_rsvps%ROWTYPE;
 BEGIN
-    IF p_actor_id IS NOT NULL THEN
-        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
-    ELSE
+    IF auth.uid() IS NOT NULL THEN
         SELECT * INTO v_actor FROM public.member_profiles
         WHERE (auth_user_id = auth.uid() OR member_id = auth.uid())
         LIMIT 1;
+    ELSIF p_actor_id IS NOT NULL THEN
+        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
+    ELSE
+        RAISE EXCEPTION 'unauthorized: session required' USING ERRCODE = '42501';
     END IF;
 
     IF v_actor.member_id IS NULL OR v_actor.member_role NOT IN ('admin', 'administrator') OR v_actor.account_status <> 'active' THEN
@@ -625,12 +639,14 @@ DECLARE
     v_gear_seeded INTEGER := 0;
     v_food_seeded INTEGER := 0;
 BEGIN
-    IF p_actor_id IS NOT NULL THEN
-        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
-    ELSE
+    IF auth.uid() IS NOT NULL THEN
         SELECT * INTO v_actor FROM public.member_profiles
         WHERE (auth_user_id = auth.uid() OR member_id = auth.uid())
         LIMIT 1;
+    ELSIF p_actor_id IS NOT NULL THEN
+        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
+    ELSE
+        RAISE EXCEPTION 'unauthorized: session required' USING ERRCODE = '42501';
     END IF;
 
     IF v_actor.member_id IS NULL OR v_actor.member_role NOT IN ('admin', 'administrator') OR v_actor.account_status <> 'active' THEN
@@ -640,6 +656,10 @@ BEGIN
     SELECT * INTO v_trip FROM public.camping_trips WHERE id = p_trip_id AND deleted_at IS NULL;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'trip not found' USING ERRCODE = 'P0002';
+    END IF;
+
+    IF v_trip.event_status IN ('cancelled', 'completed') THEN
+        RAISE EXCEPTION 'cannot seed commitments for % trip', v_trip.event_status USING ERRCODE = '22023';
     END IF;
 
     -- Seed active master gear items not already present in trip_commitments
@@ -684,7 +704,7 @@ BEGIN
     )
     SELECT
         p_trip_id,
-        'food',
+        COALESCE(mf.category, 'food'),
         mf.name,
         mf.default_quantity,
         mf.is_critical,
@@ -727,12 +747,14 @@ DECLARE
     v_actor public.member_profiles%ROWTYPE;
     v_commitment public.trip_commitments%ROWTYPE;
 BEGIN
-    IF p_actor_id IS NOT NULL THEN
-        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
-    ELSE
+    IF auth.uid() IS NOT NULL THEN
         SELECT * INTO v_actor FROM public.member_profiles
         WHERE (auth_user_id = auth.uid() OR member_id = auth.uid())
         LIMIT 1;
+    ELSIF p_actor_id IS NOT NULL THEN
+        SELECT * INTO v_actor FROM public.member_profiles WHERE member_id = p_actor_id;
+    ELSE
+        RAISE EXCEPTION 'unauthorized: session required' USING ERRCODE = '42501';
     END IF;
 
     IF v_actor.member_id IS NULL OR v_actor.member_role NOT IN ('admin', 'administrator') OR v_actor.account_status <> 'active' THEN

@@ -210,6 +210,27 @@ test("master catalogs, commitments extension, and deposit tracking boundaries", 
       p_category: "pantry",
     });
     assert.ok(foodErr, "Expected non-admin food RPC to fail");
+
+    // Non-admin attempts to forge p_actor_id to admin.memberId
+    const { error: forgedErr } = await regularMember.client.rpc("admin_manage_master_gear", {
+      p_action: "create",
+      p_name: "Forged Actor Tent",
+      p_gear_type: "individual",
+      p_category: "shelter",
+      p_actor_id: admin.memberId,
+    });
+    assert.ok(forgedErr, "Expected forged p_actor_id RPC call to fail");
+    assert.match(forgedErr.message, /unauthorized|administrator role required/i);
+
+    // Non-admin attempts to forge p_actor_id in verify_member_deposit
+    const { error: forgedVerifyErr } = await regularMember.client.rpc("verify_member_deposit", {
+      p_trip_id: randomUUID(),
+      p_member_id: regularMember.memberId,
+      p_status: "confirmed_by_admin",
+      p_actor_id: admin.memberId,
+    });
+    assert.ok(forgedVerifyErr, "Expected forged verify_member_deposit call to fail");
+    assert.match(forgedVerifyErr.message, /unauthorized|administrator role required/i);
   });
 
   await t.test("3. submit_member_deposit updates trip_rsvps.deposit_status to 'submitted_by_member'", async () => {
@@ -242,6 +263,17 @@ test("master catalogs, commitments extension, and deposit tracking boundaries", 
     });
     assert.ifError(verifyErr);
     assert.equal(verifyData.deposit_status, "confirmed_by_admin");
+
+    // Deposit submission on cancelled trip is rejected
+    const { tripId: cancelledTripId } = await createTestTrip(15);
+    await serviceClient.from("camping_trips").update({ event_status: "cancelled" }).eq("id", cancelledTripId);
+    await setupRsvp(cancelledTripId, regularMember.memberId, regularMember.client, "coming");
+
+    const { error: cancelledDepositErr } = await regularMember.client.rpc("submit_member_deposit", {
+      p_trip_id: cancelledTripId,
+    });
+    assert.ok(cancelledDepositErr, "Deposit on cancelled trip must be rejected");
+    assert.match(cancelledDepositErr.message, /cannot submit deposit for cancelled trip/i);
   });
 
   await t.test("4. Attending cabin payer resolves to 'exempt'", async () => {
@@ -403,13 +435,27 @@ test("master catalogs, commitments extension, and deposit tracking boundaries", 
     // Check commitments exist
     const { data: seededItems, error: itemsErr } = await serviceClient
       .from("trip_commitments")
-      .select("id, item_name, is_active, commitment_type, master_gear_id, master_food_id")
+      .select("id, item_name, category, is_active, commitment_type, master_gear_id, master_food_id")
       .eq("trip_id", tripId);
     assert.ifError(itemsErr);
     assert.ok(seededItems.length >= seedData.gear_seeded + seedData.food_seeded);
 
     const testItem = seededItems[0];
     assert.equal(testItem.is_active, true);
+
+    // Verify seeded grocery items retain specific categories rather than generic 'food'
+    const foodItems = seededItems.filter((i) => i.master_food_id != null);
+    assert.ok(foodItems.length > 0, "Seeded food items should exist");
+    const foodCategories = foodItems.map((i) => i.category);
+    assert.ok(
+      foodCategories.includes("pantry") ||
+      foodCategories.includes("produce") ||
+      foodCategories.includes("dairy_meat") ||
+      foodCategories.includes("campfire") ||
+      foodCategories.includes("beverages") ||
+      foodCategories.includes("supplies"),
+      "Seeded grocery items must retain specific master categories"
+    );
 
     // Admin toggles active status to false
     const { data: toggleData, error: toggleErr } = await admin.client.rpc("update_trip_commitment_status", {
