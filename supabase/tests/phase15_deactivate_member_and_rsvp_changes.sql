@@ -106,7 +106,7 @@ select results_eq(
 select throws_ok($$select public.phase2_submit_rsvp('a0000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000001','not_coming',null,null,1,gen_random_uuid())$$,'40001',null,'stale RSVP version is rejected');
 update public.camping_trips set event_status='cancelled' where id='d0000000-0000-0000-0000-000000000001';
 select throws_ok($$select public.phase2_submit_rsvp('a0000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000001','not_coming',null,null,3,gen_random_uuid())$$,'P0001','camping event is closed','cancelled event rejects RSVP changes');
-update public.camping_trips set event_status='confirmed',starts_on=current_date-3,ends_on=current_date-1 where id='d0000000-0000-0000-0000-000000000001';
+update public.camping_trips set event_status='confirmed',starts_on=current_date-7,ends_on=current_date-4 where id='d0000000-0000-0000-0000-000000000001';
 select throws_ok($$select public.phase2_submit_rsvp('a0000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000001','not_coming',null,null,3,gen_random_uuid())$$,'P0001','camping event is closed','past event rejects RSVP changes');
 -- Past attendance is retained when the member is disabled.
 select public.phase1_update_membership('b0000000-0000-0000-0000-000000000001','b0000000-0000-0000-0000-000000000002','member','suspended','Test historic preservation',gen_random_uuid());
