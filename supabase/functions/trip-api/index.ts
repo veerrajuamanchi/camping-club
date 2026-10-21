@@ -20,8 +20,10 @@ const actionNames = [
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation", "get_trip_lifecycle",
-  "get_trip_logistics", "manage_trip_commitment", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
+  "get_trip_logistics", "manage_trip_commitment", "manage_trip_commitments", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
   "get_trip_financials", "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
+  "get_master_catalogs", "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
+  "submit_deposit", "verify_deposit",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -64,13 +66,62 @@ const inputSchemas = {
   get_trip_logistics: z.object({ tripId: uuid }).strict(),
   manage_trip_commitment: z.object({
     tripId: uuid,
-    action: z.enum(["claim", "unclaim", "admin_create", "admin_update", "admin_delete"]),
+    action: z.enum(["claim", "unclaim", "admin_create", "admin_update", "admin_delete", "toggle_active"]),
     commitmentId: uuid.optional(),
-    category: z.enum(["gear", "food", "supplies", "shelter", "safety"]).optional(),
+    isActive: z.boolean().optional(),
+    commitmentType: z.enum(["individual_pack", "shared_volunteer"]).optional(),
+    category: z.string().trim().optional(),
     itemName: z.string().trim().min(1).max(200).optional(),
     quantityDescription: z.string().trim().max(200).nullable().optional(),
     isCritical: z.boolean().optional(),
     assignedMemberId: uuid.nullable().optional(),
+  }).strict(),
+  manage_trip_commitments: z.object({
+    tripId: uuid,
+    action: z.enum(["toggle_active", "admin_create", "admin_update", "admin_delete", "claim", "unclaim"]),
+    commitmentId: uuid.optional(),
+    isActive: z.boolean().optional(),
+    commitmentType: z.enum(["individual_pack", "shared_volunteer"]).optional(),
+    category: z.string().trim().optional(),
+    itemName: z.string().trim().min(1).max(200).optional(),
+    quantityDescription: z.string().trim().max(200).nullable().optional(),
+    isCritical: z.boolean().optional(),
+    assignedMemberId: uuid.nullable().optional(),
+  }).strict(),
+  get_master_catalogs: z.object({
+    includeInactive: z.boolean().optional(),
+  }).strict().optional().default({}),
+  admin_manage_master_gear: z.object({
+    action: z.enum(["create", "update", "delete"]),
+    id: uuid.optional(),
+    name: z.string().trim().min(2).max(100).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    gearType: z.enum(["individual", "shared"]).optional(),
+    category: z.enum(["shelter", "sleep", "kitchen", "lighting", "safety", "tools", "clothing", "other"]).optional(),
+    defaultQuantity: z.string().trim().max(100).optional(),
+    isCritical: z.boolean().optional(),
+    active: z.boolean().optional(),
+  }).strict(),
+  admin_manage_master_food: z.object({
+    action: z.enum(["create", "update", "delete"]),
+    id: uuid.optional(),
+    name: z.string().trim().min(2).max(100).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    category: z.enum(["pantry", "produce", "dairy_meat", "bakery", "beverages", "campfire", "supplies", "other"]).optional(),
+    defaultQuantity: z.string().trim().max(100).optional(),
+    isCritical: z.boolean().optional(),
+    active: z.boolean().optional(),
+  }).strict(),
+  admin_delete_master_responsibility: z.object({
+    id: uuid,
+  }).strict(),
+  submit_deposit: z.object({
+    tripId: uuid,
+  }).strict(),
+  verify_deposit: z.object({
+    tripId: uuid,
+    memberId: uuid,
+    status: z.enum(["unpaid", "submitted_by_member", "confirmed_by_admin", "exempt"]).optional().default("confirmed_by_admin"),
   }).strict(),
   admin_manage_carpool: z.object({
     tripId: uuid,
@@ -334,6 +385,8 @@ const adminActions = new Set<Action>([
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
   "admin_manage_carpool", "admin_override_duty",
   "admin_finalize_settlement",
+  "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
+  "verify_deposit",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -344,8 +397,10 @@ const mutatingActions = new Set<Action>([
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
   "admin_transition_trip_lifecycle", "admin_update_cabin_reservation",
-  "manage_trip_commitment", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
+  "manage_trip_commitment", "manage_trip_commitments", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
   "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
+  "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
+  "submit_deposit", "verify_deposit",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -361,7 +416,7 @@ function databaseStatus(code: string | undefined): number {
 }
 
 function aggregateId(action: Action, input: Record<string, unknown>, memberId: string): string {
-  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId", "commitmentId", "carpoolId", "dutyId", "expenseId", "transferId"]) if (typeof input[key] === "string") return input[key] as string;
+  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId", "commitmentId", "carpoolId", "dutyId", "expenseId", "transferId", "id"]) if (typeof input[key] === "string") return input[key] as string;
   return memberId;
 }
 
@@ -390,7 +445,7 @@ async function finish(principal: string, action: Action, aggregate: string, key:
 function resultId(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const result = value as Record<string, unknown>;
-  for (const key of ["rsvpId", "tripId", "ruleVersionId", "overrideId", "campsiteId", "invitationId"]) {
+  for (const key of ["rsvpId", "tripId", "ruleVersionId", "overrideId", "campsiteId", "invitationId", "id"]) {
     if (typeof result[key] === "string") return result[key] as string;
   }
   return null;
@@ -578,7 +633,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
 
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
   const tripResult = await service.from("camping_trips")
-    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,trip_status,camping_type,task_quota_target,daily_workload_target,trip_mileage_rate_cents,deposit_amount_cents,cabin_payer_member_id,deleted_at,version")
+    .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,trip_status,camping_type,task_quota_target,daily_workload_target,trip_mileage_rate_cents,deposit_amount_cents,cabin_payer_member_id,rules_markdown,deleted_at,version")
     .eq("id", tripId)
     .is("deleted_at", null)
     .maybeSingle();
@@ -598,7 +653,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     checkError(refreshError);
   }
 
-  const [campsiteResult, bundleResult, rsvpResult, waitlistResult, dutiesResult, cabinReservationResult] = await Promise.all([
+  const [campsiteResult, bundleResult, rsvpResult, waitlistResult, dutiesResult, cabinReservationResult, commitmentsResult] = await Promise.all([
     trip.selected_campsite_id
       ? service.from("campsites")
           .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,version")
@@ -611,7 +666,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       .eq("is_current", true)
       .maybeSingle(),
     service.from("trip_rsvps")
-      .select("trip_id,member_id,response,rule_acknowledgment_id,version,updated_at")
+      .select("trip_id,member_id,response,rule_acknowledgment_id,deposit_status,deposit_submitted_at,deposit_confirmed_at,deposit_confirmed_by,version,updated_at")
       .eq("trip_id", tripId),
     service.from("trip_waitlist_entries")
       .select("id,member_id,position,status,created_at")
@@ -628,17 +683,24 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       .select("id,status,reservation_reference,provider_label,paid_by_member_id,reservation_amount_cents,cabin_count,per_cabin_capacity,cancellation_notes,updated_at")
       .eq("trip_id", tripId)
       .maybeSingle(),
+    service.from("trip_commitments")
+      .select("id,trip_id,category,item_name,quantity_description,assigned_member_id,is_critical,master_gear_id,master_food_id,commitment_type,is_active,created_at,updated_at")
+      .eq("trip_id", tripId)
+      .order("created_at"),
   ]);
   checkError(campsiteResult.error);
   checkError(bundleResult.error);
   checkError(rsvpResult.error);
   checkError(waitlistResult.error);
   checkError(dutiesResult.error);
+  checkError(commitmentsResult.error);
 
   const campsite = campsiteResult.data;
   const rsvps = rsvpResult.data ?? [];
   const waitlist = waitlistResult.data ?? [];
-  const memberIds = [...new Set([...rsvps.map((r) => r.member_id), ...waitlist.map((w) => w.member_id)])];
+  const rawCommitments = commitmentsResult.data ?? [];
+  const commitmentMemberIds = rawCommitments.map((c: any) => c.assigned_member_id).filter(Boolean);
+  const memberIds = [...new Set([...rsvps.map((r) => r.member_id), ...waitlist.map((w) => w.member_id), ...commitmentMemberIds])];
   const { data: memberRows, error: memberRowsError } = memberIds.length
     ? await service.from("member_profiles").select("member_id,display_name").in("member_id", memberIds).eq("account_status", "active")
     : { data: [], error: null };
@@ -654,7 +716,29 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       memberId: r.member_id,
       displayName: nameMap.get(r.member_id) ?? "Member",
       response: r.response,
+      depositStatus: r.member_id === trip.cabin_payer_member_id ? "exempt" : (r.deposit_status ?? "unpaid"),
     }));
+
+  const commitmentsList = rawCommitments.map((c: any) => ({
+    id: c.id,
+    tripId: c.trip_id,
+    category: c.category,
+    itemName: c.item_name,
+    quantityDescription: c.quantity_description,
+    assignedMemberId: c.assigned_member_id,
+    assignedMemberName: c.assigned_member_id ? (nameMap.get(c.assigned_member_id) ?? "Member") : null,
+    isCritical: c.is_critical,
+    masterGearId: c.master_gear_id ?? null,
+    masterFoodId: c.master_food_id ?? null,
+    commitmentType: c.commitment_type ?? "shared_volunteer",
+    isActive: c.is_active ?? true,
+    isMine: c.assigned_member_id === member.member_id,
+    createdAt: c.created_at,
+    updatedAt: c.updated_at,
+  }));
+
+  const individualPack = commitmentsList.filter((c: any) => c.commitmentType === "individual_pack" && c.isActive);
+  const sharedVolunteer = commitmentsList.filter((c: any) => c.commitmentType === "shared_volunteer" && c.isActive);
 
   const waitlistEntries = member.member_role === "admin"
     ? waitlist.map((w) => ({
@@ -752,6 +836,13 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     tripMileageRateCents: trip.trip_mileage_rate_cents ?? 50,
     depositAmountCents: trip.deposit_amount_cents ?? 5000,
     cabinPayerMemberId: trip.cabin_payer_member_id ?? null,
+    depositStatus: trip.cabin_payer_member_id === member.member_id ? "exempt" : (ownRsvp?.deposit_status ?? "unpaid"),
+    rulesMarkdown: trip.rules_markdown ?? null,
+    commitmentsList,
+    commitments: {
+      individualPack,
+      sharedVolunteer,
+    },
     cabinReservation: cabinReservationResult?.data ?? null,
     version: trip.version,
     campsite: campsite ? {
@@ -786,6 +877,9 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     } : null,
     myRsvp: ownRsvp ? {
       response: ownRsvp.response,
+      depositStatus: trip.cabin_payer_member_id === member.member_id ? "exempt" : (ownRsvp.deposit_status ?? "unpaid"),
+      depositSubmittedAt: ownRsvp.deposit_submitted_at ?? null,
+      depositConfirmedAt: ownRsvp.deposit_confirmed_at ?? null,
       acknowledgmentId: ownRsvp.rule_acknowledgment_id,
       version: ownRsvp.version,
       updatedAt: ownRsvp.updated_at,
@@ -805,7 +899,7 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
       .is("deleted_at", null)
       .single(),
     service.from("trip_commitments")
-      .select("id, trip_id, category, item_name, quantity_description, assigned_member_id, is_critical, created_at, updated_at")
+      .select("id, trip_id, category, item_name, quantity_description, assigned_member_id, is_critical, master_gear_id, master_food_id, commitment_type, is_active, created_at, updated_at")
       .eq("trip_id", tripId)
       .order("category")
       .order("item_name"),
@@ -851,6 +945,10 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
     assignedMemberId: c.assigned_member_id,
     assignedMemberName: c.assigned_member_id ? (nameMap.get(c.assigned_member_id) ?? "Member") : null,
     isCritical: c.is_critical,
+    masterGearId: c.master_gear_id ?? null,
+    masterFoodId: c.master_food_id ?? null,
+    commitmentType: c.commitment_type ?? "shared_volunteer",
+    isActive: c.is_active ?? true,
     isMine: c.assigned_member_id === member.member_id,
     createdAt: c.created_at,
     updatedAt: c.updated_at,
@@ -1332,6 +1430,31 @@ Deno.serve(async (request) => {
       return errorResponse(request, 500, "master_responsibilities_read_failed", requestId);
     }
   }
+  if (action === "get_master_catalogs") {
+    try {
+      const includeInactive = Boolean((input as any)?.includeInactive);
+      let gearQuery = service.from("master_gear").select("*").order("gear_type", { ascending: true }).order("category", { ascending: true }).order("name", { ascending: true });
+      let foodQuery = service.from("master_food_groceries").select("*").order("category", { ascending: true }).order("name", { ascending: true });
+      let respQuery = service.from("master_responsibilities").select("*").order("category", { ascending: true }).order("title", { ascending: true });
+      if (!includeInactive) {
+        gearQuery = gearQuery.eq("active", true);
+        foodQuery = foodQuery.eq("active", true);
+        respQuery = respQuery.eq("active", true);
+      }
+      const [gearRes, foodRes, respRes] = await Promise.all([gearQuery, foodQuery, respQuery]);
+      checkError(gearRes.error);
+      checkError(foodRes.error);
+      checkError(respRes.error);
+      return json(request, 200, {
+        gear: gearRes.data ?? [],
+        food: foodRes.data ?? [],
+        responsibilities: respRes.data ?? [],
+        requestId,
+      });
+    } catch {
+      return errorResponse(request, 500, "master_catalogs_read_failed", requestId);
+    }
+  }
   if (action === "get_trip_time_slots") {
     try {
       const trip = await service.from("camping_trips").select("version").eq("id", input.tripId).is("deleted_at", null).single();
@@ -1541,19 +1664,29 @@ Deno.serve(async (request) => {
       };
       break;
     case "manage_trip_commitment":
-      rpcName = "phase4_manage_commitment";
-      rpcArgs = {
-        p_trip_id: input.tripId,
-        p_action: input.action,
-        p_commitment_id: input.commitmentId ?? null,
-        p_category: input.category ?? null,
-        p_item_name: input.itemName ?? null,
-        p_quantity: input.quantityDescription ?? null,
-        p_is_critical: input.isCritical ?? false,
-        p_assigned_member_id: input.assignedMemberId ?? null,
-        p_actor_id: member.member_id,
-        p_is_admin: member.member_role === "admin",
-      };
+    case "manage_trip_commitments":
+      if (input.action === "toggle_active") {
+        rpcName = "update_trip_commitment_status";
+        rpcArgs = {
+          p_commitment_id: input.commitmentId,
+          p_is_active: input.isActive ?? true,
+          p_actor_id: member.member_id,
+        };
+      } else {
+        rpcName = "phase4_manage_commitment";
+        rpcArgs = {
+          p_trip_id: input.tripId,
+          p_action: input.action,
+          p_commitment_id: input.commitmentId ?? null,
+          p_category: input.category ?? null,
+          p_item_name: input.itemName ?? null,
+          p_quantity: input.quantityDescription ?? null,
+          p_is_critical: input.isCritical ?? false,
+          p_assigned_member_id: input.assignedMemberId ?? null,
+          p_actor_id: member.member_id,
+          p_is_admin: member.member_role === "admin",
+        };
+      }
       break;
     case "admin_manage_carpool":
       rpcName = "phase4_manage_carpool";
@@ -1783,6 +1916,58 @@ Deno.serve(async (request) => {
         p_actor_id: member.member_id,
       };
       break;
+    case "admin_manage_master_gear":
+      rpcName = "admin_manage_master_gear";
+      rpcArgs = {
+        p_action: input.action,
+        p_id: input.id ?? null,
+        p_name: input.name ?? null,
+        p_description: input.description ?? null,
+        p_gear_type: input.gearType ?? "individual",
+        p_category: input.category ?? "other",
+        p_default_quantity: input.defaultQuantity ?? "1",
+        p_is_critical: input.isCritical ?? false,
+        p_active: typeof input.active === "boolean" ? input.active : true,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_manage_master_food":
+      rpcName = "admin_manage_master_food";
+      rpcArgs = {
+        p_action: input.action,
+        p_id: input.id ?? null,
+        p_name: input.name ?? null,
+        p_description: input.description ?? null,
+        p_category: input.category ?? "pantry",
+        p_default_quantity: input.defaultQuantity ?? "1 pack",
+        p_is_critical: input.isCritical ?? false,
+        p_active: typeof input.active === "boolean" ? input.active : true,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_delete_master_responsibility":
+      rpcName = "admin_delete_master_responsibility";
+      rpcArgs = {
+        p_id: input.id,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "submit_deposit":
+      rpcName = "submit_member_deposit";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "verify_deposit":
+      rpcName = "verify_member_deposit";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_member_id: input.memberId,
+        p_status: input.status ?? "confirmed_by_admin",
+        p_actor_id: member.member_id,
+      };
+      break;
     case "admin_save_daily_responsibilities":
       rpcName = "phase3_save_daily_responsibilities";
       rpcArgs = { p_actor_id: member.member_id, p_trip_id: input.tripId, p_days: input.days, p_expected_version: input.expectedVersion, p_confirm_removal: input.confirmRemoval, p_request_id: key };
@@ -1951,19 +2136,34 @@ Deno.serve(async (request) => {
       error.message
     );
   }
-  if (action === "admin_configure_trip" && (typeof input.cabinCount !== "undefined" || typeof input.perCabinCapacity !== "undefined" || typeof input.cabinPayerMemberId !== "undefined")) {
-    const { error: updateError } = await service.from("camping_trips").update({
-      ...(typeof input.cabinCount !== "undefined" && { cabin_count: input.cabinCount }),
-      ...(typeof input.perCabinCapacity !== "undefined" && { per_cabin_capacity: input.perCabinCapacity }),
-      ...(typeof input.cabinPayerMemberId !== "undefined" && { cabin_payer_member_id: input.cabinPayerMemberId }),
-    }).eq("id", input.tripId);
-    if (updateError) {
-      return errorResponse(request, databaseStatus(updateError.code), "operation_failed", requestId);
+  if (action === "admin_configure_trip") {
+    if (typeof input.cabinCount !== "undefined" || typeof input.perCabinCapacity !== "undefined" || typeof input.cabinPayerMemberId !== "undefined") {
+      const { error: updateError } = await service.from("camping_trips").update({
+        ...(typeof input.cabinCount !== "undefined" && { cabin_count: input.cabinCount }),
+        ...(typeof input.perCabinCapacity !== "undefined" && { per_cabin_capacity: input.perCabinCapacity }),
+        ...(typeof input.cabinPayerMemberId !== "undefined" && { cabin_payer_member_id: input.cabinPayerMemberId }),
+      }).eq("id", input.tripId);
+      if (updateError) {
+        return errorResponse(request, databaseStatus(updateError.code), "operation_failed", requestId);
+      }
+      if (typeof input.cabinPayerMemberId !== "undefined") {
+        await service.from("cabin_reservations").update({
+          paid_by_member_id: input.cabinPayerMemberId,
+        }).eq("trip_id", input.tripId);
+      }
     }
-    if (typeof input.cabinPayerMemberId !== "undefined") {
-      await service.from("cabin_reservations").update({
-        paid_by_member_id: input.cabinPayerMemberId,
-      }).eq("trip_id", input.tripId);
+    await service.rpc("seed_trip_commitments_from_master", {
+      p_trip_id: input.tripId,
+      p_actor_id: member.member_id,
+    });
+  }
+  if (action === "admin_create_custom_trip") {
+    const createdTripId = (data as any)?.tripId ?? (data as any)?.trip_id ?? (data as any)?.id;
+    if (createdTripId) {
+      await service.rpc("seed_trip_commitments_from_master", {
+        p_trip_id: createdTripId,
+        p_actor_id: member.member_id,
+      });
     }
   }
   try {
