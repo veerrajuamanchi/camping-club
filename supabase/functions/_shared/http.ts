@@ -13,7 +13,7 @@ export function json(request: Request, status: number, body: unknown): Response 
   const requestId = typeof result.request_id === "string" ? result.request_id : typeof result.requestId === "string" ? result.requestId : crypto.randomUUID();
   let envelope: Record<string, unknown>;
   if (typeof result.error === "string") {
-    envelope = { error: { code: result.error, message: "The request could not be completed." }, request_id: requestId };
+    envelope = { error: { code: result.error, message: typeof result.message === "string" ? result.message : "The request could not be completed." }, request_id: requestId };
   } else {
     const data = { ...result };
     delete data.request_id;

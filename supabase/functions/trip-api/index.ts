@@ -23,7 +23,7 @@ const actionNames = [
   "get_trip_logistics", "manage_trip_commitment", "manage_trip_commitments", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
   "get_trip_financials", "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
   "get_master_catalogs", "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
-  "submit_deposit", "verify_deposit",
+  "submit_deposit", "verify_deposit", "save_meal_preferences",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -177,6 +177,14 @@ const inputSchemas = {
   admin_set_daily_workload_target: z.object({ tripId: uuid, target: z.number().min(0.5).max(100).multipleOf(0.5).nullable(), expectedVersion: z.number().int().positive() }).strict(),
   get_calendar: z.object({}).strict(),
   get_constitution: z.object({ tripId: uuid.optional() }).strict(),
+  save_meal_preferences: z.object({
+    tripId: uuid,
+    saturdayBeverage: z.enum(["coffee", "tea", "none"]),
+    sundayBeverage: z.enum(["coffee", "tea", "none"]),
+    defaultDiet: z.enum(["vegetarian", "non_vegetarian"]),
+    mealChoices: z.record(z.string(), z.enum(["veg", "non_veg", "skip"])),
+    allergiesNotes: z.string().trim().max(500).nullable().optional(),
+  }).strict(),
   get_trip_details: z.object({ tripId: uuid }).strict(),
   get_trip_time_slots: z.object({ tripId: uuid }).strict(),
   admin_configure_club: z.object({
@@ -631,6 +639,102 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   };
 }
 
+interface MealPreferenceRecord {
+  id: string;
+  trip_id: string;
+  member_id: string;
+  saturday_beverage: "coffee" | "tea" | "none";
+  sunday_beverage: "coffee" | "tea" | "none";
+  default_diet: "vegetarian" | "non_vegetarian";
+  meal_choices: Record<string, "veg" | "non_veg" | "skip">;
+  allergies_notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+function formatMealPreferences(row: MealPreferenceRecord | null | undefined) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    tripId: row.trip_id,
+    memberId: row.member_id,
+    saturdayBeverage: row.saturday_beverage,
+    sundayBeverage: row.sunday_beverage,
+    defaultDiet: row.default_diet,
+    mealChoices: row.meal_choices ?? {},
+    allergiesNotes: row.allergies_notes ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function computeMealHeadcounts(
+  comingMemberIds: string[],
+  preferences: MealPreferenceRecord[],
+  mealSlots: Array<{ id: string; label: string; slot_date: string }>
+) {
+  const prefMap = new Map<string, MealPreferenceRecord>();
+  for (const pref of preferences) {
+    prefMap.set(pref.member_id, pref);
+  }
+
+  const beverages = {
+    saturday: { coffee: 0, tea: 0, none: 0 },
+    sunday: { coffee: 0, tea: 0, none: 0 },
+  };
+
+  for (const memberId of comingMemberIds) {
+    const pref = prefMap.get(memberId);
+    const sat = pref ? pref.saturday_beverage : "coffee";
+    const sun = pref ? pref.sunday_beverage : "tea";
+
+    if (sat === "coffee") beverages.saturday.coffee++;
+    else if (sat === "tea") beverages.saturday.tea++;
+    else if (sat === "none") beverages.saturday.none++;
+
+    if (sun === "coffee") beverages.sunday.coffee++;
+    else if (sun === "tea") beverages.sunday.tea++;
+    else if (sun === "none") beverages.sunday.none++;
+  }
+
+  const meals = mealSlots.map((slot) => {
+    let vegCount = 0;
+    let nonVegCount = 0;
+    let skipCount = 0;
+
+    for (const memberId of comingMemberIds) {
+      const pref = prefMap.get(memberId);
+      const choice = pref?.meal_choices?.[slot.id];
+      if (choice === "veg") {
+        vegCount++;
+      } else if (choice === "non_veg") {
+        nonVegCount++;
+      } else if (choice === "skip") {
+        skipCount++;
+      } else {
+        const defaultDiet = pref?.default_diet ?? "vegetarian";
+        if (defaultDiet === "non_vegetarian") {
+          nonVegCount++;
+        } else {
+          vegCount++;
+        }
+      }
+    }
+
+    return {
+      slotId: slot.id,
+      slotLabel: slot.label,
+      slotDate: slot.slot_date,
+      vegCount,
+      nonVegCount,
+      skipCount,
+      totalEating: vegCount + nonVegCount,
+    };
+  });
+
+  return { beverages, meals };
+}
+
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
   const tripResult = await service.from("camping_trips")
     .select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,title,event_status,trip_status,camping_type,task_quota_target,daily_workload_target,trip_mileage_rate_cents,deposit_amount_cents,cabin_payer_member_id,rules_markdown,deleted_at,version")
@@ -653,7 +757,17 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     checkError(refreshError);
   }
 
-  const [campsiteResult, bundleResult, rsvpResult, waitlistResult, dutiesResult, cabinReservationResult, commitmentsResult] = await Promise.all([
+  const [
+    campsiteResult,
+    bundleResult,
+    rsvpResult,
+    waitlistResult,
+    dutiesResult,
+    cabinReservationResult,
+    commitmentsResult,
+    mealPrefsResult,
+    mealSlotsResult,
+  ] = await Promise.all([
     trip.selected_campsite_id
       ? service.from("campsites")
           .select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,version")
@@ -687,6 +801,17 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       .select("id,trip_id,category,item_name,quantity_description,assigned_member_id,is_critical,master_gear_id,master_food_id,commitment_type,is_active,created_at,updated_at")
       .eq("trip_id", tripId)
       .order("created_at"),
+    service.from("trip_meal_preferences")
+      .select("id,trip_id,member_id,saturday_beverage,sunday_beverage,default_diet,meal_choices,allergies_notes,created_at,updated_at")
+      .eq("trip_id", tripId),
+    service.from("trip_time_slots")
+      .select("id,trip_id,slot_date,time_block,slot_type,label,is_enabled,sort_order,created_at")
+      .eq("trip_id", tripId)
+      .eq("slot_type", "meal")
+      .neq("is_enabled", false)
+      .order("slot_date", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
   ]);
   checkError(campsiteResult.error);
   checkError(bundleResult.error);
@@ -694,6 +819,8 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   checkError(waitlistResult.error);
   checkError(dutiesResult.error);
   checkError(commitmentsResult.error);
+  checkError(mealPrefsResult.error);
+  checkError(mealSlotsResult.error);
 
   const campsite = campsiteResult.data;
   const rsvps = rsvpResult.data ?? [];
@@ -709,6 +836,11 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
 
   const ownRsvp = rsvps.find((r) => r.member_id === member.member_id);
   const comingCount = rsvps.filter((r) => r.response === "coming").length;
+
+  const comingMemberIds = rsvps.filter((r) => r.response === "coming").map((r) => r.member_id);
+  const allPrefs = (mealPrefsResult.data ?? []) as MealPreferenceRecord[];
+  const ownPreference = allPrefs.find((p) => p.member_id === member.member_id);
+  const mealHeadcounts = computeMealHeadcounts(comingMemberIds, allPrefs, (mealSlotsResult.data ?? []) as any[]);
 
   const participantEntries = rsvps
     .filter((r) => r.response === "coming")
@@ -888,6 +1020,8 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     participantEntries,
     waitlistEntries,
     allMemberEntries,
+    myMealPreferences: formatMealPreferences(ownPreference),
+    mealHeadcounts,
   };
 }
 
@@ -1508,7 +1642,7 @@ Deno.serve(async (request) => {
   if (action === "get_trip_task_matrix") {
     try {
       const tripId = input.tripId as string;
-      const [slotsResult, assignmentsResult, creditsResult, quotaResult, attendeesResult, dailyResult] = await Promise.all([
+      const [slotsResult, assignmentsResult, creditsResult, quotaResult, attendeesResult, dailyResult, mealPrefsResult] = await Promise.all([
         service
           .from("trip_time_slots")
           .select(`
@@ -1587,6 +1721,10 @@ Deno.serve(async (request) => {
           .eq("trip_id", tripId)
           .eq("response", "coming"),
         service.rpc("phase3_get_daily_workload_progress", { p_trip_id: tripId, p_member_id: member.member_id }),
+        service
+          .from("trip_meal_preferences")
+          .select("id, trip_id, member_id, saturday_beverage, sunday_beverage, default_diet, meal_choices, allergies_notes, created_at, updated_at")
+          .eq("trip_id", tripId),
       ]);
 
       checkError(dailyResult.error);
@@ -1595,6 +1733,13 @@ Deno.serve(async (request) => {
       checkError(creditsResult.error);
       checkError(quotaResult.error);
       checkError(attendeesResult.error);
+      checkError(mealPrefsResult.error);
+
+      const comingMemberIds = (attendeesResult.data ?? []).map((row) => row.member_id);
+      const allPrefs = (mealPrefsResult.data ?? []) as MealPreferenceRecord[];
+      const ownPreference = allPrefs.find((p) => p.member_id === member.member_id);
+      const mealSlots = (slotsResult.data ?? []).filter((s: any) => s.slot_type === "meal" && s.is_enabled !== false);
+      const mealHeadcounts = computeMealHeadcounts(comingMemberIds, allPrefs, mealSlots);
 
       return json(request, 200, {
         timeSlots: slotsResult.data ?? [],
@@ -1606,10 +1751,70 @@ Deno.serve(async (request) => {
           memberId: row.member_id,
           displayName: (row.member as { display_name?: string } | null)?.display_name ?? "Member",
         })),
+        myMealPreferences: formatMealPreferences(ownPreference),
+        mealHeadcounts,
         requestId,
       });
-    } catch {
-      return errorResponse(request, 500, "trip_task_matrix_read_failed", requestId);
+    } catch (err: unknown) {
+      console.error("get_trip_task_matrix failed:", err);
+      return errorResponse(request, 500, "trip_task_matrix_read_failed", requestId, (err as Error)?.message);
+    }
+  }
+
+  if (action === "save_meal_preferences") {
+    try {
+      const tripId = input.tripId as string;
+      const { data: rsvp, error: rsvpError } = await service
+        .from("trip_rsvps")
+        .select("response")
+        .eq("trip_id", tripId)
+        .eq("member_id", member.member_id)
+        .maybeSingle();
+
+      if (rsvpError) {
+        return errorResponse(request, 500, "rsvp_lookup_failed", requestId, rsvpError.message);
+      }
+
+      if (!rsvp || rsvp.response !== "coming") {
+        return errorResponse(
+          request,
+          403,
+          "forbidden",
+          requestId,
+          "Only confirmed coming attendees can save meal preferences"
+        );
+      }
+
+      const { data, error } = await service
+        .from("trip_meal_preferences")
+        .upsert(
+          {
+            trip_id: tripId,
+            member_id: member.member_id,
+            saturday_beverage: input.saturdayBeverage,
+            sunday_beverage: input.sundayBeverage,
+            default_diet: input.defaultDiet,
+            meal_choices: input.mealChoices ?? {},
+            allergies_notes: typeof input.allergiesNotes === "string" ? (input.allergiesNotes.trim() || null) : null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "trip_id,member_id" }
+        )
+        .select()
+        .single();
+
+      if (error) {
+        return errorResponse(request, databaseStatus(error.code), "save_meal_preferences_failed", requestId, error.message);
+      }
+
+      return json(request, 200, {
+        success: true,
+        preferences: formatMealPreferences(data as MealPreferenceRecord),
+        requestId,
+      });
+    } catch (err: unknown) {
+      const error = err as Error;
+      return errorResponse(request, 500, "save_meal_preferences_failed", requestId, error?.message);
     }
   }
 
