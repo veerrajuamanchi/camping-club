@@ -181,7 +181,13 @@ const mockTripHubData = {
   version: 1,
 };
 
-function renderTripHub(uiData = mockTripHubData, isAdmin = false, currentMemberId = "m-user", apiMock?: any) {
+function renderTripHub(
+  uiData = mockTripHubData,
+  isAdmin = false,
+  currentMemberId = "m-user",
+  apiMock?: any,
+  userRole?: "member" | "admin" | "accountant"
+) {
   const defaultMock = vi.fn().mockImplementation((action: string) => {
     if (action === "get_trip_details") return Promise.resolve(uiData);
     if (action === "get_constitution") return Promise.resolve({ definitions: [] });
@@ -208,6 +214,7 @@ function renderTripHub(uiData = mockTripHubData, isAdmin = false, currentMemberI
               isAdmin={isAdmin}
               currentMemberId={currentMemberId}
               api={api}
+              userRole={userRole}
             />
           }
         />
@@ -466,5 +473,40 @@ describe("Task 5: Frontend 'My Trip Hub' Dashboard Refactor", () => {
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("allows accountant to verify member deposits in participant roster", async () => {
+    const user = userEvent.setup();
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(mockTripHubData);
+      if (action === "verify_deposit") return Promise.resolve({ success: true });
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      return Promise.resolve({});
+    });
+
+    renderTripHub(mockTripHubData, false, "m-accountant", apiMock, "accountant");
+
+    // In participant roster, find Sam Pending who has submitted_by_member
+    expect(await screen.findByText("Sam Pending")).toBeInTheDocument();
+    const samChip = screen.getByText("Sam Pending").closest(".attendee-chip")!;
+    const verifyBtn = within(samChip as HTMLElement).getByRole("button", { name: /Verify Deposit|Confirm \$50/i });
+    expect(verifyBtn).toBeInTheDocument();
+    await user.click(verifyBtn);
+
+    expect(apiMock).toHaveBeenCalledWith("verify_deposit", {
+      tripId: "trip-hub-1",
+      memberId: "m-other",
+      status: "confirmed_by_admin",
+    });
+  });
+
+  it("prevents accountant from seeing admin management controls in trip hub", async () => {
+    renderTripHub(mockTripHubData, false, "m-accountant", undefined, "accountant");
+
+    expect(await screen.findByRole("heading", { name: /Required From You/i })).toBeInTheDocument();
+
+    // Verify admin-only buttons are not rendered for accountant
+    expect(screen.queryByRole("button", { name: /Edit Trip/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Admin: Manage Attendee Roster/i)).not.toBeInTheDocument();
   });
 });

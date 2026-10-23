@@ -366,7 +366,10 @@ export function AppRoutes() {
                 <Navigate to="/accept-invitation" replace />
               ) : (
                 <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
-                  <EventDetailsPage isAdmin={membership.status === "active" && membership.role === "admin"} />
+                  <EventDetailsPage
+                    isAdmin={membership.status === "active" && membership.role === "admin"}
+                    userRole={membership.status === "active" ? membership.role : undefined}
+                  />
                 </AccessBoundary>
               )
             }

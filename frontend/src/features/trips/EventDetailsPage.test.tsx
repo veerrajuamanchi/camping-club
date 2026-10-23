@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -76,12 +76,24 @@ function renderPage(
     if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
     return Promise.resolve({});
   }),
-  initialRoute = "/trips/trip-1"
+  initialRoute = "/trips/trip-1",
+  userRole?: "member" | "admin" | "accountant",
+  currentMemberId?: string
 ) {
   const result = render(
     <MemoryRouter initialEntries={[initialRoute]}>
       <Routes>
-        <Route path="/trips/:tripId" element={<EventDetailsPage isAdmin={isAdmin} api={apiMock} />} />
+        <Route
+          path="/trips/:tripId"
+          element={
+            <EventDetailsPage
+              isAdmin={isAdmin}
+              api={apiMock}
+              userRole={userRole}
+              currentMemberId={currentMemberId}
+            />
+          }
+        />
       </Routes>
     </MemoryRouter>
   );
@@ -536,5 +548,82 @@ describe("EventDetailsPage", () => {
     expect(screen.getByRole("button", { name: /Daily workload: no additional selections needed/ })).toBeInTheDocument();
   });
 
+  it("allows Accountant to see and click Verify Deposit in attendee roster", async () => {
+    const user = userEvent.setup();
+    const tripWithSubmissions = {
+      ...tripData,
+      participantEntries: [
+        { memberId: "m1", displayName: "Alice", response: "coming", depositStatus: "submitted_by_member" },
+        { memberId: "m2", displayName: "Bob", response: "coming", depositStatus: "unpaid" },
+        { memberId: "m3", displayName: "Charlie", response: "coming", depositStatus: "confirmed" },
+      ],
+    };
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(tripWithSubmissions);
+      if (action === "verify_deposit") return Promise.resolve({ success: true });
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+      if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+      return Promise.resolve({});
+    });
+
+    renderPage(tripWithSubmissions, false, apiMock, "/trips/trip-1", "accountant", "m-accountant");
+
+    await screen.findByText("December Camping");
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+
+    const aliceChip = screen.getByText("Alice").closest(".attendee-chip")!;
+    const verifyBtn = within(aliceChip as HTMLElement).getByRole("button", { name: /verify deposit/i });
+    expect(verifyBtn).toBeInTheDocument();
+
+    await user.click(verifyBtn);
+
+    expect(apiMock).toHaveBeenCalledWith("verify_deposit", {
+      tripId: "trip-1",
+      memberId: "m1",
+      status: "confirmed_by_admin",
+    });
+  });
+
+  it("hides Verify Deposit button for standard Member", async () => {
+    const tripWithSubmissions = {
+      ...tripData,
+      participantEntries: [
+        { memberId: "m1", displayName: "Alice", response: "coming", depositStatus: "submitted_by_member" },
+      ],
+    };
+
+    renderPage(tripWithSubmissions, false, undefined, "/trips/trip-1", "member", "m-member");
+
+    await screen.findByText("December Camping");
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+
+    expect(screen.queryByRole("button", { name: /verify deposit/i })).not.toBeInTheDocument();
+  });
+
+  it("prevents Accountant from seeing admin management controls", async () => {
+    const tripWithSubmissions = {
+      ...tripData,
+      allMemberEntries: [
+        { memberId: "m1", displayName: "Alice", response: "coming", version: 1 },
+      ],
+      waitlistEntries: [
+        { memberId: "m4", displayName: "David", position: 1, createdAt: "2026-10-02T10:00:00Z" },
+      ],
+    };
+
+    renderPage(tripWithSubmissions, false, undefined, "/trips/trip-1", "accountant", "m-accountant");
+
+    await screen.findByText("December Camping");
+
+    // Must NOT see "Edit Trip" button
+    expect(screen.queryByRole("button", { name: /edit trip/i })).not.toBeInTheDocument();
+
+    // Must NOT see "Admin: Manage Attendee Roster" box
+    expect(screen.queryByText(/admin: manage attendee roster/i)).not.toBeInTheDocument();
+
+    // Must NOT see "Manage Meals & Chores" button
+    expect(screen.queryByRole("button", { name: /manage meals & chores/i })).not.toBeInTheDocument();
+  });
 });
 

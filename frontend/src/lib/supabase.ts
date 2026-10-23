@@ -9,7 +9,7 @@ export const supabase = url && key ? createClient(url, key, { auth: { persistSes
 export type ApiMember = {
   memberId: string;
   displayName: string;
-  role: "member" | "admin";
+  role: "member" | "admin" | "accountant";
   phoneE164: string;
   paymentMethod: "zelle" | "venmo" | "paypal" | "apple_cash" | null;
 };

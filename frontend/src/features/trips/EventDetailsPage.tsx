@@ -180,19 +180,31 @@ function monthName(monthKey: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
-type Props = { isAdmin: boolean; currentMemberId?: string; api?: TripApiType };
+type Props = {
+  isAdmin: boolean;
+  currentMemberId?: string;
+  api?: TripApiType;
+  userRole?: "member" | "admin" | "accountant";
+};
 const defaultApi: TripApiType = (action, input) => invokeTripApi(action, input);
 
-export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }: Props) {
+export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, userRole }: Props) {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
   let authProfileMemberId = currentMemberId;
+  let authProfileRole = userRole;
   try {
     const auth = useAuth();
     authProfileMemberId = auth?.profile?.memberId ?? currentMemberId;
+    const resolvedRole = auth?.profile?.role ?? (auth?.membership?.status === "active" ? auth.membership.role : undefined);
+    if (resolvedRole) {
+      authProfileRole = resolvedRole;
+    }
   } catch {
     // AuthProvider not present (e.g. isolated component unit tests)
   }
+  const isAccountant = authProfileRole === "accountant";
+  const canVerifyDeposit = isAdmin || isAccountant;
   const [details, setDetails] = useState<TripDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1605,11 +1617,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                           (Deposit Pending)
                         </span>
                       )}
-                      {isAdmin && (e.depositStatus === "submitted_by_member" || e.depositStatus === "unpaid" || !e.depositStatus) && e.depositStatus !== "exempt" && (
+                      {canVerifyDeposit && (e.depositStatus === "submitted_by_member" || e.depositStatus === "unpaid" || !e.depositStatus) && e.depositStatus !== "exempt" && (
                         <button
                           type="button"
                           disabled={depositBusy}
                           onClick={() => void handleVerifyDeposit(e.memberId)}
+                          className="btn-verify-deposit"
                           style={{
                             fontSize: "0.72rem",
                             padding: "0.15rem 0.45rem",

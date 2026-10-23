@@ -5,7 +5,7 @@ export type MembershipState =
   | { status: "signedOut" }
   | { status: "profileRequired" }
   | { status: "inactive" }
-  | { status: "active"; role: "member" | "admin"; displayName: string };
+  | { status: "active"; role: "member" | "admin" | "accountant"; displayName: string };
 
 export function AccessBoundary({
   state,
