@@ -3,7 +3,7 @@ import { z } from "zod";
 import { resolveServiceApiKey } from "../_shared/service-key.mjs";
 import { canonicalJson, keyedDigest, requestDigest, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, isOriginAllowed, json, readBody } from "../_shared/http.ts";
-import { computeSettlement, calculateEqualAllocations, type ExpenseInput } from "../_shared/settlementEngine.ts";
+import { computeSettlement, calculateEqualAllocations, type ExpenseInput, type ExternalPaymentInput } from "../_shared/settlementEngine.ts";
 
 const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 const uuid = z.string().uuid();
@@ -1188,7 +1188,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       .eq("trip_id", tripId)
       .order("created_at"),
     service.from("trip_rsvps")
-      .select("member_id, response")
+      .select("member_id, response, deposit_status")
       .eq("trip_id", tripId)
       .eq("response", "coming"),
     service.from("trip_carpools")
@@ -1335,22 +1335,38 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       };
     });
 
+  const cabinPayerId = trip.cabin_payer_member_id || (rsvpsResult.data ?? []).find((r: any) => r.deposit_status === "exempt")?.member_id || null;
+  const depositAmountPerPerson = trip.deposit_amount_cents ?? 5000;
+  const verifiedDeposits: ExternalPaymentInput[] = [];
+  const depositPaidMap = new Map<string, number>();
+  let totalDepositsReceivedByCabinPayer = 0;
+
+  if (cabinPayerId) {
+    for (const r of (rsvpsResult.data ?? [])) {
+      if (r.member_id !== cabinPayerId && (r.deposit_status === "confirmed" || r.deposit_status === "confirmed_by_admin")) {
+        verifiedDeposits.push({
+          payerMemberId: r.member_id,
+          recipientMemberId: cabinPayerId,
+          amountCents: depositAmountPerPerson,
+        });
+        depositPaidMap.set(r.member_id, depositAmountPerPerson);
+        totalDepositsReceivedByCabinPayer += depositAmountPerPerson;
+      }
+    }
+  }
+
   let cabinDeposit = null;
-  if (trip.cabin_payer_member_id && confirmedAttendees.length > 0) {
-    const depositPerPerson = trip.deposit_amount_cents ?? 5000;
-    const totalDepositCents = confirmedAttendees.length * depositPerPerson;
+  if (cabinPayerId && confirmedAttendees.length > 0) {
+    const confirmedDepositCount = (rsvpsResult.data ?? []).filter(
+      (r: any) => r.member_id !== cabinPayerId && (r.deposit_status === "confirmed" || r.deposit_status === "confirmed_by_admin")
+    ).length;
     cabinDeposit = {
-      payerMemberId: trip.cabin_payer_member_id,
-      payerName: nameMap.get(trip.cabin_payer_member_id) ?? "Cabin Payer",
-      depositPerPersonCents: depositPerPerson,
-      confirmedCount: confirmedAttendees.length,
-      amountCents: totalDepositCents,
-      allocations: confirmedAttendees.map((id) => ({
-        memberId: id,
-        memberName: nameMap.get(id) ?? "Camper",
-        allocatedCents: depositPerPerson,
-        isMe: id === member.member_id,
-      })),
+      payerMemberId: cabinPayerId,
+      payerName: nameMap.get(cabinPayerId) ?? "Cabin Payer",
+      depositPerPersonCents: depositAmountPerPerson,
+      confirmedCount: confirmedDepositCount,
+      expectedCount: Math.max(0, confirmedAttendees.length - 1),
+      amountCents: confirmedDepositCount * depositAmountPerPerson,
     };
   }
 
@@ -1375,6 +1391,8 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       totalPaidCents: b.total_paid_cents,
       totalAllocatedCents: b.total_allocated_cents,
       netBalanceCents: b.net_balance_cents,
+      depositPaidCents: depositPaidMap.get(b.member_id) ?? 0,
+      depositReceivedCents: b.member_id === cabinPayerId ? totalDepositsReceivedByCabinPayer : 0,
       isMe: b.member_id === member.member_id,
     }));
 
@@ -1436,27 +1454,17 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       });
     }
 
-    if (cabinDeposit) {
-      engineExpenses.push({
-        id: `cabin-deposit-${trip.id}`,
-        payerMemberId: cabinDeposit.payerMemberId,
-        amountCents: cabinDeposit.amountCents,
-        allocations: cabinDeposit.allocations.map((a: any) => ({
-          memberId: a.memberId,
-          allocatedCents: a.allocatedCents,
-        })),
-      });
-    }
-
     try {
       if (memberIdSet.size > 0 && engineExpenses.length > 0) {
-        const draftResult = computeSettlement(Array.from(memberIdSet), engineExpenses);
+        const draftResult = computeSettlement(Array.from(memberIdSet), engineExpenses, verifiedDeposits);
         balances = draftResult.balances.map((b) => ({
           memberId: b.memberId,
           displayName: nameMap.get(b.memberId) ?? "Member",
           totalPaidCents: b.totalPaidCents,
           totalAllocatedCents: b.totalAllocatedCents,
           netBalanceCents: b.netBalanceCents,
+          depositPaidCents: depositPaidMap.get(b.memberId) ?? 0,
+          depositReceivedCents: b.memberId === cabinPayerId ? totalDepositsReceivedByCabinPayer : 0,
           isMe: b.memberId === member.member_id,
         }));
 
@@ -2460,6 +2468,15 @@ Deno.serve(async (request) => {
       await service.rpc("purge_expired_receipts");
     } catch (purgeErr) {
       console.error("purge_expired_receipts error in admin_finalize_settlement:", purgeErr);
+    }
+  }
+  if (action === "verify_deposit") {
+    if (input.status === "exempt") {
+      await service.from("camping_trips").update({ cabin_payer_member_id: input.memberId }).eq("id", input.tripId);
+      await service.from("cabin_reservations").update({ paid_by_member_id: input.memberId }).eq("trip_id", input.tripId);
+    } else if (input.status === "unpaid") {
+      await service.from("camping_trips").update({ cabin_payer_member_id: null }).eq("id", input.tripId).eq("cabin_payer_member_id", input.memberId);
+      await service.from("cabin_reservations").update({ paid_by_member_id: null }).eq("trip_id", input.tripId).eq("paid_by_member_id", input.memberId);
     }
   }
   if (action === "admin_transition_trip_lifecycle") {

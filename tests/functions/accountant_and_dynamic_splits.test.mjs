@@ -405,4 +405,81 @@ test("accountant role and dynamic expense splits endpoints", async (t) => {
       .single();
     assert.equal(run.status, "finalized");
   });
+
+  await t.test("verified deposits deduct from attendee settlement balances and support unverify", async () => {
+    // Create new test trip for deposit settlement deduction
+    const cabinPayer = attendee1;
+    const trip2 = await createTestTrip(cabinPayer.memberId);
+    const trip2Id = trip2.tripId;
+
+    await setupRsvp(trip2Id, cabinPayer.memberId, "coming");
+    await setupRsvp(trip2Id, attendee2.memberId, "coming");
+    await setupRsvp(trip2Id, attendee3.memberId, "coming");
+
+    // Cabin payer adds a $300 cabin expense ($100 each for 3 attendees)
+    const expRes = await callTripApi("admin_manage_trip_expense", admin.accessToken, {
+      tripId: trip2Id,
+      action: "create",
+      payerMemberId: cabinPayer.memberId,
+      amountCents: 30000,
+      description: "Cabin booking",
+      expenseType: "cabin_deposit",
+      splitMode: "all_attendees",
+      incurredDate: "2026-06-15",
+    });
+    assert.equal(expRes.status, 200, `Failed to create cabin expense: ${JSON.stringify(expRes.raw)}`);
+
+    // Verify attendee2's $50 deposit
+    const verifyRes2 = await callTripApi("verify_deposit", admin.accessToken, {
+      tripId: trip2Id,
+      memberId: attendee2.memberId,
+      status: "confirmed_by_admin",
+    });
+    assert.equal(verifyRes2.status, 200);
+
+    // Verify attendee3's $50 deposit
+    const verifyRes3 = await callTripApi("verify_deposit", admin.accessToken, {
+      tripId: trip2Id,
+      memberId: attendee3.memberId,
+      status: "confirmed_by_admin",
+    });
+    assert.equal(verifyRes3.status, 200);
+
+    // Fetch financials: deposits should be credited, reducing net balance
+    const finRes1 = await callTripApi("get_trip_financials", admin.accessToken, { tripId: trip2Id });
+    assert.equal(finRes1.status, 200);
+
+    const b1 = finRes1.body.balances.find((b) => b.memberId === cabinPayer.memberId);
+    const b2 = finRes1.body.balances.find((b) => b.memberId === attendee2.memberId);
+    const b3 = finRes1.body.balances.find((b) => b.memberId === attendee3.memberId);
+
+    // Attendee 2 and 3 should each owe $50.00 (-5000 cents) instead of $100.00 (-10000 cents)
+    assert.equal(b2.netBalanceCents, -5000, "Attendee2 net balance should deduct $50 deposit");
+    assert.equal(b3.netBalanceCents, -5000, "Attendee3 net balance should deduct $50 deposit");
+    assert.equal(b1.netBalanceCents, 10000, "Cabin payer net balance should reflect $100 net credit ($300 - $100 received - $100 share)");
+
+    // Transfers should be $50 each to cabin payer
+    assert.equal(finRes1.body.transfers.length, 2);
+    for (const tx of finRes1.body.transfers) {
+      assert.equal(tx.recipientMemberId, cabinPayer.memberId);
+      assert.equal(tx.amountCents, 5000);
+    }
+
+    // Now test UNVERIFY: admin resets attendee3's deposit to 'unpaid'
+    const unverifyRes = await callTripApi("verify_deposit", admin.accessToken, {
+      tripId: trip2Id,
+      memberId: attendee3.memberId,
+      status: "unpaid",
+    });
+    assert.equal(unverifyRes.status, 200);
+
+    // Fetch financials again: attendee3 now owes the full $100, attendee2 owes $50
+    const finRes2 = await callTripApi("get_trip_financials", admin.accessToken, { tripId: trip2Id });
+    assert.equal(finRes2.status, 200);
+
+    const b3After = finRes2.body.balances.find((b) => b.memberId === attendee3.memberId);
+    const b1After = finRes2.body.balances.find((b) => b.memberId === cabinPayer.memberId);
+    assert.equal(b3After.netBalanceCents, -10000, "Attendee3 net balance should be -$100 after unverify");
+    assert.equal(b1After.netBalanceCents, 15000, "Cabin payer net balance should be +$150 after unverify ($300 - $50 received - $100 share)");
+  });
 });

@@ -56,6 +56,101 @@ describe("Settlement Engine: Deterministic Integer-Cent Math", () => {
     ]);
   });
 
+  it("settles Worked Example 1 WITH confirmed $50 deposits: B, C, D each paid $50 to A", () => {
+    const memberIds = ["member-a", "member-b", "member-c", "member-d"];
+    const cabinExpense: ExpenseInput = {
+      id: "exp-1",
+      payerMemberId: "member-a",
+      amountCents: 24000, // $240.00
+      allocations: [
+        { memberId: "member-a", allocatedCents: 6000 },
+        { memberId: "member-b", allocatedCents: 6000 },
+        { memberId: "member-c", allocatedCents: 6000 },
+        { memberId: "member-d", allocatedCents: 6000 },
+      ],
+    };
+    const deposits = [
+      { payerMemberId: "member-b", recipientMemberId: "member-a", amountCents: 5000 },
+      { payerMemberId: "member-c", recipientMemberId: "member-a", amountCents: 5000 },
+      { payerMemberId: "member-d", recipientMemberId: "member-a", amountCents: 5000 },
+    ];
+
+    const result = computeSettlement(memberIds, [cabinExpense], deposits);
+
+    expect(result.algorithmUsed).toBe("exact");
+    expect(result.totalExpensesCents).toBe(24000);
+
+    // After $50 receipts: A net +3000 (+$30), B/C/D each net -1000 (-$10)
+    const balA = result.balances.find((b) => b.memberId === "member-a");
+    const balB = result.balances.find((b) => b.memberId === "member-b");
+    const balC = result.balances.find((b) => b.memberId === "member-c");
+    const balD = result.balances.find((b) => b.memberId === "member-d");
+
+    expect(balA?.netBalanceCents).toBe(3000);
+    expect(balB?.netBalanceCents).toBe(-1000);
+    expect(balC?.netBalanceCents).toBe(-1000);
+    expect(balD?.netBalanceCents).toBe(-1000);
+
+    // Candidate transfers: B, C, D each transfer $10.00 (1000 cents) to A
+    expect(result.transfers).toEqual([
+      { payerMemberId: "member-b", recipientMemberId: "member-a", amountCents: 1000 },
+      { payerMemberId: "member-c", recipientMemberId: "member-a", amountCents: 1000 },
+      { payerMemberId: "member-d", recipientMemberId: "member-a", amountCents: 1000 },
+    ]);
+  });
+
+  it("settles 7 attendees, $504 cabin expense paid by Manmohan with six $50 deposits", () => {
+    const memberIds = [
+      "m-manmohan",
+      "m-veerraju",
+      "m-srini",
+      "m-sharat",
+      "m-mahesh",
+      "m-harish",
+      "m-bjeereddy",
+    ];
+    // $504.00 split equally 7 ways = $72.00 each
+    const allocations = calculateEqualAllocations(50400, memberIds);
+    const cabinExpense: ExpenseInput = {
+      id: "exp-cabin",
+      payerMemberId: "m-manmohan",
+      amountCents: 50400,
+      allocations,
+    };
+
+    // The other 6 attendees each sent $50.00 deposit to Manmohan
+    const otherMemberIds = memberIds.filter((id) => id !== "m-manmohan");
+    const deposits = otherMemberIds.map((id) => ({
+      payerMemberId: id,
+      recipientMemberId: "m-manmohan",
+      amountCents: 5000,
+    }));
+
+    const result = computeSettlement(memberIds, [cabinExpense], deposits);
+
+    // Total expense remains $504.00
+    expect(result.totalExpensesCents).toBe(50400);
+
+    // Manmohan: $504 paid - $300 deposits received - $72 share = +$132.00
+    const manmohanBal = result.balances.find((b) => b.memberId === "m-manmohan");
+    expect(manmohanBal?.netBalanceCents).toBe(13200);
+
+    // Each of the 6 other attendees: $50 deposit paid - $72 share = -$22.00
+    for (const id of otherMemberIds) {
+      const bal = result.balances.find((b) => b.memberId === id);
+      expect(bal?.netBalanceCents).toBe(-2200);
+      expect(bal?.totalPaidCents).toBe(5000);
+      expect(bal?.totalAllocatedCents).toBe(7200);
+    }
+
+    // Transfers: 6 transfers of $22.00 to Manmohan, total $132.00
+    expect(result.transfers).toHaveLength(6);
+    for (const tx of result.transfers) {
+      expect(tx.recipientMemberId).toBe("m-manmohan");
+      expect(tx.amountCents).toBe(2200);
+    }
+  });
+
   it("settles multi-payer shared groceries and carpool fuel with minimum transfers", () => {
     const memberIds = ["dave", "sarah", "tom"];
     // Dave pays $90 for food (shared 3 ways = $30 each)

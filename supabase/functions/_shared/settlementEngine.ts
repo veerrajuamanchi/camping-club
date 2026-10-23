@@ -25,6 +25,13 @@ export type SettlementTransferResult = {
   amountCents: number;
 };
 
+export type ExternalPaymentInput = {
+  id?: string;
+  payerMemberId: string;
+  recipientMemberId: string;
+  amountCents: number;
+};
+
 export type SettlementEngineResult = {
   balances: MemberBalanceResult[];
   transfers: SettlementTransferResult[];
@@ -54,7 +61,8 @@ export function calculateEqualAllocations(
 
 export function computeSettlement(
   memberIds: string[],
-  expenses: ExpenseInput[]
+  expenses: ExpenseInput[],
+  externalPayments: ExternalPaymentInput[] = []
 ): SettlementEngineResult {
   const paidMap = new Map<string, number>();
   const allocatedMap = new Map<string, number>();
@@ -79,6 +87,11 @@ export function computeSettlement(
     if (expAllocSum !== exp.amountCents) {
       throw new Error(`Expense ${exp.id} allocations sum (${expAllocSum}) does not equal total amount (${exp.amountCents}).`);
     }
+  }
+
+  for (const payment of externalPayments) {
+    paidMap.set(payment.payerMemberId, (paidMap.get(payment.payerMemberId) ?? 0) + payment.amountCents);
+    paidMap.set(payment.recipientMemberId, (paidMap.get(payment.recipientMemberId) ?? 0) - payment.amountCents);
   }
 
   const balances: MemberBalanceResult[] = memberIds.map((memberId) => {

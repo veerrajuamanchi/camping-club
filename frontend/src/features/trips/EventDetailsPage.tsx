@@ -289,7 +289,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
     }
   }
 
-  async function handleVerifyDeposit(memberId: string) {
+  async function handleVerifyDeposit(memberId: string, status: "confirmed_by_admin" | "unpaid" | "exempt" = "confirmed_by_admin") {
     if (!details) return;
     setDepositBusy(true);
     setDepositMsg(null);
@@ -297,12 +297,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       await api("verify_deposit", {
         tripId: details.tripId,
         memberId,
-        status: "confirmed_by_admin",
+        status,
       });
       await refresh();
-      setDepositMsg("Deposit confirmed!");
+      setDepositMsg(
+        status === "confirmed_by_admin"
+          ? "Deposit confirmed!"
+          : status === "exempt"
+          ? "Member marked as cabin payer (deposit exempt)."
+          : "Deposit status reset to pending."
+      );
     } catch {
-      setDepositMsg("Failed to verify deposit.");
+      setDepositMsg("Failed to update deposit status.");
     } finally {
       setDepositBusy(false);
     }
@@ -1592,6 +1598,11 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             {details.participantEntries.length > 0 && (
               <div style={{ marginTop: "1.25rem" }}>
                 <h3>Who's going ({details.comingCount})</h3>
+                {depositMsg && (
+                  <p style={{ margin: "0.25rem 0 0.5rem", fontSize: "0.825rem", color: "#15803d", fontWeight: 600 }} role="status">
+                    {depositMsg}
+                  </p>
+                )}
                 <div className="attendees-chips-grid">
                   {details.participantEntries.map((e) => (
                     <div
@@ -1617,26 +1628,116 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                           (Deposit Pending)
                         </span>
                       )}
-                      {canVerifyDeposit && (e.depositStatus === "submitted_by_member" || e.depositStatus === "unpaid" || !e.depositStatus) && e.depositStatus !== "exempt" && (
-                        <button
-                          type="button"
-                          disabled={depositBusy}
-                          onClick={() => void handleVerifyDeposit(e.memberId)}
-                          className="btn-verify-deposit"
-                          style={{
-                            fontSize: "0.72rem",
-                            padding: "0.15rem 0.45rem",
-                            marginLeft: "0.2rem",
-                            borderRadius: "4px",
-                            background: "#16a34a",
-                            color: "#ffffff",
-                            border: "none",
-                            cursor: "pointer",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Verify Deposit
-                        </button>
+                      {canVerifyDeposit && (
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.2rem" }}>
+                          {(e.depositStatus === "confirmed" || e.depositStatus === "confirmed_by_admin") && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={depositBusy}
+                                onClick={() => void handleVerifyDeposit(e.memberId, "unpaid")}
+                                className="btn-unverify-deposit"
+                                style={{
+                                  fontSize: "0.72rem",
+                                  padding: "0.15rem 0.45rem",
+                                  borderRadius: "4px",
+                                  background: "#fef2f2",
+                                  color: "#dc2626",
+                                  border: "1px solid #fca5a5",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                }}
+                                title="Reset deposit status to pending"
+                              >
+                                Unverify
+                              </button>
+                              <button
+                                type="button"
+                                disabled={depositBusy}
+                                onClick={() => void handleVerifyDeposit(e.memberId, "exempt")}
+                                className="btn-exempt-deposit"
+                                style={{
+                                  fontSize: "0.72rem",
+                                  padding: "0.15rem 0.45rem",
+                                  borderRadius: "4px",
+                                  background: "#f0fdf4",
+                                  color: "#15803d",
+                                  border: "1px solid #86efac",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                }}
+                                title="Mark as Cabin Payer (Exempt from $50 deposit)"
+                              >
+                                Set Cabin Payer
+                              </button>
+                            </>
+                          )}
+
+                          {e.depositStatus === "exempt" && (
+                            <button
+                              type="button"
+                              disabled={depositBusy}
+                              onClick={() => void handleVerifyDeposit(e.memberId, "unpaid")}
+                              className="btn-unverify-deposit"
+                              style={{
+                                fontSize: "0.72rem",
+                                padding: "0.15rem 0.45rem",
+                                borderRadius: "4px",
+                                background: "#fef2f2",
+                                color: "#dc2626",
+                                border: "1px solid #fca5a5",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                              }}
+                              title="Remove Cabin Payer exemption"
+                            >
+                              Unset Payer
+                            </button>
+                          )}
+
+                          {e.depositStatus !== "exempt" && e.depositStatus !== "confirmed" && e.depositStatus !== "confirmed_by_admin" && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={depositBusy}
+                                onClick={() => void handleVerifyDeposit(e.memberId, "confirmed_by_admin")}
+                                className="btn-verify-deposit"
+                                style={{
+                                  fontSize: "0.72rem",
+                                  padding: "0.15rem 0.45rem",
+                                  borderRadius: "4px",
+                                  background: "#16a34a",
+                                  color: "#ffffff",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                }}
+                                title="Verify $50 deposit payment"
+                              >
+                                Verify Deposit
+                              </button>
+                              <button
+                                type="button"
+                                disabled={depositBusy}
+                                onClick={() => void handleVerifyDeposit(e.memberId, "exempt")}
+                                className="btn-exempt-deposit"
+                                style={{
+                                  fontSize: "0.72rem",
+                                  padding: "0.15rem 0.45rem",
+                                  borderRadius: "4px",
+                                  background: "#f0fdf4",
+                                  color: "#15803d",
+                                  border: "1px solid #86efac",
+                                  cursor: "pointer",
+                                  fontWeight: 600,
+                                }}
+                                title="Mark as Cabin Payer (Exempt from $50 deposit)"
+                              >
+                                Set Cabin Payer
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}

@@ -64,6 +64,8 @@ export type SettlementBalance = {
   totalPaidCents: number;
   totalAllocatedCents: number;
   netBalanceCents: number;
+  depositPaidCents?: number;
+  depositReceivedCents?: number;
   isMe: boolean;
 };
 
@@ -605,7 +607,12 @@ export function TripFinancialsTab({
 
       {/* 3. Member Net Balances */}
       <div className="card">
-        <h3 style={{ margin: "0 0 1rem 0", fontSize: "1.1rem" }}>⚖️ Member Balances</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+          <h3 style={{ margin: 0, fontSize: "1.1rem" }}>⚖️ Member Balances</h3>
+          <span style={{ fontSize: "0.8rem", color: "#15803d", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.2rem 0.5rem", borderRadius: "4px", fontWeight: 500 }}>
+            ✓ Verified $50 deposits are credited, reducing your settlement amount
+          </span>
+        </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
             <thead>
@@ -632,7 +639,19 @@ export function TripFinancialsTab({
                     <td style={{ padding: "0.6rem 0.5rem" }}>
                       {b.displayName} {isMe && <span style={{ color: "#2563eb" }}>(You)</span>}
                     </td>
-                    <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>{formatMoney(b.totalPaidCents)}</td>
+                    <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
+                      <div>{formatMoney(b.totalPaidCents)}</div>
+                      {(b.depositPaidCents ?? 0) > 0 && (
+                        <div style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 500 }}>
+                          (incl. {formatMoney(b.depositPaidCents!)} deposit)
+                        </div>
+                      )}
+                      {(b.depositReceivedCents ?? 0) > 0 && (
+                        <div style={{ fontSize: "0.72rem", color: "#64748b", fontWeight: 500 }}>
+                          (less {formatMoney(b.depositReceivedCents!)} deposits rec'd)
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>{formatMoney(b.totalAllocatedCents)}</td>
                     <td
                       style={{

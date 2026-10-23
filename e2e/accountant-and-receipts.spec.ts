@@ -257,6 +257,22 @@ test.describe("Accountant Role, Dynamic Expense Splits & Receipts", () => {
       const reloadedAttendeeChip = accountantPage.locator(".attendee-chip", { hasText: attendeeUser.displayName });
       await expect(reloadedAttendeeChip.getByText(/Paid ✓/)).toBeVisible();
       await expect(reloadedAttendeeChip.locator(".btn-verify-deposit")).toHaveCount(0);
+      await expect(reloadedAttendeeChip.locator(".btn-unverify-deposit")).toBeVisible();
+
+      // Verify unverify action: clicking Unverify resets status to unpaid
+      await reloadedAttendeeChip.locator(".btn-unverify-deposit").click();
+      await expect(reloadedAttendeeChip.getByText(/Deposit Pending/)).toBeVisible();
+      await expect(reloadedAttendeeChip.locator(".btn-verify-deposit")).toBeVisible();
+
+      // Verify unverify persistence across reload
+      await accountantPage.reload();
+      await accountantPage.waitForLoadState("networkidle");
+      const chipAfterUnverify = accountantPage.locator(".attendee-chip", { hasText: attendeeUser.displayName });
+      await expect(chipAfterUnverify.getByText(/Deposit Pending/)).toBeVisible();
+
+      // Re-verify deposit
+      await chipAfterUnverify.locator(".btn-verify-deposit").click();
+      await expect(chipAfterUnverify.getByText(/Paid ✓/)).toBeVisible();
 
       // Verify database persistence
       const { data: dbRsvp } = await supabaseAdmin
