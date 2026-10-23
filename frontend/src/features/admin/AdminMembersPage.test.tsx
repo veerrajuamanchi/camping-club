@@ -210,3 +210,91 @@ describe("AdminMembersPage - Access Requests", () => {
     expect(await screen.findByText("Invitation sent.")).toBeInTheDocument();
   });
 });
+
+describe("AdminMembersPage - Member Roles", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders Accountant option in role dropdown and updates member to Accountant", async () => {
+    const user = userEvent.setup();
+    mockInvokeMemberApi.mockImplementation((action: string) => {
+      if (action === "list_access_requests") {
+        return Promise.resolve({ requests: [] });
+      }
+      if (action === "list_members") {
+        return Promise.resolve({
+          members: [
+            {
+              member_id: "m-1",
+              display_name: "Test User",
+              member_role: "member",
+              account_status: "active",
+              created_at: "2026-09-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      if (action === "update_membership") {
+        return Promise.resolve({ updated: true });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AdminMembersPage />);
+
+    expect(await screen.findByText("Test User")).toBeInTheDocument();
+    const roleSelect = screen.getByLabelText("Role");
+    expect(roleSelect).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Accountant" })).toBeInTheDocument();
+
+    await user.selectOptions(roleSelect, "accountant");
+
+    await waitFor(() => {
+      expect(mockInvokeMemberApi).toHaveBeenCalledWith("update_membership", {
+        memberId: "m-1",
+        memberRole: "accountant",
+        accountStatus: "active",
+        reason: "Administrator membership maintenance",
+      });
+    });
+
+    expect(
+      await screen.findByText(
+        "Role updated: Test User is now an Accountant. Change recorded in audit log."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("renders accountant badge with distinct emerald styling", async () => {
+    mockInvokeMemberApi.mockImplementation((action: string) => {
+      if (action === "list_access_requests") {
+        return Promise.resolve({ requests: [] });
+      }
+      if (action === "list_members") {
+        return Promise.resolve({
+          members: [
+            {
+              member_id: "m-2",
+              display_name: "Finance Lead",
+              member_role: "accountant",
+              account_status: "active",
+              created_at: "2026-09-01T00:00:00Z",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(<AdminMembersPage />);
+
+    const badge = await screen.findByText("accountant");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveStyle({
+      backgroundColor: "#065f46",
+      color: "#a7f3d0",
+    });
+  });
+});
+
