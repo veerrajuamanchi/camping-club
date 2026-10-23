@@ -96,6 +96,15 @@ export function AppRoutes() {
   }
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+
+  useEffect(() => {
+    if (membership.status === "active" && membership.role === "admin") {
+      void invokeMemberApi<{ requests: Array<unknown> }>("list_access_requests")
+        .then((data) => setPendingRequestsCount(data.requests?.length || 0))
+        .catch(() => {});
+    }
+  }, [membership]);
 
   return (
     <>
@@ -121,8 +130,33 @@ export function AppRoutes() {
               className="user-avatar-btn"
               aria-label="User menu"
               onClick={() => setUserMenuOpen((open: boolean) => !open)}
+              style={{ position: "relative" }}
             >
               {profile?.displayName?.charAt(0).toUpperCase() || "👤"}
+              {pendingRequestsCount > 0 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: "-4px",
+                    right: "-4px",
+                    background: "#ef4444",
+                    color: "#ffffff",
+                    fontSize: "0.65rem",
+                    fontWeight: 700,
+                    borderRadius: "9999px",
+                    minWidth: "16px",
+                    height: "16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "0 4px",
+                    border: "2px solid #ffffff",
+                  }}
+                  title={`${pendingRequestsCount} pending access request(s)`}
+                >
+                  {pendingRequestsCount}
+                </span>
+              )}
             </button>
 
             {userMenuOpen && (
@@ -132,7 +166,14 @@ export function AppRoutes() {
                   <>
                     <hr />
                     <Link to="/admin/campsites">🏕️ Campsite Directory</Link>
-                    <Link to="/admin/members">👥 Members & Access</Link>
+                    <Link to="/admin/members" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>👥 Members & Access</span>
+                      {pendingRequestsCount > 0 && (
+                        <span style={{ background: "#ef4444", color: "#ffffff", fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.45rem", borderRadius: "9999px" }}>
+                          {pendingRequestsCount} new
+                        </span>
+                      )}
+                    </Link>
                     <Link to="/admin/schedule-defaults">⚙️ Club Schedule Defaults</Link>
                     <Link to="/admin/constitution">📜 Camping Constitution</Link>
                     <Link to="/admin/responsibilities">🛠️ Master Responsibilities</Link>
@@ -166,6 +207,36 @@ export function AppRoutes() {
           </button>
         )}
       </header>
+      {membership.status === "active" && membership.role === "admin" && pendingRequestsCount > 0 && (
+        <div
+          style={{
+            background: "#fef3c7",
+            borderBottom: "1px solid #f59e0b",
+            color: "#92400e",
+            padding: "0.6rem 1.25rem",
+            fontSize: "0.88rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+          }}
+        >
+          <span>
+            🔔 <strong>{pendingRequestsCount} new member access request{pendingRequestsCount > 1 ? "s" : ""}</strong> waiting for approval.
+          </span>
+          <Link
+            to="/admin/members"
+            style={{
+              color: "#b45309",
+              fontWeight: 700,
+              textDecoration: "underline",
+              marginLeft: "1rem",
+            }}
+          >
+            Review & Approve →
+          </Link>
+        </div>
+      )}
       <main className="container">
         <Routes>
           <Route path="/logout" element={<LogoutRoute />} />
