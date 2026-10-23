@@ -126,6 +126,37 @@ export function AdminConstitutionPage({ api = defaultApi }: { api?: TripApi }) {
     });
   const overrides = (rulesData?.overrides as Array<{ id: string; base_rule_version_id: string; version_no: number; human_text: string; expires_at: string; retired_at: string | null }>) ?? [];
 
+  function handleSelectExistingRule(ruleKey: string) {
+    if (!ruleKey || ruleKey === "__new__") {
+      setKey("");
+      setCategory("custom");
+      setText("");
+      setReason("");
+      return;
+    }
+    const def = definitions.find((d) => d.stable_key === ruleKey);
+    if (!def) return;
+
+    setKey(def.stable_key);
+    if (categories.includes(def.category as (typeof categories)[number])) {
+      setCategory(def.category as (typeof categories)[number]);
+    }
+    const defVersions = versions
+      .filter((v) => v.definition_id === def.id)
+      .sort((a, b) => b.version_no - a.version_no);
+    const latest = defVersions[0];
+    if (latest) {
+      setText(latest.human_text);
+      setReason(`Update to ${def.stable_key}`);
+    }
+    const formEl = document.getElementById("constitution-rule-form");
+    if (formEl) {
+      formEl.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
+  const isExistingRule = definitions.some((d) => d.stable_key === key);
+
   return (
     <section className="stack">
       <Link to="/" className="back-link">
@@ -136,11 +167,63 @@ export function AdminConstitutionPage({ api = defaultApi }: { api?: TripApi }) {
         <p className="eyebrow">Administration</p>
         <h2>Camping Constitution Manager</h2>
         <p>
-          Publish and manage the club constitution rules. Rule versions and each member’s acknowledgment are
-          immutable and preserved across changes.
+          Lookup, edit, and publish the club constitution rules. Every update creates an immutable version and preserves members' historical acknowledgments.
         </p>
 
-        <form className="admin-form" onSubmit={(event) => void publish(event)}>
+        {/* Rule Selector / Lookup */}
+        <div style={{ marginBottom: "1.25rem", padding: "1rem", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+          <label style={{ display: "block", fontWeight: 600, color: "#0f172a", marginBottom: "0.4rem" }}>
+            📖 Choose rule to edit (or create new)
+            <select
+              aria-label="Choose rule to edit"
+              value={isExistingRule ? key : "__new__"}
+              onChange={(event) => handleSelectExistingRule(event.target.value)}
+              style={{
+                width: "100%",
+                marginTop: "0.35rem",
+                padding: "0.6rem 0.75rem",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                fontSize: "0.95rem",
+                background: "#ffffff",
+              }}
+            >
+              <option value="__new__">✨ + Create a new rule</option>
+              {definitions.length > 0 && (
+                <optgroup label="Existing Constitution Rules">
+                  {definitions.map((d) => (
+                    <option key={d.id} value={d.stable_key}>
+                      {d.stable_key} ({d.category} · {d.scope})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </label>
+          {isExistingRule && (
+            <div style={{ marginTop: "0.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.85rem", color: "#16a34a", fontWeight: 600 }}>
+                ✓ Loaded existing rule "{key}". Edit below to publish the next version.
+              </span>
+              <button
+                type="button"
+                onClick={() => handleSelectExistingRule("__new__")}
+                style={{
+                  fontSize: "0.8rem",
+                  color: "#64748b",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                Clear / Create New Rule
+              </button>
+            </div>
+          )}
+        </div>
+
+        <form id="constitution-rule-form" className="admin-form" onSubmit={(event) => void publish(event)}>
           <div className="form-grid">
             <label>
               Applies to
@@ -167,13 +250,20 @@ export function AdminConstitutionPage({ api = defaultApi }: { api?: TripApi }) {
                 required
                 pattern="[a-zA-Z0-9 _-]+"
                 value={key}
+                readOnly={isExistingRule}
+                style={isExistingRule ? { background: "#f1f5f9", cursor: "not-allowed" } : {}}
                 onChange={(event) => setKey(event.target.value)}
                 placeholder="quiet-hours"
               />
             </label>
             <label>
               Category
-              <select value={category} onChange={(event) => setCategory(event.target.value as (typeof categories)[number])}>
+              <select
+                value={category}
+                disabled={isExistingRule}
+                style={isExistingRule ? { background: "#f1f5f9", cursor: "not-allowed" } : {}}
+                onChange={(event) => setCategory(event.target.value as (typeof categories)[number])}
+              >
                 {categories.map((item) => (
                   <option key={item} value={item}>
                     {item}
@@ -207,6 +297,7 @@ export function AdminConstitutionPage({ api = defaultApi }: { api?: TripApi }) {
               minLength={1}
               maxLength={8000}
               value={text}
+              placeholder="Enter the rule content here..."
               onChange={(event) => setText(event.target.value)}
             />
           </label>
@@ -216,10 +307,13 @@ export function AdminConstitutionPage({ api = defaultApi }: { api?: TripApi }) {
               required
               maxLength={500}
               value={reason}
+              placeholder="e.g. Annual policy review or updated quiet hours"
               onChange={(event) => setReason(event.target.value)}
             />
           </label>
-          <button disabled={busy}>{busy ? "Publishing…" : "Publish immutable rule version"}</button>
+          <button disabled={busy}>
+            {busy ? "Publishing…" : isExistingRule ? `Publish update for ${key}` : "Publish immutable rule version"}
+          </button>
         </form>
         {message && <p role="status" style={{ marginTop: "1rem" }}>{message}</p>}
       </div>
@@ -301,8 +395,31 @@ export function AdminConstitutionPage({ api = defaultApi }: { api?: TripApi }) {
         ) : (
           definitions.map((definition) => (
             <details key={definition.id} className="rule-history">
-              <summary>
-                {definition.stable_key} <span>({definition.scope}, {definition.category})</span>
+              <summary style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>
+                  <strong>{definition.stable_key}</strong> <span>({definition.scope}, {definition.category})</span>
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Edit ${definition.stable_key}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSelectExistingRule(definition.stable_key);
+                  }}
+                  style={{
+                    fontSize: "0.78rem",
+                    padding: "0.2rem 0.55rem",
+                    borderRadius: "4px",
+                    background: "#0284c7",
+                    color: "#ffffff",
+                    border: "none",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  ✏️ Edit Rule
+                </button>
               </summary>
               <ol>
                 {versions

@@ -67,4 +67,52 @@ describe("AdminConstitutionPage", () => {
       )
     );
   });
+
+  it("allows looking up and prefilling an existing rule for editing and updating", async () => {
+    const calendar = makeCalendar();
+    const constitution = {
+      definitions: [
+        { id: "def-1", stable_key: "quiet-hours", category: "conduct", scope: "general", active: true },
+        { id: "def-2", stable_key: "fire-safety", category: "conduct", scope: "general", active: true },
+      ],
+      versions: [
+        { id: "v-1", definition_id: "def-1", version_no: 1, human_text: "Quiet hours 10pm to 7am.", effective_from: "2026-01-01T00:00:00Z", expires_at: null },
+        { id: "v-2", definition_id: "def-2", version_no: 1, human_text: "Fires in designated rings only.", effective_from: "2026-01-01T00:00:00Z", expires_at: null },
+      ],
+      overrides: [],
+      currentBundle: null,
+      myAcknowledgments: [],
+    };
+    const api = vi.fn(async (action: string) =>
+      action === "get_calendar" ? calendar : constitution
+    );
+
+    render(<AdminConstitutionPage api={api as any} />);
+
+    // Select quiet-hours from dropdown
+    const select = await screen.findByLabelText(/Choose rule to edit/i);
+    fireEvent.change(select, { target: { value: "quiet-hours" } });
+
+    // Verify fields are prefilled
+    expect(screen.getByLabelText(/^Rule key/i)).toHaveValue("quiet-hours");
+    expect(screen.getByLabelText(/^Rule text/i)).toHaveValue("Quiet hours 10pm to 7am.");
+
+    // Edit text and submit
+    fireEvent.change(screen.getByLabelText(/^Rule text/i), { target: { value: "Quiet hours 11pm to 7am." } });
+    fireEvent.change(screen.getByLabelText(/Reason for this version/i), { target: { value: "Extended evening quiet hours" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Publish update for quiet-hours/i }));
+
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "admin_publish_rule",
+        expect.objectContaining({
+          stableKey: "quiet-hours",
+          category: "conduct",
+          text: "Quiet hours 11pm to 7am.",
+          reason: "Extended evening quiet hours",
+        })
+      )
+    );
+  });
 });
