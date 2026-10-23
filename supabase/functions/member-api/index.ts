@@ -120,7 +120,16 @@ Deno.serve(async (request) => {
     if (action === "approve_access_request" && approvedEmail) {
       try {
         const redirectTo = `${requiredEnv("WEB_APP_URL").replace(/\/$/, "")}/accept-invitation`;
-        await service.auth.admin.inviteUserByEmail(approvedEmail as string, { redirectTo });
+        const { data: inviteData } = await service.auth.admin.inviteUserByEmail(approvedEmail as string, { redirectTo });
+        let targetUserId = inviteData?.user?.id;
+        if (!targetUserId) {
+          const { data: listData } = await service.auth.admin.listUsers();
+          const existing = listData?.users?.find((u) => u.email?.toLowerCase() === (approvedEmail as string).toLowerCase());
+          if (existing) targetUserId = existing.id;
+        }
+        if (targetUserId) {
+          await service.auth.admin.updateUserById(targetUserId, { email_confirm: true });
+        }
       } catch (inviteErr) {
         console.warn("Automated invitation warning (user may already exist):", inviteErr);
       }
