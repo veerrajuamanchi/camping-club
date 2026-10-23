@@ -96,131 +96,98 @@ GRANT EXECUTE ON FUNCTION public.phase1_update_membership(uuid, uuid, text, text
 
 -- Also update phase2_submit_rsvp to allow accountant role
 CREATE OR REPLACE FUNCTION public.phase2_submit_rsvp(
-  p_auth_user_id uuid,
-  p_trip_id uuid,
-  p_response text,
-  p_bundle_id uuid,
-  p_content_hash text,
-  p_expected_version integer,
-  p_request_id uuid
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY INVOKER
-SET search_path = pg_catalog, public, private
-AS $$
+  p_auth_user_id UUID, p_trip_id UUID, p_response TEXT, p_bundle_id UUID, p_content_hash TEXT, p_expected_version INTEGER, p_request_id UUID
+) RETURNS JSONB LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public,private AS $$
 DECLARE
-  v_member uuid;
-  v_trip public.camping_trips%rowtype;
-  v_old public.trip_rsvps%rowtype;
-  v_ack uuid;
-  v_current_bundle public.trip_rule_bundles%rowtype;
-  v_id uuid;
-  v_version integer;
-  v_event text;
-  v_existing boolean;
+  v_member UUID;
+  v_trip public.camping_trips%ROWTYPE;
+  v_old public.trip_rsvps%ROWTYPE;
+  v_ack UUID;
+  v_current_bundle public.trip_rule_bundles%ROWTYPE;
+  v_id UUID;
+  v_version INTEGER;
+  v_event TEXT;
+  v_existing BOOLEAN;
 BEGIN
-  IF p_auth_user_id IS NULL OR p_response NOT IN ('coming', 'not_coming') OR p_request_id IS NULL THEN
+  IF p_auth_user_id IS NULL OR p_response NOT IN ('coming','not_coming') OR p_request_id IS NULL THEN
     RAISE EXCEPTION 'invalid RSVP';
   END IF;
-
-  SELECT member_id INTO v_member FROM public.member_profiles
-  WHERE auth_user_id = p_auth_user_id AND account_status = 'active' AND member_role IN ('member', 'admin', 'accountant');
-
+  SELECT member_id INTO v_member FROM public.member_profiles WHERE auth_user_id=p_auth_user_id AND account_status='active' AND member_role IN ('member','admin','accountant');
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'active member required' USING ERRCODE = '42501';
+    RAISE EXCEPTION 'active member required' USING errcode='42501';
   END IF;
-
-  SELECT * INTO v_trip FROM public.camping_trips WHERE id = p_trip_id FOR UPDATE;
+  SELECT * INTO v_trip FROM public.camping_trips WHERE id=p_trip_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'poll not found';
   END IF;
-
-  IF v_trip.deleted_at IS NOT NULL OR v_trip.event_status = 'cancelled' OR v_trip.poll_status = 'draft' OR v_trip.ends_on IS NULL OR v_trip.ends_on < (now() AT TIME ZONE coalesce(v_trip.club_timezone_snapshot, 'America/Los_Angeles'))::date THEN
+  IF v_trip.deleted_at IS NOT NULL OR v_trip.event_status='cancelled' OR v_trip.poll_status='draft' OR v_trip.ends_on IS NULL OR v_trip.ends_on < (now() AT TIME ZONE coalesce(v_trip.club_timezone_snapshot,'America/Los_Angeles'))::date THEN
     RAISE EXCEPTION 'camping event is closed';
   END IF;
-
-  IF p_response = 'coming' AND (NOT EXISTS (SELECT 1 FROM public.trip_rsvps WHERE trip_id = p_trip_id AND member_id = v_member AND response = 'coming')) THEN
-    PERFORM private.phase2_build_rule_bundle(p_trip_id, v_member);
+  IF p_response='coming' AND (NOT EXISTS(SELECT 1 FROM public.trip_rsvps WHERE trip_id=p_trip_id AND member_id=v_member AND response='coming')) THEN
+    PERFORM private.phase2_build_rule_bundle(p_trip_id,v_member);
   END IF;
-
-  SELECT * INTO v_old FROM public.trip_rsvps WHERE trip_id = p_trip_id AND member_id = v_member FOR UPDATE;
-  v_existing := FOUND;
-
+  SELECT * INTO v_old FROM public.trip_rsvps WHERE trip_id=p_trip_id AND member_id=v_member FOR UPDATE;
+  v_existing:=FOUND;
   IF v_existing THEN
-    IF p_expected_version IS NULL OR p_expected_version <> v_old.version THEN
-      RAISE EXCEPTION 'stale RSVP version' USING ERRCODE = '40001';
+    IF p_expected_version IS NULL OR p_expected_version<>v_old.version THEN
+      RAISE EXCEPTION 'stale RSVP version' USING errcode='40001';
     END IF;
-    v_id := v_old.id;
-    v_version := v_old.version + 1;
-    v_ack := v_old.rule_acknowledgment_id;
+    v_id:=v_old.id;
+    v_version:=v_old.version+1;
+    v_ack:=v_old.rule_acknowledgment_id;
   ELSE
-    IF coalesce(p_expected_version, 0) <> 0 THEN
-      RAISE EXCEPTION 'stale RSVP version' USING ERRCODE = '40001';
+    IF coalesce(p_expected_version,0)<>0 THEN
+      RAISE EXCEPTION 'stale RSVP version' USING errcode='40001';
     END IF;
-    v_id := gen_random_uuid();
-    v_version := 1;
+    v_id:=gen_random_uuid();
+    v_version:=1;
+  END IF;
+  IF p_response='coming' AND (NOT v_existing OR v_old.response<>'coming') THEN
+    SELECT * INTO v_current_bundle FROM public.trip_rule_bundles WHERE trip_id=p_trip_id AND is_current;
+    IF v_current_bundle.id IS NULL OR p_bundle_id IS DISTINCT FROM v_current_bundle.id OR p_content_hash IS DISTINCT FROM v_current_bundle.content_hash THEN
+      RAISE EXCEPTION 'current Camping Constitution acknowledgment required' USING errcode='22023';
+    END IF;
+    SELECT id INTO v_ack FROM public.trip_rule_acknowledgments WHERE member_id=v_member AND trip_id=p_trip_id AND bundle_id=v_current_bundle.id AND statement_version='coming-v1';
+    IF v_ack IS NULL THEN
+      INSERT INTO public.trip_rule_acknowledgments(trip_id,member_id,bundle_id,content_hash,statement_version,request_id)
+        VALUES(p_trip_id,v_member,v_current_bundle.id,v_current_bundle.content_hash,'coming-v1',p_request_id) RETURNING id INTO v_ack;
+    END IF;
+  ELSIF p_response='coming' AND v_ack IS NULL THEN
+    RAISE EXCEPTION 'current Camping Constitution acknowledgment required' USING errcode='22023';
+  END IF;
+  IF p_response='coming' AND (NOT v_existing OR v_old.response<>'coming') AND v_trip.max_capacity IS NOT NULL
+    AND (SELECT count(*) FROM public.trip_rsvps WHERE trip_id=p_trip_id AND response='coming')>=v_trip.max_capacity THEN
+    RAISE EXCEPTION 'interest poll capacity reached' USING errcode='22023';
+  END IF;
+  IF v_existing THEN
+    UPDATE public.trip_rsvps SET response=p_response,rule_acknowledgment_id=v_ack,version=v_version,updated_at=now() WHERE id=v_id;
+    v_event:=CASE WHEN v_old.response=p_response THEN NULL ELSE 'changed' END;
+  ELSE
+    INSERT INTO public.trip_rsvps(id,trip_id,member_id,response,rule_acknowledgment_id,version) VALUES(v_id,p_trip_id,v_member,p_response,v_ack,v_version);
+    v_event:='submitted';
+  END IF;
+  IF v_event IS NOT NULL THEN
+    INSERT INTO public.trip_rsvp_events(trip_id,member_id,actor_id,event_type,from_response,to_response,rule_acknowledgment_id,request_id)
+      VALUES(p_trip_id,v_member,v_member,v_event,CASE WHEN v_existing THEN v_old.response ELSE NULL END,p_response,v_ack,p_request_id);
   END IF;
 
-  IF p_response = 'coming' THEN
-    SELECT * INTO v_current_bundle FROM public.trip_rule_bundles
-    WHERE trip_id = p_trip_id AND superseding_bundle_id IS NULL
-    ORDER BY created_at DESC LIMIT 1;
+  IF p_response='not_coming' THEN
+    -- Delete active duty assignments
+    DELETE FROM public.trip_duty_assignments
+    WHERE trip_id = p_trip_id AND member_id = v_member AND status IN ('claimed', 'assigned_by_admin');
 
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'rule bundle missing';
-    END IF;
+    -- Release shared gear/food commitments
+    UPDATE public.trip_commitments
+    SET assigned_member_id = NULL, updated_at = now()
+    WHERE trip_id = p_trip_id AND assigned_member_id = v_member;
 
-    IF v_current_bundle.id <> p_bundle_id OR v_current_bundle.content_hash <> p_content_hash THEN
-      RAISE EXCEPTION 'member must personally acknowledge the current rule bundle' USING ERRCODE = 'P0001';
-    END IF;
-
-    INSERT INTO public.trip_rule_acknowledgments(
-      trip_id, member_id, bundle_id, acknowledged_bundle_hash, request_id
-    ) VALUES (
-      p_trip_id, v_member, p_bundle_id, p_content_hash, p_request_id
-    )
-    ON CONFLICT (member_id, bundle_id, acknowledged_bundle_hash)
-    DO UPDATE SET acknowledged_at = now()
-    RETURNING id INTO v_ack;
+    -- Delete meal preferences
+    DELETE FROM public.trip_meal_preferences
+    WHERE trip_id = p_trip_id AND member_id = v_member;
   END IF;
 
-  INSERT INTO public.trip_rsvps(
-    id, trip_id, member_id, response, rule_acknowledgment_id, version
-  ) VALUES (
-    v_id, p_trip_id, v_member, p_response, v_ack, v_version
-  )
-  ON CONFLICT (trip_id, member_id)
-  DO UPDATE SET
-    response = EXCLUDED.response,
-    rule_acknowledgment_id = coalesce(EXCLUDED.rule_acknowledgment_id, public.trip_rsvps.rule_acknowledgment_id),
-    version = EXCLUDED.version,
-    updated_at = now();
-
-  v_event := CASE WHEN NOT v_existing THEN 'created' ELSE 'changed' END;
-
-  INSERT INTO public.trip_rsvp_events(
-    trip_id, member_id, actor_id, event_type, from_response, to_response, rule_acknowledgment_id, request_id
-  ) VALUES (
-    p_trip_id, v_member, v_member, v_event,
-    CASE WHEN v_existing THEN v_old.response ELSE NULL END,
-    p_response, v_ack, p_request_id
-  );
-
-  INSERT INTO public.audit_events(actor_id, actor_kind, entity_type, entity_id, action, request_id)
-  VALUES (v_member, 'member', 'trip_rsvp', v_id, 'rsvp_' || v_event, p_request_id)
-  ON CONFLICT (actor_id, request_id) DO NOTHING;
-
-  RETURN jsonb_build_object(
-    'success', true,
-    'id', v_id,
-    'trip_id', p_trip_id,
-    'member_id', v_member,
-    'response', p_response,
-    'version', v_version,
-    'rule_acknowledgment_id', v_ack
-  );
-END;
-$$;
+  RETURN jsonb_build_object('rsvpId',v_id,'response',p_response,'version',v_version,'acknowledgmentId',v_ack);
+END $$;
 
 REVOKE ALL ON FUNCTION public.phase2_submit_rsvp(uuid, uuid, text, uuid, text, integer, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.phase2_submit_rsvp(uuid, uuid, text, uuid, text, integer, uuid) TO service_role;
@@ -601,5 +568,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.purge_expired_receipts FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.purge_expired_receipts TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.purge_expired_receipts FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.purge_expired_receipts TO service_role;

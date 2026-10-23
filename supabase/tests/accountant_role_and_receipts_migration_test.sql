@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(18);
+SELECT plan(20);
 
 -- Test 1: Check constraint permits 'accountant'
 SELECT col_is_pk('public', 'member_profiles', 'member_id', 'member_profiles has primary key');
@@ -287,7 +287,43 @@ SELECT throws_ok(
   NULL,
   'non-attending member cannot insert receipt into storage.objects under RLS'
 );
+
+-- Test 19: Authenticated role cannot execute purge_expired_receipts (privilege escalation check)
+SELECT throws_ok(
+  $$ SELECT * FROM public.purge_expired_receipts() $$,
+  '42501',
+  NULL,
+  'authenticated role cannot execute purge_expired_receipts'
+);
 RESET ROLE;
+
+-- Test 20: phase2_submit_rsvp permits member with accountant role
+DO $$
+DECLARE
+  v_open_trip_id uuid;
+BEGIN
+  SELECT id INTO v_open_trip_id FROM public.camping_trips LIMIT 1;
+  UPDATE public.camping_trips
+  SET starts_on = CURRENT_DATE + 5,
+      ends_on = CURRENT_DATE + 7,
+      poll_status = 'open',
+      poll_deadline_at = now() + interval '3 days',
+      club_timezone_snapshot = 'America/Los_Angeles'
+  WHERE id = v_open_trip_id;
+END $$;
+
+SELECT lives_ok(
+  $$ SELECT public.phase2_submit_rsvp(
+       'a0000000-0000-0000-0000-000000000001'::uuid,
+       (SELECT id FROM public.camping_trips WHERE poll_status = 'open' LIMIT 1),
+       'not_coming',
+       NULL,
+       NULL,
+       0,
+       gen_random_uuid()
+     ) $$,
+  'accountant can submit RSVP via phase2_submit_rsvp'
+);
 
 SELECT * FROM finish();
 ROLLBACK;
