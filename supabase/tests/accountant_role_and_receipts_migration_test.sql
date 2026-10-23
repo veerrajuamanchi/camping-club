@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(20);
+SELECT plan(21);
 
 -- Test 1: Check constraint permits 'accountant'
 SELECT col_is_pk('public', 'member_profiles', 'member_id', 'member_profiles has primary key');
@@ -323,6 +323,15 @@ SELECT lives_ok(
        gen_random_uuid()
      ) $$,
   'accountant can submit RSVP via phase2_submit_rsvp'
+);
+
+-- Test 21: phase2_refresh_open_rule_bundles permits accountant actor
+SELECT lives_ok(
+  $$ SELECT public.phase2_refresh_open_rule_bundles(
+       'b0000000-0000-0000-0000-000000000001'::uuid,
+       ARRAY[(SELECT id FROM public.camping_trips WHERE poll_status = 'open' LIMIT 1)]
+     ) $$,
+  'accountant actor can refresh open rule bundles'
 );
 
 SELECT * FROM finish();

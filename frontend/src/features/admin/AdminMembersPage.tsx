@@ -112,8 +112,8 @@ export function AdminMembersPage() {
     {notice && <p role="status">{notice}</p>}
     <div className="card"><h2>Club members</h2><div className="member-list">{members.map((row) => <article className="member-row" key={row.member_id}>
       <div><strong>{row.display_name}</strong> <span style={{ color: "#94a3b8", margin: "0 6px" }}>·</span> <span className="badge-pill" style={{ textTransform: "capitalize", fontSize: "0.8rem", backgroundColor: row.member_role === "accountant" ? "#065f46" : undefined, color: row.member_role === "accountant" ? "#a7f3d0" : undefined }}>{row.member_role}</span></div>
-      <label>Access<select disabled={busy} value={row.account_status} onChange={(event) => void update(row, "accountStatus", event.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></label>
-      <label>Role<select disabled={busy} value={row.member_role} onChange={(event) => void update(row, "memberRole", event.target.value)}><option value="member">Member</option><option value="admin">Administrator</option><option value="accountant">Accountant</option></select></label>
+      <label>Access<select disabled={busy} value={row.account_status} style={{ minHeight: "38px", height: "38px" }} onChange={(event) => void update(row, "accountStatus", event.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option></select></label>
+      <label>Role<select disabled={busy} value={row.member_role} style={{ minHeight: "38px", height: "38px" }} onChange={(event) => void update(row, "memberRole", event.target.value)}><option value="member">Member</option><option value="admin">Administrator</option><option value="accountant">Accountant</option></select></label>
     </article>)}</div></div>
   </section>;
 }

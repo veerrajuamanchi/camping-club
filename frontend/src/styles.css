@@ -480,6 +480,25 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   color: #111827;
 }
 
+.member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e5e7eb;
+  flex-wrap: wrap;
+}
+
+.member-row select {
+  min-height: 38px;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: white;
+  font-size: 0.9rem;
+}
+
 input[type="checkbox"],
 input[type="radio"] {
   width: 1.25rem;

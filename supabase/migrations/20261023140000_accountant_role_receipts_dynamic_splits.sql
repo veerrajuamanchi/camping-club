@@ -192,6 +192,25 @@ END $$;
 REVOKE ALL ON FUNCTION public.phase2_submit_rsvp(uuid, uuid, text, uuid, text, integer, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.phase2_submit_rsvp(uuid, uuid, text, uuid, text, integer, uuid) TO service_role;
 
+-- 2b. Update public.phase2_refresh_open_rule_bundles to allow accountant role
+CREATE OR REPLACE FUNCTION public.phase2_refresh_open_rule_bundles(p_actor_id uuid, p_trip_ids uuid[])
+RETURNS integer LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public,private AS $$
+DECLARE v_trip uuid; v_refreshed integer:=0;
+BEGIN
+  IF p_actor_id IS NULL OR NOT EXISTS(
+    SELECT 1 FROM public.member_profiles WHERE member_id=p_actor_id AND account_status='active' AND member_role IN ('member','admin','accountant')
+  ) THEN RAISE EXCEPTION 'active member required' USING errcode='42501'; END IF;
+  IF p_trip_ids IS NULL THEN RAISE EXCEPTION 'trip list is required'; END IF;
+  FOR v_trip IN SELECT DISTINCT t.id FROM public.camping_trips t WHERE t.id=ANY(p_trip_ids) AND t.poll_status<>'draft' AND t.event_status<>'cancelled' AND t.deleted_at IS NULL ORDER BY t.id LOOP
+    PERFORM private.phase2_build_rule_bundle(v_trip,p_actor_id);
+    v_refreshed:=v_refreshed+1;
+  END LOOP;
+  RETURN v_refreshed;
+END $$;
+
+REVOKE ALL ON FUNCTION public.phase2_refresh_open_rule_bundles(uuid, uuid[]) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.phase2_refresh_open_rule_bundles(uuid, uuid[]) TO service_role;
+
 -- 3. Update public.verify_member_deposit to allow v_actor.member_role IN ('admin', 'administrator', 'accountant')
 CREATE OR REPLACE FUNCTION public.verify_member_deposit(
     p_trip_id UUID,

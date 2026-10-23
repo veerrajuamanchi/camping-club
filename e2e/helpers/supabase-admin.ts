@@ -18,11 +18,11 @@ export type TestUser = {
   email: string;
   password: string;
   displayName: string;
-  role: "admin" | "member";
+  role: "admin" | "member" | "accountant";
 };
 
 export async function createSyntheticUser(options: {
-  role: "admin" | "member";
+  role: "admin" | "member" | "accountant";
   displayName: string;
   emailPrefix?: string;
 }): Promise<TestUser> {
