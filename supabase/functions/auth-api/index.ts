@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolveServiceApiKey } from "../_shared/service-key.mjs";
 import { emailDigest, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, emailSchema, isOriginAllowed, json, readBody } from "../_shared/http.ts";
+import { notifyAdminNewAccessRequest } from "../_shared/mailer.ts";
 
 const service = createClient(
   requiredEnv("SUPABASE_URL"),
@@ -99,44 +100,11 @@ Deno.serve(async (request) => {
       return json(request, 500, { error: "request_failed", requestId });
     }
 
-    // Attempt to notify administrator via Resend if RESEND_API_KEY is configured
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
-    if (resendApiKey) {
-      const adminEmail = Deno.env.get("ADMIN_NOTIFICATION_EMAIL") || "veerraju.amanchi@gmail.com";
-      const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Camping Club <onboarding@resend.dev>";
-      const webAppUrl = Deno.env.get("WEB_APP_URL") || "https://camping-club.onrender.com";
-      try {
-        await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${resendApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: fromEmail,
-            to: [adminEmail],
-            subject: `🏕️ New Camping Club Access Request: ${input.name}`,
-            html: `
-              <div style="font-family: sans-serif; max-width: 540px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <h2 style="color: #0f172a; margin-top: 0;">New Access Request</h2>
-                <p>A new member has requested access to the <strong>Private Camping Club</strong>:</p>
-                <div style="background-color: #f8fafc; padding: 12px 16px; border-radius: 6px; margin: 16px 0;">
-                  <p style="margin: 4px 0;"><strong>Name:</strong> ${input.name}</p>
-                  <p style="margin: 4px 0;"><strong>Email:</strong> ${input.email}</p>
-                  <p style="margin: 4px 0;"><strong>Time:</strong> ${new Date().toUTCString()}</p>
-                </div>
-                <p style="margin-top: 20px;">
-                  <a href="${webAppUrl.replace(/\/$/, "")}/admin/members" style="background-color: #16a34a; color: #ffffff; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
-                    Review & Approve in Admin Panel
-                  </a>
-                </p>
-              </div>
-            `,
-          }),
-        });
-      } catch (notifyErr) {
-        console.warn("Failed to dispatch admin notification email:", notifyErr);
-      }
+    // Notify administrator via Gmail SMTP (or Resend fallback)
+    try {
+      await notifyAdminNewAccessRequest(input.name, input.email);
+    } catch (notifyErr) {
+      console.warn("Failed to dispatch admin notification email:", notifyErr);
     }
 
     return json(request, 200, { status: "new_request_created", requestId });
