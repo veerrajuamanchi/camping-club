@@ -296,6 +296,30 @@ export function TripTasksAndMealsTab({
         </div>
       )}
 
+      {/* Non-attendee informational banner */}
+      {!isConfirmedAttendee && (
+        <div
+          data-testid="not-attending-tasks-banner"
+          role="status"
+          style={{
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            color: "#92400e",
+            padding: "0.85rem 1.25rem",
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            fontWeight: 500,
+          }}
+        >
+          <span>ℹ️</span>
+          <span>
+            You are viewing trip responsibilities as a non-attendee. Only confirmed Going attendees can volunteer for meals and chores. (You are not currently a confirmed attendee. Please submit your RSVP as Going to volunteer for tasks.)
+          </span>
+        </div>
+      )}
+
       {/* T-48h Duty Override Mode Banner */}
       {isAdmin && unfilledDutiesCount > 0 && (
         <div
@@ -335,7 +359,7 @@ export function TripTasksAndMealsTab({
         </details>
       )}
       {/* Preserve the existing trip quota until the admin opts into a daily target. */}
-      {dailyWorkload?.target == null && <div className="card quota-progress-card" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)", borderColor: "#bbf7d0" }}>
+      {isConfirmedAttendee && dailyWorkload?.target == null && <div className="card quota-progress-card" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)", borderColor: "#bbf7d0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
           <div>
             <h3 style={{ margin: 0, fontSize: "1.2rem", color: "#0f172a" }}>Your Trip Responsibility Progress</h3>
@@ -381,12 +405,6 @@ export function TripTasksAndMealsTab({
             <strong>{quotaProgress?.total_score ?? 0}x</strong>
           </div>
         </div>
-
-        {!isConfirmedAttendee && (
-          <div style={{ marginTop: "0.75rem", padding: "0.5rem 0.75rem", background: "#fef3c7", borderRadius: "6px", color: "#92400e", fontSize: "0.85rem" }}>
-            ℹ️ You are not currently a confirmed attendee. Please submit your RSVP as <strong>Going</strong> to volunteer for tasks.
-          </div>
-        )}
       </div>}
 
       {/* Driver Workload Credits Section */}

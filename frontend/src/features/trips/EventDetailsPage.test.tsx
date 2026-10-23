@@ -397,7 +397,11 @@ describe("EventDetailsPage", () => {
   });
 
   it("opens directly to Tasks & Meals tab when URL has ?tab=tasks", async () => {
-    renderPage(tripData, false, undefined, "/trips/trip-1?tab=tasks");
+    const goingTripData = {
+      ...tripData,
+      myRsvp: { response: "coming" as const, version: 1, acknowledgmentId: "ack-1", updatedAt: "2026-10-14T00:00:00Z" },
+    };
+    renderPage(goingTripData, false, undefined, "/trips/trip-1?tab=tasks");
     expect(await screen.findByRole("heading", { name: "Your Trip Responsibility Progress" })).toBeInTheDocument();
   });
 
