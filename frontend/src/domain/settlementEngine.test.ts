@@ -118,4 +118,47 @@ describe("Settlement Engine: Deterministic Integer-Cent Math", () => {
       /allocations sum \(4000\) does not equal total amount \(5000\)/
     );
   });
+
+  describe("dynamic all_attendees expense allocation", () => {
+    it("guards against zero attendees without dividing by zero", () => {
+      const allocs = calculateEqualAllocations(6000, []);
+      expect(allocs).toEqual([]);
+    });
+
+    it("handles zero or negative amounts safely by returning 0 cents allocated", () => {
+      const attendees = ["m-2", "m-1"];
+      expect(calculateEqualAllocations(0, attendees)).toEqual([
+        { memberId: "m-1", allocatedCents: 0 },
+        { memberId: "m-2", allocatedCents: 0 },
+      ]);
+      expect(calculateEqualAllocations(-500, attendees)).toEqual([
+        { memberId: "m-1", allocatedCents: 0 },
+        { memberId: "m-2", allocatedCents: 0 },
+      ]);
+    });
+
+    it("dynamically reallocates exact cents when a 5th attendee joins a 4-person split", () => {
+      const attendees4 = ["m-1", "m-2", "m-3", "m-4"];
+      const split4 = calculateEqualAllocations(6000, attendees4);
+      expect(split4).toHaveLength(4);
+      expect(split4.every((a) => a.allocatedCents === 1500)).toBe(true);
+      expect(split4.reduce((sum, a) => sum + a.allocatedCents, 0)).toBe(6000);
+
+      const attendees5 = ["m-1", "m-2", "m-3", "m-4", "m-5"];
+      const split5 = calculateEqualAllocations(6000, attendees5);
+      expect(split5).toHaveLength(5);
+      expect(split5.every((a) => a.allocatedCents === 1200)).toBe(true);
+      expect(split5.reduce((sum, a) => sum + a.allocatedCents, 0)).toBe(6000);
+    });
+
+    it("handles odd cents remainder deterministically with canonical sorting", () => {
+      const attendees3 = ["m-c", "m-a", "m-b"];
+      const split = calculateEqualAllocations(1000, attendees3);
+      expect(split.reduce((sum, a) => sum + a.allocatedCents, 0)).toBe(1000);
+      // 1000 / 3 = 333 rem 1. Canonical order: m-a gets 334, m-b gets 333, m-c gets 333
+      expect(split.find((a) => a.memberId === "m-a")?.allocatedCents).toBe(334);
+      expect(split.find((a) => a.memberId === "m-b")?.allocatedCents).toBe(333);
+      expect(split.find((a) => a.memberId === "m-c")?.allocatedCents).toBe(333);
+    });
+  });
 });

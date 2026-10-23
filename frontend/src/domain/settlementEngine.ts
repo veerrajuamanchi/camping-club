@@ -37,12 +37,13 @@ export function calculateEqualAllocations(
   participantMemberIds: string[]
 ): ExpenseAllocationInput[] {
   if (participantMemberIds.length === 0) return [];
-  if (amountCents <= 0) {
-    return participantMemberIds.map((id) => ({ memberId: id, allocatedCents: 0 }));
-  }
 
   // Canonical UUID order for deterministic remainder distribution
   const sortedIds = [...participantMemberIds].sort();
+  if (amountCents <= 0) {
+    return sortedIds.map((id) => ({ memberId: id, allocatedCents: 0 }));
+  }
+
   const k = sortedIds.length;
   const base = Math.floor(amountCents / k);
   const remainder = amountCents % k;
