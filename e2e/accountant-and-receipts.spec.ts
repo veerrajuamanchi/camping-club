@@ -12,8 +12,19 @@ test.describe("Accountant Role, Dynamic Expense Splits & Receipts", () => {
   const createdTripIds: string[] = [];
   const createdUsers: TestUser[] = [];
   const createdStoragePaths: string[] = [];
+  let initialClubTimezone: string | null = null;
 
   test.beforeAll(async () => {
+    // Capture initial club timezone
+    const { data: config } = await supabaseAdmin
+      .from("club_configuration")
+      .select("club_timezone")
+      .eq("singleton", true)
+      .maybeSingle();
+    if (config?.club_timezone) {
+      initialClubTimezone = config.club_timezone;
+    }
+
     // Ensure club timezone is configured
     await supabaseAdmin
       .from("club_configuration")
@@ -22,6 +33,18 @@ test.describe("Accountant Role, Dynamic Expense Splits & Receipts", () => {
   });
 
   test.afterAll(async () => {
+    // Restore initial club timezone
+    if (initialClubTimezone) {
+      try {
+        await supabaseAdmin
+          .from("club_configuration")
+          .update({ club_timezone: initialClubTimezone })
+          .eq("singleton", true);
+      } catch {
+        // ignore
+      }
+    }
+
     // Clean up created storage objects
     if (createdStoragePaths.length > 0) {
       try {

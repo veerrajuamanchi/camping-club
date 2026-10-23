@@ -890,7 +890,11 @@ export function TripFinancialsTab({
                     <span>📎 {receiptFile.name} ({(receiptFile.size / 1024).toFixed(1)} KB)</span>
                     <button
                       type="button"
-                      onClick={() => setReceiptFile(null)}
+                      onClick={() => {
+                        setReceiptFile(null);
+                        const fileInput = document.getElementById("receipt-upload") as HTMLInputElement | null;
+                        if (fileInput) fileInput.value = "";
+                      }}
                       style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "0.8rem" }}
                     >
                       ✕ Remove
@@ -1192,6 +1196,16 @@ export function ReceiptViewerModal({
     receipt.contentType === "application/pdf" ||
     receipt.fileName?.toLowerCase().endsWith(".pdf") ||
     receipt.url.toLowerCase().includes(".pdf");
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
