@@ -22,6 +22,8 @@
   "devDependencies": {
     "@playwright/test": "^1.48.0",
     "@supabase/supabase-js": "^2.117.3",
+    "@types/nodemailer": "^8.0.2",
+    "nodemailer": "^10.2.1",
     "supabase": "2.120.0",
     "zod": "^4.6.7"
   }
