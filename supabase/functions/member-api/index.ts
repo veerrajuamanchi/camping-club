@@ -205,6 +205,11 @@ Deno.serve(async (request) => {
         }
         return json(request, 400, { error: "invitation_failed", message: authInviteError?.message || "invitation_failed", requestId });
       }
+      try {
+        await service.auth.admin.updateUserById(invitation.user.id, { email_confirm: true });
+      } catch (confirmErr) {
+        console.warn("Could not auto-confirm invited member email:", confirmErr);
+      }
       const { data: invitationId, error } = await service.rpc("phase1_create_invitation", {
         p_email_hmac: await emailDigest(input.email), p_actor_id: member!.member_id, p_auth_invite_id: invitation.user.id,
         p_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
