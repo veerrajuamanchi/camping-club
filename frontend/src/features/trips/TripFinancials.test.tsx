@@ -310,6 +310,10 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     await user.type(screen.getByPlaceholderText(/e\.g\. S'mores, firewood, groceries/i), "Steak for Dave and Sarah");
     await user.type(screen.getByPlaceholderText("25.00"), "40.00");
 
+    // Select Custom Subset to reveal participant checkboxes
+    const customRadio = screen.getByRole("radio", { name: /Custom Subset/i });
+    await user.click(customRadio);
+
     // Deselect Alice Admin
     const aliceCheckbox = screen.getByLabelText(/Alice Admin/i);
     expect(aliceCheckbox).toBeChecked();
@@ -466,9 +470,168 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
     await user.click(addBtn);
 
+    const customRadio = screen.getByRole("radio", { name: /Custom Subset/i });
+    await user.click(customRadio);
+
     // Verify all names are recovered from balances and visible next to checkboxes
     expect(screen.getByLabelText(/Alice Admin/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Dave K\./i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Sarah M\./i)).toBeInTheDocument();
+  });
+
+  it("renders Add Expense modal with 'All Attendees (Dynamic)' as default split mode", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
+    await user.click(addBtn);
+
+    expect(screen.getByText(/\+ Record Shared Expense/i)).toBeInTheDocument();
+
+    // Expect 'All Attendees (Dynamic)' option to be selected
+    const allAttendeesRadio = screen.getByRole("radio", { name: /All Attendees \(Dynamic\)/i });
+    expect(allAttendeesRadio).toBeInTheDocument();
+    expect(allAttendeesRadio).toBeChecked();
+
+    // Expect helper text explaining automatic late-joiner inclusion
+    expect(
+      screen.getByText(/New attendees who join later will automatically be included/i)
+    ).toBeInTheDocument();
+  });
+
+  it("allows selecting 'Custom Subset' to pick specific participants", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
+    await user.click(addBtn);
+
+    // Participant checkboxes should not be in document yet
+    expect(screen.queryByTestId("expense-split-list")).not.toBeInTheDocument();
+
+    // Toggle to 'Custom Subset'
+    const customSubsetRadio = screen.getByRole("radio", { name: /Custom Subset/i });
+    await user.click(customSubsetRadio);
+    expect(customSubsetRadio).toBeChecked();
+
+    // Expect participant checkboxes to appear
+    expect(screen.getByTestId("expense-split-list")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Alice Admin/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Dave K\./i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Sarah M\./i)).toBeInTheDocument();
+  });
+
+  it("handles receipt file selection and displays retention notice", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
+    await user.click(addBtn);
+
+    // Expect retention badge: "Kept for last 3 campings, then auto-deleted"
+    expect(screen.getByText(/Kept for last 3 campings, then auto-deleted/i)).toBeInTheDocument();
+
+    // Check for receipt upload input
+    const fileInput = screen.getByTestId("receipt-file-input") as HTMLInputElement;
+    expect(fileInput).toBeInTheDocument();
+
+    const file = new File(["dummy receipt content"], "camp-groceries.jpg", { type: "image/jpeg" });
+    await user.upload(fileInput, file);
+
+    expect(fileInput.files?.[0]).toBe(file);
+    expect(screen.getByText(/camp-groceries\.jpg/i)).toBeInTheDocument();
+  });
+
+  it("renders View Receipt link and opens receipt preview modal", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    // In mockDraftFinancials, exp-1 has a receipt
+    const viewReceiptBtn = await screen.findByRole("button", { name: /View Receipt/i });
+    expect(viewReceiptBtn).toBeInTheDocument();
+
+    await user.click(viewReceiptBtn);
+
+    // Expect receipt preview modal to open
+    expect(await screen.findByRole("dialog", { name: /Receipt Preview/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Close Preview|Close/i })).toBeInTheDocument();
+
+    // Close modal
+    const closeBtn = screen.getByRole("button", { name: /Close Preview|Close/i });
+    await user.click(closeBtn);
+
+    expect(screen.queryByRole("dialog", { name: /Receipt Preview/i })).not.toBeInTheDocument();
   });
 });

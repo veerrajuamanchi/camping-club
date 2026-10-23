@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import type { TripApiType } from "./EventDetailsPage";
 import { calculateEqualAllocations } from "../../domain/settlementEngine";
+import { supabase } from "../../lib/supabase";
 
 export type ExpenseAllocation = {
   memberId: string;
@@ -12,12 +13,16 @@ export type ExpenseAllocation = {
 export type TripExpense = {
   id: string;
   expenseType: "cabin_deposit" | "carpool_mileage" | "shared_receipt" | "other";
+  splitMode?: "all_attendees" | "custom";
   payerMemberId: string;
   payerName: string;
   amountCents: number;
   description: string;
   incurredDate: string;
   receiptUrl: string | null;
+  receiptStoragePath?: string | null;
+  receiptFileName?: string | null;
+  receiptContentType?: string | null;
   isLocked: boolean;
   allocations: ExpenseAllocation[];
 };
@@ -142,15 +147,77 @@ export function TripFinancialsTab({
   const [incurredDate, setIncurredDate] = useState(new Date().toISOString().slice(0, 10));
   const [receiptUrl, setReceiptUrl] = useState("");
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
+  const [splitMode, setSplitMode] = useState<"all_attendees" | "custom">("all_attendees");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [previewReceipt, setPreviewReceipt] = useState<{
+    url: string;
+    fileName: string;
+    contentType?: string | null;
+  } | null>(null);
 
   const openAddExpenseModal = () => {
     setDesc("");
     setPayerId(currentMemberId ?? (attendeesList[0]?.memberId || ""));
     setAmountStr("");
     setReceiptUrl("");
+    setReceiptFile(null);
+    setSplitMode("all_attendees");
     setIncurredDate(new Date().toISOString().slice(0, 10));
     setSelectedParticipantIds(attendeesList.map((a) => a.memberId));
     setShowAddExpenseModal(true);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+    const validExts = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
+    const ext = "." + file.name.split(".").pop()?.toLowerCase();
+
+    if (!validTypes.includes(file.type) && !validExts.includes(ext)) {
+      setErrorMsg("Unsupported file type. Please upload a JPEG, PNG, WebP image, or PDF.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg("Receipt file must be 5MB or smaller.");
+      e.target.value = "";
+      return;
+    }
+
+    setErrorMsg(null);
+    setReceiptFile(file);
+  };
+
+  const handleOpenReceiptViewer = async (exp: TripExpense) => {
+    try {
+      setActionBusy(true);
+      let viewUrl = exp.receiptUrl || "";
+      if (exp.receiptStoragePath && supabase) {
+        const { data: signedData, error: signedErr } = await supabase.storage
+          .from("trip-receipts")
+          .createSignedUrl(exp.receiptStoragePath, 3600);
+        if (signedErr) throw signedErr;
+        if (signedData?.signedUrl) {
+          viewUrl = signedData.signedUrl;
+        }
+      }
+      if (!viewUrl) {
+        setErrorMsg("Receipt URL is not available.");
+        return;
+      }
+      setPreviewReceipt({
+        url: viewUrl,
+        fileName: exp.receiptFileName || exp.description || "Receipt",
+        contentType: exp.receiptContentType,
+      });
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to load receipt preview.");
+    } finally {
+      setActionBusy(false);
+    }
   };
 
   // Mark Sent Modal
@@ -188,11 +255,19 @@ export function TripFinancialsTab({
     }
     const amountCents = Math.round(dollars * 100);
 
-    if (selectedParticipantIds.length === 0) {
-      setErrorMsg("Please select at least one participant to split this expense.");
+    const participantsToSplit =
+      splitMode === "all_attendees"
+        ? attendeesList.map((a) => a.memberId)
+        : selectedParticipantIds;
+
+    if (participantsToSplit.length === 0) {
+      setErrorMsg(
+        splitMode === "all_attendees"
+          ? "No confirmed attendees available to split this expense."
+          : "Please select at least one participant to split this expense."
+      );
       return;
     }
-    const participantsToSplit = selectedParticipantIds;
     const equalAllocations = calculateEqualAllocations(amountCents, participantsToSplit);
     const allocationMap = new Map(equalAllocations.map((a) => [a.memberId, a.allocatedCents]));
     const allocations = participantsToSplit.map((memberId) => ({
@@ -203,6 +278,29 @@ export function TripFinancialsTab({
     try {
       setActionBusy(true);
       setErrorMsg(null);
+
+      let receiptStoragePath: string | null = null;
+      let receiptFileName: string | null = null;
+      let receiptContentType: string | null = null;
+
+      if (receiptFile) {
+        if (!supabase) {
+          throw new Error("Supabase client is not available for upload.");
+        }
+        const fileId = crypto.randomUUID();
+        const safeName = receiptFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+        const filePath = `trips/${tripId}/${fileId}-${safeName}`;
+        const { error: uploadError } = await supabase.storage
+          .from("trip-receipts")
+          .upload(filePath, receiptFile, { contentType: receiptFile.type });
+        if (uploadError) {
+          throw new Error(`Failed to upload receipt: ${uploadError.message}`);
+        }
+        receiptStoragePath = filePath;
+        receiptFileName = receiptFile.name;
+        receiptContentType = receiptFile.type;
+      }
+
       await api("admin_manage_trip_expense", {
         tripId,
         action: "create",
@@ -212,12 +310,18 @@ export function TripFinancialsTab({
         description: desc.trim(),
         incurredDate,
         receiptUrl: receiptUrl.trim() || undefined,
+        splitMode,
+        receiptStoragePath: receiptStoragePath || undefined,
+        receiptFileName: receiptFileName || undefined,
+        receiptContentType: receiptContentType || undefined,
         allocations,
       });
       setShowAddExpenseModal(false);
       setDesc("");
       setAmountStr("");
       setReceiptUrl("");
+      setReceiptFile(null);
+      setSplitMode("all_attendees");
       await fetchFinancials();
     } catch (err: any) {
       setErrorMsg(err?.message || "Failed to record expense.");
@@ -653,15 +757,25 @@ export function TripFinancialsTab({
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                       <strong style={{ fontSize: "0.9rem" }}>{exp.description}</strong>
-                      {exp.receiptUrl && (
-                        <a
-                          href={exp.receiptUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontSize: "0.75rem", color: "#2563eb", textDecoration: "underline" }}
+                      {(exp.receiptStoragePath || exp.receiptUrl) && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReceiptViewer(exp)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            fontSize: "0.75rem",
+                            color: "#2563eb",
+                            textDecoration: "underline",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.2rem",
+                          }}
                         >
-                          View Receipt
-                        </a>
+                          📄 View Receipt
+                        </button>
                       )}
                     </div>
                     <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
@@ -744,8 +858,49 @@ export function TripFinancialsTab({
                 </label>
               </div>
 
+              <div style={{ display: "grid", gap: "0.35rem" }}>
+                <label htmlFor="receipt-upload" style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>
+                  Attach Receipt (Optional)
+                </label>
+                <input
+                  id="receipt-upload"
+                  data-testid="receipt-file-input"
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={handleFileChange}
+                  style={{ fontSize: "0.85rem" }}
+                />
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    fontSize: "0.75rem",
+                    color: "#059669",
+                    background: "#ecfdf5",
+                    padding: "0.25rem 0.5rem",
+                    borderRadius: "4px",
+                    width: "fit-content",
+                  }}
+                >
+                  <span>✓ Kept for last 3 campings, then auto-deleted</span>
+                </div>
+                {receiptFile && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", color: "#334155" }}>
+                    <span>📎 {receiptFile.name} ({(receiptFile.size / 1024).toFixed(1)} KB)</span>
+                    <button
+                      type="button"
+                      onClick={() => setReceiptFile(null)}
+                      style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "0.8rem" }}
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
-                <span>Receipt URL (Optional)</span>
+                <span>Or Receipt URL (Optional)</span>
                 <input
                   type="url"
                   placeholder="https://..."
@@ -754,117 +909,169 @@ export function TripFinancialsTab({
                 />
               </label>
 
-              <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.5rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>
-                    Split Between Participants:
-                  </span>
-                  <div style={{ display: "flex", gap: "0.4rem" }}>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
-                      onClick={() => setSelectedParticipantIds(attendeesList.map((a) => a.memberId))}
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
-                      onClick={() => setSelectedParticipantIds([])}
-                    >
-                      Clear
-                    </button>
-                  </div>
+              <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.25rem" }}>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>Split Mode</span>
+                <div style={{ display: "flex", gap: "1rem" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                    <input
+                      type="radio"
+                      name="splitMode"
+                      value="all_attendees"
+                      checked={splitMode === "all_attendees"}
+                      onChange={() => setSplitMode("all_attendees")}
+                    />
+                    <span>All Attendees (Dynamic)</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                    <input
+                      type="radio"
+                      name="splitMode"
+                      value="custom"
+                      checked={splitMode === "custom"}
+                      onChange={() => setSplitMode("custom")}
+                    />
+                    <span>Custom Subset</span>
+                  </label>
                 </div>
+              </div>
 
+              {splitMode === "all_attendees" ? (
                 <div
-                  data-testid="expense-split-list"
                   style={{
-                    maxHeight: "220px",
-                    overflowY: "auto",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "8px",
-                    padding: "0.5rem",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.5rem",
-                    background: "#f8fafc",
+                    padding: "0.75rem",
+                    borderRadius: "6px",
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    fontSize: "0.85rem",
+                    color: "#166534",
                   }}
                 >
-                  {attendeesList.map((att) => {
-                    const isChecked = selectedParticipantIds.includes(att.memberId);
-                    const displayName = att.displayName?.trim() || "Camper";
+                  {(() => {
+                    const previewAmountCents = Math.round((parseFloat(amountStr) || 0) * 100);
+                    const estPerPerson =
+                      attendeesList.length > 0 && previewAmountCents > 0
+                        ? ` = ${formatMoney(Math.round(previewAmountCents / attendeesList.length))}/person`
+                        : "";
                     return (
-                      <label
-                        key={att.memberId}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.75rem",
-                          fontSize: "0.95rem",
-                          cursor: "pointer",
-                          padding: "0.5rem 0.75rem",
-                          borderRadius: "6px",
-                          border: isChecked ? "1px solid #86efac" : "1px solid #e2e8f0",
-                          background: isChecked ? "#f0fdf4" : "#ffffff",
-                          minHeight: "44px",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          style={{
-                            width: "20px",
-                            height: "20px",
-                            flexShrink: 0,
-                            margin: 0,
-                            cursor: "pointer",
-                          }}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedParticipantIds((prev) => [...prev, att.memberId]);
-                            } else {
-                              setSelectedParticipantIds((prev) => prev.filter((id) => id !== att.memberId));
-                            }
-                          }}
-                        />
-                        <span
-                          style={{
-                            minWidth: 0,
-                            overflowWrap: "anywhere",
-                            wordBreak: "break-word",
-                            color: "#0f172a",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {displayName} {att.memberId === currentMemberId ? "(You)" : ""}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                {(() => {
-                  const previewAmountCents = Math.round((parseFloat(amountStr) || 0) * 100);
-                  if (selectedParticipantIds.length > 0 && previewAmountCents > 0) {
-                    const estPerPersonCents = Math.round(previewAmountCents / selectedParticipantIds.length);
-                    return (
-                      <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: "#0369a1" }}>
-                        Splitting equally among {selectedParticipantIds.length} participant{selectedParticipantIds.length > 1 ? "s" : ""}: ~{formatMoney(estPerPersonCents)} each.
+                      <p style={{ margin: 0, lineHeight: 1.4 }}>
+                        Splits equally among all confirmed attendees (currently {attendeesList.length} campers{estPerPerson}). New attendees who join later will automatically be included.
                       </p>
                     );
-                  }
-                  return (
-                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: selectedParticipantIds.length === 0 ? "#dc2626" : "#64748b" }}>
-                      {selectedParticipantIds.length === 0
-                        ? "⚠️ Please select at least one participant."
-                        : `Selected ${selectedParticipantIds.length} participant(s).`}
-                    </p>
-                  );
-                })()}
-              </div>
+                  })()}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.25rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>
+                      Split Between Participants:
+                    </span>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
+                        onClick={() => setSelectedParticipantIds(attendeesList.map((a) => a.memberId))}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
+                        onClick={() => setSelectedParticipantIds([])}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    data-testid="expense-split-list"
+                    style={{
+                      maxHeight: "220px",
+                      overflowY: "auto",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "8px",
+                      padding: "0.5rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                      background: "#f8fafc",
+                    }}
+                  >
+                    {attendeesList.map((att) => {
+                      const isChecked = selectedParticipantIds.includes(att.memberId);
+                      const displayName = att.displayName?.trim() || "Camper";
+                      return (
+                        <label
+                          key={att.memberId}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.75rem",
+                            fontSize: "0.95rem",
+                            cursor: "pointer",
+                            padding: "0.5rem 0.75rem",
+                            borderRadius: "6px",
+                            border: isChecked ? "1px solid #86efac" : "1px solid #e2e8f0",
+                            background: isChecked ? "#f0fdf4" : "#ffffff",
+                            minHeight: "44px",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            style={{
+                              width: "20px",
+                              height: "20px",
+                              flexShrink: 0,
+                              margin: 0,
+                              cursor: "pointer",
+                            }}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedParticipantIds((prev) => [...prev, att.memberId]);
+                              } else {
+                                setSelectedParticipantIds((prev) => prev.filter((id) => id !== att.memberId));
+                              }
+                            }}
+                          />
+                          <span
+                            style={{
+                              minWidth: 0,
+                              overflowWrap: "anywhere",
+                              wordBreak: "break-word",
+                              color: "#0f172a",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {displayName} {att.memberId === currentMemberId ? "(You)" : ""}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {(() => {
+                    const previewAmountCents = Math.round((parseFloat(amountStr) || 0) * 100);
+                    if (selectedParticipantIds.length > 0 && previewAmountCents > 0) {
+                      const estPerPersonCents = Math.round(previewAmountCents / selectedParticipantIds.length);
+                      return (
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: "#0369a1" }}>
+                          Splitting equally among {selectedParticipantIds.length} participant{selectedParticipantIds.length > 1 ? "s" : ""}: ~{formatMoney(estPerPersonCents)} each.
+                        </p>
+                      );
+                    }
+                    return (
+                      <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: selectedParticipantIds.length === 0 ? "#dc2626" : "#64748b" }}>
+                        {selectedParticipantIds.length === 0
+                          ? "⚠️ Please select at least one participant."
+                          : `Selected ${selectedParticipantIds.length} participant(s).`}
+                      </p>
+                    );
+                  })()}
+                </div>
+              )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
                 <button type="button" onClick={() => setShowAddExpenseModal(false)}>
@@ -872,7 +1079,11 @@ export function TripFinancialsTab({
                 </button>
                 <button
                   type="submit"
-                  disabled={actionBusy || selectedParticipantIds.length === 0}
+                  disabled={
+                    actionBusy ||
+                    (splitMode === "custom" && selectedParticipantIds.length === 0) ||
+                    (splitMode === "all_attendees" && attendeesList.length === 0)
+                  }
                   className="btn-primary"
                 >
                   {actionBusy ? "Saving..." : "Save Expense"}
@@ -957,6 +1168,179 @@ export function TripFinancialsTab({
           </div>
         </div>
       )}
+
+      {/* MODAL: Receipt Viewer */}
+      {previewReceipt && (
+        <ReceiptViewerModal
+          receipt={previewReceipt}
+          onClose={() => setPreviewReceipt(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+export function ReceiptViewerModal({
+  receipt,
+  onClose,
+}: {
+  receipt: { url: string; fileName: string; contentType?: string | null };
+  onClose: () => void;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const isPdf =
+    receipt.contentType === "application/pdf" ||
+    receipt.fileName?.toLowerCase().endsWith(".pdf") ||
+    receipt.url.toLowerCase().includes(".pdf");
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal-card"
+        role="dialog"
+        aria-label="Receipt Preview"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: "680px",
+          width: "95%",
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          gap: "1rem",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderBottom: "1px solid #e2e8f0",
+            paddingBottom: "0.5rem",
+          }}
+        >
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "1.1rem",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            📄 {receipt.fileName}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Dismiss"
+            style={{
+              background: "transparent",
+              border: "none",
+              fontSize: "1.25rem",
+              cursor: "pointer",
+              padding: "0.25rem 0.5rem",
+              color: "#64748b",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "280px",
+          }}
+        >
+          {isPdf ? (
+            <div style={{ width: "100%", height: "460px", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <iframe
+                src={receipt.url}
+                title={receipt.fileName}
+                style={{ width: "100%", height: "100%", border: "1px solid #cbd5e1", borderRadius: "6px" }}
+              />
+              <div style={{ textAlign: "right" }}>
+                <a href={receipt.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.85rem", color: "#2563eb" }}>
+                  ↗ Open PDF in new tab
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem", width: "100%" }}>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))}
+                  style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+                >
+                  - Zoom Out
+                </button>
+                <span style={{ fontSize: "0.85rem", minWidth: "45px", textAlign: "center", fontWeight: 600 }}>
+                  {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setZoom((z) => Math.min(3, Number((z + 0.25).toFixed(2))))}
+                  style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+                >
+                  + Zoom In
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setZoom(1)}
+                  style={{ padding: "0.25rem 0.6rem", fontSize: "0.85rem" }}
+                >
+                  Reset
+                </button>
+              </div>
+
+              <div
+                style={{
+                  overflow: "auto",
+                  maxWidth: "100%",
+                  maxHeight: "55vh",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "6px",
+                  padding: "0.5rem",
+                  background: "#f8fafc",
+                }}
+              >
+                <img
+                  src={receipt.url}
+                  alt={receipt.fileName}
+                  style={{
+                    transform: `scale(${zoom})`,
+                    transformOrigin: "center top",
+                    transition: "transform 0.15s ease",
+                    maxWidth: "100%",
+                    display: "block",
+                  }}
+                />
+              </div>
+
+              <div>
+                <a href={receipt.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.85rem", color: "#2563eb" }}>
+                  ↗ Open original image in new tab
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "1px solid #e2e8f0", paddingTop: "0.75rem" }}>
+          <button type="button" onClick={onClose} className="btn-secondary">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

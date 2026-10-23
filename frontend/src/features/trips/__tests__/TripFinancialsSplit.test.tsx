@@ -47,6 +47,9 @@ describe("Task 4: Frontend Expense Split UI Improvements", () => {
 
     expect(screen.getByText(/\+ Record Shared Expense/i)).toBeInTheDocument();
 
+    // Select Custom Subset to reveal participant checkboxes
+    await user.click(screen.getByRole("radio", { name: /Custom Subset/i }));
+
     // Verify the list container has data-testid and flex vertical column layout
     const splitList = screen.getByTestId("expense-split-list");
     expect(splitList).toHaveStyle({
@@ -95,6 +98,9 @@ describe("Task 4: Frontend Expense Split UI Improvements", () => {
 
     const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
     await user.click(addBtn);
+
+    // Select Custom Subset to reveal participant checkboxes
+    await user.click(screen.getByRole("radio", { name: /Custom Subset/i }));
 
     const splitList = screen.getByTestId("expense-split-list");
     const aliceCheckbox = within(splitList).getByLabelText(/Alice Admin/i);
@@ -168,6 +174,9 @@ describe("Task 4: Frontend Expense Split UI Improvements", () => {
 
     const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
     await user.click(addBtn);
+
+    // Select Custom Subset to reveal participant checkboxes
+    await user.click(screen.getByRole("radio", { name: /Custom Subset/i }));
 
     // Type 60.00
     const amountInput = screen.getByPlaceholderText("25.00");
