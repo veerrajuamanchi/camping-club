@@ -6,6 +6,7 @@ import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
 import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 import { MealPreferencesModal, type MealSlotItem } from "./MealPreferencesModal";
+import { ConfirmGoingModal } from "./ConfirmGoingModal";
 import { dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
 import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
@@ -227,6 +228,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const [depositMsg, setDepositMsg] = useState<string | null>(null);
   const [showPackingModal, setShowPackingModal] = useState(false);
   const [showMealModal, setShowMealModal] = useState(false);
+  const [showConfirmGoingModal, setShowConfirmGoingModal] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
@@ -309,22 +311,16 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     void refresh();
   }, [tripId]);
 
-  async function submitRsvp() {
-    if (!details || !rsvpChoice) return;
-    if (rsvpChoice === "coming" && details.myRsvp?.response !== "coming") {
-      if (!details.currentRuleBundle || !acknowledged) {
-        setRsvpError("Acknowledge the Camping Constitution before selecting Going.");
-        return;
-      }
-    }
+  async function submitRsvpWithChoice(choice: "coming" | "not_coming") {
+    if (!details) return;
     setRsvpBusy(true);
     setRsvpError(null);
     try {
       const result = await api<{ waitlisted?: boolean; position?: number }>("submit_rsvp", {
         tripId: details.tripId,
-        response: rsvpChoice,
+        response: choice,
         expectedVersion: details.myRsvp?.version ?? 0,
-        ...(rsvpChoice === "coming" && details.currentRuleBundle
+        ...(choice === "coming" && details.currentRuleBundle
           ? { bundleId: details.currentRuleBundle.id, contentHash: details.currentRuleBundle.contentHash }
           : {}),
       });
@@ -334,15 +330,32 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         setWaitlistedPosition(null);
       }
       await refresh();
-      if (rsvpChoice === "coming" && !result?.waitlisted) {
+      if (choice === "coming" && !result?.waitlisted) {
         setShowDutyPromptModal(true);
       }
       setRsvpChoice(null);
       setAcknowledged(false);
-    } catch {
+      setShowConfirmGoingModal(false);
+    } catch (err: unknown) {
       setRsvpError("Response could not be saved. Refresh and try again.");
+      throw err;
     } finally {
       setRsvpBusy(false);
+    }
+  }
+
+  async function submitRsvp() {
+    if (!details || !rsvpChoice) return;
+    if (rsvpChoice === "coming" && details.myRsvp?.response !== "coming") {
+      if (!details.currentRuleBundle || !acknowledged) {
+        setRsvpError("Acknowledge the Camping Constitution before selecting Going.");
+        return;
+      }
+    }
+    try {
+      await submitRsvpWithChoice(rsvpChoice);
+    } catch {
+      // error handled in submitRsvpWithChoice
     }
   }
 
@@ -410,10 +423,15 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       });
       await refresh();
       setAdminRosterMsg("Roster attendance updated.");
-    } catch {
-      setAdminRosterMsg(newResponse === "coming"
-        ? "Could not mark Going. The member must have personally acknowledged the constitution, or poll is closed."
-        : "Could not update attendance. Try again.");
+    } catch (err: unknown) {
+      const serverMsg = err instanceof TripApiError ? err.message : (err as Error)?.message;
+      if (serverMsg && /personally acknowledge/i.test(serverMsg)) {
+        setAdminRosterMsg("Could not mark Going. This member has not yet personally acknowledged the Camping Constitution. They must log in, check the agreement, and click 'Confirm Going'.");
+      } else {
+        setAdminRosterMsg(newResponse === "coming"
+          ? (serverMsg || "Could not mark Going. The member must have personally acknowledged the constitution, or poll is closed.")
+          : "Could not update attendance. Try again.");
+      }
     } finally {
       setRsvpBusy(false);
     }
@@ -898,10 +916,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                         className="secondary-button"
                         style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
                         onClick={() => {
-                          const rsvpEl = document.getElementById("rsvp-actions-card");
-                          if (rsvpEl) {
-                            rsvpEl.scrollIntoView({ behavior: "smooth" });
-                          }
+                          setShowConfirmGoingModal(true);
                           setRsvpChoice("coming");
                         }}
                       >
@@ -947,11 +962,16 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                       className="secondary-button"
                       style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
                       onClick={() => {
-                        const rsvpEl = document.getElementById("rsvp-actions-card");
-                        if (rsvpEl) {
-                          rsvpEl.scrollIntoView({ behavior: "smooth" });
+                        if (isComing) {
+                          const rsvpEl = document.getElementById("rsvp-actions-card");
+                          if (rsvpEl) {
+                            rsvpEl.scrollIntoView({ behavior: "smooth" });
+                          }
+                          setRsvpChoice("not_coming");
+                        } else {
+                          setShowConfirmGoingModal(true);
+                          setRsvpChoice("coming");
                         }
-                        setRsvpChoice(isComing ? "not_coming" : "coming");
                       }}
                     >
                       Change
@@ -1470,7 +1490,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                       : "secondary-button"
                   }
                   onClick={() => {
-                    setRsvpChoice(details.myRsvp?.response === "coming" && !rsvpChoice ? null : "coming");
+                    if (details.myRsvp?.response !== "coming") {
+                      setShowConfirmGoingModal(true);
+                      setRsvpChoice("coming");
+                    } else {
+                      setRsvpChoice(null);
+                    }
                     setRsvpError(null);
                   }}
                 >
@@ -1490,20 +1515,20 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
               </div>
             )}
 
-            {rsvpChoice === "coming" && details.myRsvp?.response !== "coming" && details.currentRuleBundle && (
-              <div className="rules-acknowledgment">
-                <p>
-                  By selecting Going you agree to the current Camping Constitution (version{" "}
-                  {details.currentRuleBundle.version}).
-                </p>
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
-                  <span>I have read and agree to the Camping Constitution.</span>
-                </label>
-                <button type="button" onClick={() => void submitRsvp()} disabled={rsvpBusy}>
-                  {rsvpBusy ? "Saving…" : "Confirm Going"}
-                </button>
-              </div>
+            {showConfirmGoingModal && details && (
+              <ConfirmGoingModal
+                isOpen={showConfirmGoingModal}
+                onClose={() => {
+                  setShowConfirmGoingModal(false);
+                  setRsvpChoice(null);
+                }}
+                tripTitle={details.title || `${monthName(details.monthKey)} Camping`}
+                bundleVersion={details.currentRuleBundle?.version}
+                rules={details.currentRuleBundle?.rules}
+                rulesMarkdown={details.rulesMarkdown}
+                busy={rsvpBusy}
+                onConfirm={() => submitRsvpWithChoice("coming")}
+              />
             )}
 
             {showLateWithdrawalWarning && (
