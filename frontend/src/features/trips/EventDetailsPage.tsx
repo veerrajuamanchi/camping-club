@@ -108,11 +108,19 @@ type TripDetails = {
     defaultDiet: "vegetarian" | "non_vegetarian";
     mealChoices: Record<string, "veg" | "non_veg" | "skip">;
     allergiesNotes?: string | null;
+    alcoholBeverages?: string[];
   } | null;
   mealHeadcounts?: {
     beverages: {
       saturday: { coffee: number; tea: number; none: number };
       sunday: { coffee: number; tea: number; none: number };
+    };
+    alcohol?: {
+      beer: number;
+      wine: number;
+      liquor: number;
+      byob: number;
+      none: number;
     };
     meals: Array<{
       slotId: string;
@@ -294,6 +302,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     defaultDiet: string;
     mealChoices: Record<string, string>;
     allergiesNotes?: string | null;
+    alcoholBeverages: string[];
   }) {
     if (!details) return;
     await api("save_meal_preferences", {
@@ -303,6 +312,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
       defaultDiet: prefs.defaultDiet,
       mealChoices: prefs.mealChoices,
       allergiesNotes: prefs.allergiesNotes ?? null,
+      alcoholBeverages: prefs.alcoholBeverages,
     });
     await refresh();
   }
@@ -538,7 +548,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     dietSummary = "Veg (All)";
   }
 
-  const mealSummaryText = `Sat: ${satBev}, Sun: ${sunBev} · ${dietSummary}`;
+  const alcs = prefs?.alcoholBeverages ?? [];
+  let alcoholSummary = "No Alcohol";
+  if (alcs.length > 0 && !alcs.includes("none")) {
+    const labels: string[] = [];
+    if (alcs.includes("beer")) labels.push("Beer");
+    if (alcs.includes("wine")) labels.push("Wine");
+    if (alcs.includes("liquor")) labels.push("Cocktails");
+    if (alcs.includes("byob")) labels.push("BYOB");
+    alcoholSummary = labels.length > 0 ? `Alcohol: ${labels.join(", ")}` : "No Alcohol";
+  }
+  const hasAlcohol = alcs.some((a) => a !== "none");
+  const mealSummaryText = `Sat: ${satBev}, Sun: ${sunBev} · ${dietSummary} · ${alcoholSummary}`;
 
   const individualPackItems = details.commitments?.individualPack
     ?? details.commitmentsList?.filter((c) => c.commitmentType === "individual_pack" && c.isActive)
@@ -1129,7 +1150,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                     <span style={{ color: "#16a34a", fontWeight: 700, marginRight: "0.35rem" }}>
                       ✓
                     </span>
-                    <strong>☕🍽️ Meals &amp; Drinks</strong>:{" "}
+                    <strong>{hasAlcohol ? "☕🍷🍽️" : "☕🍽️"} Meals &amp; Drinks</strong>:{" "}
                     <span style={{ color: "#166534", fontWeight: 600 }}>
                       {mealSummaryText}
                     </span>

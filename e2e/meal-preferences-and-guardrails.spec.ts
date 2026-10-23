@@ -247,7 +247,7 @@ test.describe("Meal & Beverage Preferences and Not Going Guardrails Acceptance G
     // Verify hub-meals-row is visible with default summary
     const mealsRow = page.locator('[data-testid="hub-meals-row"]');
     await expect(mealsRow).toBeVisible();
-    await expect(mealsRow).toContainText("Sat: Coffee, Sun: Tea · Veg (All)");
+    await expect(mealsRow).toContainText("Sat: Coffee, Sun: Tea · Veg (All) · No Alcohol");
 
     // Click "Edit Choices", opening MealPreferencesModal
     await mealsRow.getByRole("button", { name: "Edit Choices" }).click();
@@ -264,6 +264,15 @@ test.describe("Meal & Beverage Preferences and Not Going Guardrails Acceptance G
     const sunTeaRadio = modal.locator('input[name="sun_beverage"][value="tea"]');
     await sunTeaRadio.check();
     await expect(sunTeaRadio).toBeChecked();
+
+    // Select Alcohol: Beer and Wine (multi-select)
+    const beerCheck = modal.locator('input[name="alcohol_beer"]');
+    await beerCheck.check();
+    await expect(beerCheck).toBeChecked();
+
+    const wineCheck = modal.locator('input[name="alcohol_wine"]');
+    await wineCheck.check();
+    await expect(wineCheck).toBeChecked();
 
     // Click "Set All: 🍖 Non-Vegetarian"
     await modal.getByRole("button", { name: "Set All: 🍖 Non-Vegetarian" }).click();
@@ -282,7 +291,7 @@ test.describe("Meal & Beverage Preferences and Not Going Guardrails Acceptance G
     await expect(modal).toBeHidden();
 
     // Verify modal closes and summary badge on Hub reflects updated choices
-    await expect(mealsRow).toContainText("Sat: Coffee, Sun: Tea · Skipping 1 meal");
+    await expect(mealsRow).toContainText("Sat: Coffee, Sun: Tea · Skipping 1 meal · Alcohol: Beer, Wine");
 
     // Perform full browser reload and verify saved preferences persist intact
     await page.reload();
@@ -290,7 +299,7 @@ test.describe("Meal & Beverage Preferences and Not Going Guardrails Acceptance G
 
     const reloadedMealsRow = page.locator('[data-testid="hub-meals-row"]');
     await expect(reloadedMealsRow).toBeVisible();
-    await expect(reloadedMealsRow).toContainText("Sat: Coffee, Sun: Tea · Skipping 1 meal");
+    await expect(reloadedMealsRow).toContainText("Sat: Coffee, Sun: Tea · Skipping 1 meal · Alcohol: Beer, Wine");
 
     // Re-open "Edit Choices" to verify allergy notes and selections persisted across reload
     await reloadedMealsRow.getByRole("button", { name: "Edit Choices" }).click();
@@ -298,6 +307,8 @@ test.describe("Meal & Beverage Preferences and Not Going Guardrails Acceptance G
     await expect(reloadedModal).toBeVisible();
     await expect(reloadedModal.locator('input[name="sat_beverage"][value="coffee"]')).toBeChecked();
     await expect(reloadedModal.locator('input[name="sun_beverage"][value="tea"]')).toBeChecked();
+    await expect(reloadedModal.locator('input[name="alcohol_beer"]')).toBeChecked();
+    await expect(reloadedModal.locator('input[name="alcohol_wine"]')).toBeChecked();
     await expect(reloadedModal.getByPlaceholder(/e\.g\.\s*Peanut allergy/i)).toHaveValue(
       "Peanut allergy (severe) - requires separate prep"
     );
@@ -328,6 +339,12 @@ test.describe("Meal & Beverage Preferences and Not Going Guardrails Acceptance G
     await expect(sunMorningSection.getByText(/☕ Coffee:\s*0/)).toBeVisible();
     await expect(sunMorningSection.getByText(/🍵 Tea:\s*1/)).toBeVisible();
     await expect(sunMorningSection.getByText(/🚫 None:\s*0/)).toBeVisible();
+
+    // Alcohol Planning Section
+    await expect(cookCard.getByText("🍷 Evening Drinks & Alcohol Planning")).toBeVisible();
+    await expect(cookCard.getByText(/🍺 Beer\/Seltzers:\s*1/)).toBeVisible();
+    await expect(cookCard.getByText(/🍷 Wine:\s*1/)).toBeVisible();
+    await expect(cookCard.getByText(/🚫 No Alcohol:\s*0/)).toBeVisible();
 
     // Meal portions table
     const mealsTable = page.locator('[data-testid="cook-meals-table"]');

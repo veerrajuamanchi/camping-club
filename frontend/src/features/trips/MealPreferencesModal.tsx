@@ -12,6 +12,7 @@ export type MealPreferences = {
   defaultDiet: "vegetarian" | "non_vegetarian";
   mealChoices: Record<string, "veg" | "non_veg" | "skip">;
   allergiesNotes?: string | null;
+  alcoholBeverages?: string[];
 };
 
 export type MealPreferencesModalProps = {
@@ -26,6 +27,7 @@ export type MealPreferencesModalProps = {
     defaultDiet: "vegetarian" | "non_vegetarian";
     mealChoices: Record<string, "veg" | "non_veg" | "skip">;
     allergiesNotes?: string | null;
+    alcoholBeverages: string[];
   }) => Promise<void>;
 };
 
@@ -41,6 +43,11 @@ export function MealPreferencesModal({
   );
   const [sundayBeverage, setSundayBeverage] = useState<"coffee" | "tea" | "none">(
     initialPreferences?.sundayBeverage ?? "tea"
+  );
+  const [alcoholBeverages, setAlcoholBeverages] = useState<string[]>(
+    initialPreferences?.alcoholBeverages && initialPreferences.alcoholBeverages.length > 0
+      ? initialPreferences.alcoholBeverages
+      : ["none"]
   );
   const [defaultDiet, setDefaultDiet] = useState<"vegetarian" | "non_vegetarian">(
     initialPreferences?.defaultDiet ?? "vegetarian"
@@ -58,6 +65,11 @@ export function MealPreferencesModal({
     if (isOpen) {
       setSaturdayBeverage(initialPreferences?.saturdayBeverage ?? "coffee");
       setSundayBeverage(initialPreferences?.sundayBeverage ?? "tea");
+      setAlcoholBeverages(
+        initialPreferences?.alcoholBeverages && initialPreferences.alcoholBeverages.length > 0
+          ? initialPreferences.alcoholBeverages
+          : ["none"]
+      );
       setDefaultDiet(initialPreferences?.defaultDiet ?? "vegetarian");
       setMealChoices(initialPreferences?.mealChoices ?? {});
       setAllergiesNotes(initialPreferences?.allergiesNotes ?? "");
@@ -104,6 +116,21 @@ export function MealPreferencesModal({
     }));
   }
 
+  function handleToggleAlcohol(item: "beer" | "wine" | "liquor" | "byob" | "none") {
+    setAlcoholBeverages((prev) => {
+      if (item === "none") {
+        return ["none"];
+      }
+      const withoutNone = prev.filter((a) => a !== "none");
+      if (withoutNone.includes(item)) {
+        const remaining = withoutNone.filter((a) => a !== item);
+        return remaining.length > 0 ? remaining : ["none"];
+      } else {
+        return [...withoutNone, item];
+      }
+    });
+  }
+
   async function handleSaveClick() {
     setBusy(true);
     setErrorMsg(null);
@@ -118,6 +145,7 @@ export function MealPreferencesModal({
         defaultDiet,
         mealChoices: effectiveChoices,
         allergiesNotes: allergiesNotes.trim() ? allergiesNotes.trim() : null,
+        alcoholBeverages: alcoholBeverages.length > 0 ? alcoholBeverages : ["none"],
       });
       onClose();
     } catch (err: unknown) {
@@ -395,6 +423,153 @@ export function MealPreferencesModal({
                   </label>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* PART 1.5: SOCIAL & EVENING DRINKS (ALCOHOL) */}
+          <div style={{ background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: "10px", padding: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "0.5rem" }}>
+              <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>🍷</span> <strong>Evening &amp; Campfire Drinks (Alcohol)</strong>
+              </h4>
+              <span style={{ fontSize: "0.75rem", color: "#64748b", background: "#e2e8f0", padding: "2px 8px", borderRadius: "12px", fontWeight: 600 }}>
+                Multi-Select
+              </span>
+            </div>
+            <p style={{ margin: "0 0 12px 0", fontSize: "0.825rem", color: "#64748b" }}>
+              Help organizers and grocery shoppers plan evening drinks around the campfire.
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "8px" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  padding: "8px 10px",
+                  background: alcoholBeverages.includes("beer") ? "#eff6ff" : "#ffffff",
+                  border: `1.5px solid ${alcoholBeverages.includes("beer") ? "#0284c7" : "#cbd5e1"}`,
+                  borderRadius: "6px",
+                  fontWeight: alcoholBeverages.includes("beer") ? 600 : 400,
+                  color: alcoholBeverages.includes("beer") ? "#1e40af" : "#1e293b",
+                  fontSize: "0.875rem",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="alcohol_beer"
+                  aria-label="Beer / Cider / Seltzers"
+                  checked={alcoholBeverages.includes("beer")}
+                  onChange={() => handleToggleAlcohol("beer")}
+                  style={{ accentColor: "#0284c7" }}
+                />
+                🍺 Beer / Cider / Seltzers
+              </label>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  padding: "8px 10px",
+                  background: alcoholBeverages.includes("wine") ? "#eff6ff" : "#ffffff",
+                  border: `1.5px solid ${alcoholBeverages.includes("wine") ? "#0284c7" : "#cbd5e1"}`,
+                  borderRadius: "6px",
+                  fontWeight: alcoholBeverages.includes("wine") ? 600 : 400,
+                  color: alcoholBeverages.includes("wine") ? "#1e40af" : "#1e293b",
+                  fontSize: "0.875rem",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="alcohol_wine"
+                  aria-label="Wine (Red / White)"
+                  checked={alcoholBeverages.includes("wine")}
+                  onChange={() => handleToggleAlcohol("wine")}
+                  style={{ accentColor: "#0284c7" }}
+                />
+                🍷 Wine (Red / White)
+              </label>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  padding: "8px 10px",
+                  background: alcoholBeverages.includes("liquor") ? "#eff6ff" : "#ffffff",
+                  border: `1.5px solid ${alcoholBeverages.includes("liquor") ? "#0284c7" : "#cbd5e1"}`,
+                  borderRadius: "6px",
+                  fontWeight: alcoholBeverages.includes("liquor") ? 600 : 400,
+                  color: alcoholBeverages.includes("liquor") ? "#1e40af" : "#1e293b",
+                  fontSize: "0.875rem",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="alcohol_liquor"
+                  aria-label="Cocktails / Spirits"
+                  checked={alcoholBeverages.includes("liquor")}
+                  onChange={() => handleToggleAlcohol("liquor")}
+                  style={{ accentColor: "#0284c7" }}
+                />
+                🍹 Cocktails / Spirits
+              </label>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  padding: "8px 10px",
+                  background: alcoholBeverages.includes("byob") ? "#eff6ff" : "#ffffff",
+                  border: `1.5px solid ${alcoholBeverages.includes("byob") ? "#0284c7" : "#cbd5e1"}`,
+                  borderRadius: "6px",
+                  fontWeight: alcoholBeverages.includes("byob") ? 600 : 400,
+                  color: alcoholBeverages.includes("byob") ? "#1e40af" : "#1e293b",
+                  fontSize: "0.875rem",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="alcohol_byob"
+                  aria-label="Bring My Own (BYOB)"
+                  checked={alcoholBeverages.includes("byob")}
+                  onChange={() => handleToggleAlcohol("byob")}
+                  style={{ accentColor: "#0284c7" }}
+                />
+                🎒 Bring My Own (BYOB)
+              </label>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  padding: "8px 10px",
+                  background: alcoholBeverages.includes("none") ? "#eff6ff" : "#ffffff",
+                  border: `1.5px solid ${alcoholBeverages.includes("none") ? "#0284c7" : "#cbd5e1"}`,
+                  borderRadius: "6px",
+                  fontWeight: alcoholBeverages.includes("none") ? 600 : 400,
+                  color: alcoholBeverages.includes("none") ? "#1e40af" : "#64748b",
+                  fontSize: "0.875rem",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="alcohol_none"
+                  aria-label="No Alcohol (Abstaining)"
+                  checked={alcoholBeverages.includes("none")}
+                  onChange={() => handleToggleAlcohol("none")}
+                  style={{ accentColor: "#0284c7" }}
+                />
+                🚫 No Alcohol (Abstaining)
+              </label>
             </div>
           </div>
 

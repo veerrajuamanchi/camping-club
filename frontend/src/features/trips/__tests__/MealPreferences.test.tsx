@@ -37,6 +37,14 @@ describe("Task 4: Meal & Beverage Preferences and Cook Headcounts", () => {
       expect(screen.getByRole("button", { name: /Set All: 🥗 Vegetarian/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Set All: 🍖 Non-Vegetarian/i })).toBeInTheDocument();
 
+      // Alcohol checkboxes
+      expect(screen.getByText(/Evening & Campfire Drinks \(Alcohol\)/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Beer \/ Cider \/ Seltzers/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Wine \(Red \/ White\)/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Cocktails \/ Spirits/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Bring My Own \(BYOB\)/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/No Alcohol \(Abstaining\)/i)).toBeInTheDocument();
+
       // Meal slot labels
       expect(screen.getByText("Friday Dinner")).toBeInTheDocument();
       expect(screen.getByText("Saturday Breakfast")).toBeInTheDocument();
@@ -78,6 +86,16 @@ describe("Task 4: Meal & Beverage Preferences and Cook Headcounts", () => {
       const sunCoffeeRadio = screen.getByLabelText(/Fresh Brewed Coffee/i, { selector: 'input[name="sun_beverage"]' });
       await user.click(sunCoffeeRadio);
 
+      // Select Alcohol: Beer and Wine (multi-select)
+      const beerCheck = screen.getByLabelText(/Beer \/ Cider \/ Seltzers/i);
+      const wineCheck = screen.getByLabelText(/Wine \(Red \/ White\)/i);
+      const noneCheck = screen.getByLabelText(/No Alcohol \(Abstaining\)/i);
+      await user.click(beerCheck);
+      await user.click(wineCheck);
+      expect(beerCheck).toBeChecked();
+      expect(wineCheck).toBeChecked();
+      expect(noneCheck).not.toBeChecked();
+
       // In Saturday Lunch row, click Skip pill
       const satLunchRow = screen.getByText("Saturday Lunch").closest(".meal-slot-row")!;
       const skipBtn = within(satLunchRow as HTMLElement).getByRole("button", { name: /Skip/i });
@@ -95,8 +113,56 @@ describe("Task 4: Meal & Beverage Preferences and Cook Headcounts", () => {
       const savedPayload = onSave.mock.calls[0][0];
       expect(savedPayload.saturdayBeverage).toBe("tea");
       expect(savedPayload.sundayBeverage).toBe("coffee");
+      expect(savedPayload.alcoholBeverages).toEqual(["beer", "wine"]);
       expect(savedPayload.mealChoices["slot-sat-lunch"]).toBe("skip");
       expect(savedPayload.allergiesNotes).toBe("Tree nut allergy");
+    });
+
+    it("selecting No Alcohol clears previously selected alcoholic beverages", async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <MealPreferencesModal
+          isOpen={true}
+          onClose={vi.fn()}
+          tripId="trip-1"
+          mealSlots={mockMealSlots}
+          initialPreferences={{
+            saturdayBeverage: "coffee",
+            sundayBeverage: "coffee",
+            defaultDiet: "non_vegetarian",
+            alcoholBeverages: ["beer", "wine"],
+            mealChoices: {},
+            allergiesNotes: "",
+          }}
+          onSave={onSave}
+        />
+      );
+
+      const beerCheck = screen.getByLabelText(/Beer \/ Cider \/ Seltzers/i);
+      const wineCheck = screen.getByLabelText(/Wine \(Red \/ White\)/i);
+      const noneCheck = screen.getByLabelText(/No Alcohol \(Abstaining\)/i);
+
+      expect(beerCheck).toBeChecked();
+      expect(wineCheck).toBeChecked();
+      expect(noneCheck).not.toBeChecked();
+
+      // Click No Alcohol
+      await user.click(noneCheck);
+      expect(noneCheck).toBeChecked();
+      expect(beerCheck).not.toBeChecked();
+      expect(wineCheck).not.toBeChecked();
+
+      // Save
+      const saveBtn = screen.getByRole("button", { name: /Save Preferences/i });
+      await user.click(saveBtn);
+
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          alcoholBeverages: ["none"],
+        })
+      );
     });
   });
 
@@ -143,6 +209,7 @@ describe("Task 4: Meal & Beverage Preferences and Cook Headcounts", () => {
         saturdayBeverage: "coffee" as const,
         sundayBeverage: "tea" as const,
         defaultDiet: "vegetarian" as const,
+        alcoholBeverages: ["beer", "wine"],
         mealChoices: {},
         allergiesNotes: null,
       },
@@ -195,7 +262,8 @@ describe("Task 4: Meal & Beverage Preferences and Cook Headcounts", () => {
       const mealsRow = await screen.findByTestId("hub-meals-row");
       expect(mealsRow).toBeInTheDocument();
       expect(within(mealsRow).getByText(/Meals & Drinks/i)).toBeInTheDocument();
-      expect(within(mealsRow).getByText(/Sat: Coffee, Sun: Tea/i)).toBeInTheDocument();
+      expect(within(mealsRow).getByText(/☕🍷🍽️/i)).toBeInTheDocument();
+      expect(within(mealsRow).getByText(/Sat: Coffee, Sun: Tea · Veg \(All\) · Alcohol: Beer, Wine/i)).toBeInTheDocument();
       expect(within(mealsRow).getByRole("button", { name: /Edit Choices/i })).toBeInTheDocument();
     });
 
@@ -255,6 +323,13 @@ describe("Task 4: Meal & Beverage Preferences and Cook Headcounts", () => {
                 saturday: { coffee: 5, tea: 3, none: 1 },
                 sunday: { coffee: 4, tea: 4, none: 1 },
               },
+              alcohol: {
+                beer: 6,
+                wine: 4,
+                liquor: 2,
+                byob: 1,
+                none: 3,
+              },
               meals: [
                 {
                   slotId: "slot-fri-dinner",
@@ -300,6 +375,14 @@ describe("Task 4: Meal & Beverage Preferences and Cook Headcounts", () => {
       expect(within(cookCard).getByText(/Sunday Morning:/i)).toBeInTheDocument();
       expect(within(cookCard).getAllByText(/☕ Coffee:/i)).toHaveLength(2);
       expect(within(cookCard).getAllByText(/🍵 Tea:/i)).toHaveLength(2);
+
+      // Alcohol section
+      expect(within(cookCard).getByText(/Evening Drinks & Alcohol Planning/i)).toBeInTheDocument();
+      expect(within(cookCard).getByText(/Beer\/Seltzers:/i)).toBeInTheDocument();
+      expect(within(cookCard).getByText(/Wine:/i)).toBeInTheDocument();
+      expect(within(cookCard).getByText(/Cocktails:/i)).toBeInTheDocument();
+      expect(within(cookCard).getByText(/BYOB:/i)).toBeInTheDocument();
+      expect(within(cookCard).getByText(/No Alcohol:/i)).toBeInTheDocument();
 
       // Meals table
       const mealsTable = screen.getByTestId("cook-meals-table");

@@ -44,6 +44,13 @@ export type MealHeadcounts = {
     saturday: { coffee: number; tea: number; none: number };
     sunday: { coffee: number; tea: number; none: number };
   };
+  alcohol?: {
+    beer: number;
+    wine: number;
+    liquor: number;
+    byob: number;
+    none: number;
+  };
   meals: Array<{
     slotId: string;
     slotLabel: string;
@@ -835,6 +842,30 @@ export function TripTasksAndMealsTab({
             </div>
           </div>
         </div>
+
+        {/* Evening Drinks & Alcohol Planning */}
+        {mealHeadcounts?.alcohol && (
+          <div style={{ marginBottom: "1.25rem", background: "#f8fafc", padding: "1rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem", color: "#0f172a" }}>🍷 Evening Drinks &amp; Alcohol Planning</h4>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", fontSize: "0.875rem" }}>
+              <div style={{ background: "#ffffff", padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                <span>🍺 Beer/Seltzers: <strong>{mealHeadcounts.alcohol.beer}</strong></span>
+              </div>
+              <div style={{ background: "#ffffff", padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                <span>🍷 Wine: <strong>{mealHeadcounts.alcohol.wine}</strong></span>
+              </div>
+              <div style={{ background: "#ffffff", padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                <span>🍹 Cocktails: <strong>{mealHeadcounts.alcohol.liquor}</strong></span>
+              </div>
+              <div style={{ background: "#ffffff", padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                <span>🎒 BYOB: <strong>{mealHeadcounts.alcohol.byob}</strong></span>
+              </div>
+              <div style={{ background: "#ffffff", padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                <span>🚫 No Alcohol: <strong>{mealHeadcounts.alcohol.none}</strong></span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Meal Portions Table */}
         <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem", color: "#0f172a" }}>🍲 Meal Portions &amp; Opt-Outs</h4>

@@ -184,6 +184,7 @@ const inputSchemas = {
     defaultDiet: z.enum(["vegetarian", "non_vegetarian"]),
     mealChoices: z.record(z.string(), z.enum(["veg", "non_veg", "skip"])),
     allergiesNotes: z.string().trim().max(500).nullable().optional(),
+    alcoholBeverages: z.array(z.string()).optional().default([]),
   }).strict(),
   get_trip_details: z.object({ tripId: uuid }).strict(),
   get_trip_time_slots: z.object({ tripId: uuid }).strict(),
@@ -648,6 +649,7 @@ interface MealPreferenceRecord {
   default_diet: "vegetarian" | "non_vegetarian";
   meal_choices: Record<string, "veg" | "non_veg" | "skip">;
   allergies_notes?: string | null;
+  alcohol_beverages?: string[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -663,6 +665,7 @@ function formatMealPreferences(row: MealPreferenceRecord | null | undefined) {
     defaultDiet: row.default_diet,
     mealChoices: row.meal_choices ?? {},
     allergiesNotes: row.allergies_notes ?? null,
+    alcoholBeverages: Array.isArray(row.alcohol_beverages) ? row.alcohol_beverages : [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -683,6 +686,14 @@ function computeMealHeadcounts(
     sunday: { coffee: 0, tea: 0, none: 0 },
   };
 
+  const alcohol = {
+    beer: 0,
+    wine: 0,
+    liquor: 0,
+    byob: 0,
+    none: 0,
+  };
+
   for (const memberId of comingMemberIds) {
     const pref = prefMap.get(memberId);
     const sat = pref ? pref.saturday_beverage : "coffee";
@@ -695,6 +706,16 @@ function computeMealHeadcounts(
     if (sun === "coffee") beverages.sunday.coffee++;
     else if (sun === "tea") beverages.sunday.tea++;
     else if (sun === "none") beverages.sunday.none++;
+
+    const alcs = Array.isArray(pref?.alcohol_beverages) ? pref!.alcohol_beverages : [];
+    if (alcs.length === 0 || alcs.includes("none")) {
+      alcohol.none++;
+    } else {
+      if (alcs.includes("beer")) alcohol.beer++;
+      if (alcs.includes("wine")) alcohol.wine++;
+      if (alcs.includes("liquor")) alcohol.liquor++;
+      if (alcs.includes("byob")) alcohol.byob++;
+    }
   }
 
   const meals = mealSlots.map((slot) => {
@@ -732,7 +753,7 @@ function computeMealHeadcounts(
     };
   });
 
-  return { beverages, meals };
+  return { beverages, meals, alcohol };
 }
 
 async function getTripDetails(member: Member, tripId: string): Promise<Record<string, unknown>> {
@@ -802,7 +823,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
       .eq("trip_id", tripId)
       .order("created_at"),
     service.from("trip_meal_preferences")
-      .select("id,trip_id,member_id,saturday_beverage,sunday_beverage,default_diet,meal_choices,allergies_notes,created_at,updated_at")
+      .select("id,trip_id,member_id,saturday_beverage,sunday_beverage,default_diet,meal_choices,allergies_notes,alcohol_beverages,created_at,updated_at")
       .eq("trip_id", tripId),
     service.from("trip_time_slots")
       .select("id,trip_id,slot_date,time_block,slot_type,label,is_enabled,sort_order,created_at")
@@ -1723,7 +1744,7 @@ Deno.serve(async (request) => {
         service.rpc("phase3_get_daily_workload_progress", { p_trip_id: tripId, p_member_id: member.member_id }),
         service
           .from("trip_meal_preferences")
-          .select("id, trip_id, member_id, saturday_beverage, sunday_beverage, default_diet, meal_choices, allergies_notes, created_at, updated_at")
+          .select("id, trip_id, member_id, saturday_beverage, sunday_beverage, default_diet, meal_choices, allergies_notes, alcohol_beverages, created_at, updated_at")
           .eq("trip_id", tripId),
       ]);
 
@@ -1796,6 +1817,7 @@ Deno.serve(async (request) => {
             default_diet: input.defaultDiet,
             meal_choices: input.mealChoices ?? {},
             allergies_notes: typeof input.allergiesNotes === "string" ? (input.allergiesNotes.trim() || null) : null,
+            alcohol_beverages: input.alcoholBeverages ?? [],
             updated_at: new Date().toISOString(),
           },
           { onConflict: "trip_id,member_id" }
