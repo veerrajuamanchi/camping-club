@@ -39,6 +39,22 @@ export type ConfirmedAttendee = {
   displayName: string;
 };
 
+export type MealHeadcounts = {
+  beverages: {
+    saturday: { coffee: number; tea: number; none: number };
+    sunday: { coffee: number; tea: number; none: number };
+  };
+  meals: Array<{
+    slotId: string;
+    slotLabel: string;
+    slotDate: string;
+    vegCount: number;
+    nonVegCount: number;
+    skipCount: number;
+    totalEating: number;
+  }>;
+};
+
 type Props = {
   tripId: string;
   refreshVersion?: number;
@@ -70,6 +86,7 @@ export function TripTasksAndMealsTab({
   const [savingDailyTarget, setSavingDailyTarget] = useState(false);
   const [quotaProgress, setQuotaProgress] = useState<QuotaProgress | null>(null);
   const [attendees, setAttendees] = useState<ConfirmedAttendee[]>([]);
+  const [mealHeadcounts, setMealHeadcounts] = useState<MealHeadcounts | null>(null);
 
   // Overlap confirmation modal state
   const [overlapDuty, setOverlapDuty] = useState<{ dutyId: string; message: string } | null>(null);
@@ -97,6 +114,7 @@ export function TripTasksAndMealsTab({
         myQuotaProgress: QuotaProgress | null;
         myDailyWorkload?: DailyWorkload;
         confirmedAttendees: ConfirmedAttendee[];
+        mealHeadcounts?: MealHeadcounts;
       }>("get_trip_task_matrix", { tripId });
 
       if (loadId !== latestLoad.current) return;
@@ -108,6 +126,7 @@ export function TripTasksAndMealsTab({
       setUseDailyTarget(data.myDailyWorkload?.target != null);
       setDailyTargetInput(String(data.myDailyWorkload?.target ?? 4));
       setAttendees(data.confirmedAttendees ?? []);
+      setMealHeadcounts(data.mealHeadcounts ?? null);
       setErrorMsg(null);
     } catch {
       if (loadId === latestLoad.current) setErrorMsg("Failed to load meal and chore tasks.");
@@ -782,6 +801,76 @@ export function TripTasksAndMealsTab({
           );
         })
       )}
+
+      {/* Cook & Kitchen Headcounts */}
+      <div className="card" data-testid="cook-headcounts-card">
+        <h3 style={{ margin: 0, fontSize: "1.15rem", color: "#0f172a" }}>👨‍🍳 Cook &amp; Kitchen Headcounts</h3>
+        <p style={{ margin: "0.25rem 0 1rem 0", color: "#64748b", fontSize: "0.85rem" }}>
+          Live counts of confirmed campers eating and drinking for each meal.
+        </p>
+
+        {/* Morning Hot Beverages */}
+        <div style={{ marginBottom: "1.25rem", background: "#f8fafc", padding: "1rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+          <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem", color: "#0f172a" }}>☕ Morning Hot Beverages</h4>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
+            <div style={{ background: "#ffffff", padding: "0.75rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+              <strong style={{ fontSize: "0.875rem", color: "#0369a1", display: "block", marginBottom: "0.4rem" }}>
+                Saturday Morning:
+              </strong>
+              <div style={{ fontSize: "0.875rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                <span>☕ Coffee: <strong>{mealHeadcounts?.beverages?.saturday?.coffee ?? 0}</strong></span>
+                <span>🍵 Tea: <strong>{mealHeadcounts?.beverages?.saturday?.tea ?? 0}</strong></span>
+                <span>🚫 None: <strong>{mealHeadcounts?.beverages?.saturday?.none ?? 0}</strong></span>
+              </div>
+            </div>
+            <div style={{ background: "#ffffff", padding: "0.75rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+              <strong style={{ fontSize: "0.875rem", color: "#0369a1", display: "block", marginBottom: "0.4rem" }}>
+                Sunday Morning:
+              </strong>
+              <div style={{ fontSize: "0.875rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                <span>☕ Coffee: <strong>{mealHeadcounts?.beverages?.sunday?.coffee ?? 0}</strong></span>
+                <span>🍵 Tea: <strong>{mealHeadcounts?.beverages?.sunday?.tea ?? 0}</strong></span>
+                <span>🚫 None: <strong>{mealHeadcounts?.beverages?.sunday?.none ?? 0}</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Meal Portions Table */}
+        <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem", color: "#0f172a" }}>🍲 Meal Portions &amp; Opt-Outs</h4>
+        {(!mealHeadcounts?.meals || mealHeadcounts.meals.length === 0) ? (
+          <p style={{ color: "#94a3b8", fontSize: "0.875rem", fontStyle: "italic", margin: 0 }}>
+            No meal slots scheduled yet.
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table data-testid="cook-meals-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+              <thead>
+                <tr style={{ background: "#f1f5f9", textAlign: "left", borderBottom: "2px solid #cbd5e1" }}>
+                  <th style={{ padding: "0.5rem 0.75rem" }}>Meal</th>
+                  <th style={{ padding: "0.5rem 0.75rem" }}>Date</th>
+                  <th style={{ padding: "0.5rem 0.75rem" }}>🥗 Veg</th>
+                  <th style={{ padding: "0.5rem 0.75rem" }}>🍖 Non-Veg</th>
+                  <th style={{ padding: "0.5rem 0.75rem" }}>🚫 Skip</th>
+                  <th style={{ padding: "0.5rem 0.75rem" }}>Total Eating</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mealHeadcounts.meals.map((m) => (
+                  <tr key={m.slotId} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                    <td style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>{m.slotLabel}</td>
+                    <td style={{ padding: "0.5rem 0.75rem", color: "#64748b" }}>{m.slotDate}</td>
+                    <td style={{ padding: "0.5rem 0.75rem", color: "#16a34a", fontWeight: 600 }}>{m.vegCount}</td>
+                    <td style={{ padding: "0.5rem 0.75rem", color: "#b45309", fontWeight: 600 }}>{m.nonVegCount}</td>
+                    <td style={{ padding: "0.5rem 0.75rem", color: "#64748b" }}>{m.skipCount}</td>
+                    <td style={{ padding: "0.5rem 0.75rem", fontWeight: 700, color: "#0f172a" }}>{m.totalEating}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Overlap Confirmation Modal */}
       {overlapDuty && (

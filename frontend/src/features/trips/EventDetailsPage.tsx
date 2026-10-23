@@ -5,6 +5,7 @@ import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { AdminTimeSlotManagerModal } from "./AdminTimeSlotManagerModal";
 import { TripTasksAndMealsTab } from "./TripTasksAndMealsTab";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
+import { MealPreferencesModal, type MealSlotItem } from "./MealPreferencesModal";
 import { dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
 import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
@@ -97,6 +98,31 @@ type TripDetails = {
   participantEntries: Array<{ memberId: string; displayName: string; response: string; depositStatus?: string }>;
   waitlistEntries: Array<{ memberId: string; displayName: string; position: number; createdAt: string }>;
   allMemberEntries?: Array<{ memberId: string; displayName: string; response: string; version: number }>;
+  myMealPreferences?: {
+    id?: string;
+    tripId?: string;
+    memberId?: string;
+    saturdayBeverage: "coffee" | "tea" | "none";
+    sundayBeverage: "coffee" | "tea" | "none";
+    defaultDiet: "vegetarian" | "non_vegetarian";
+    mealChoices: Record<string, "veg" | "non_veg" | "skip">;
+    allergiesNotes?: string | null;
+  } | null;
+  mealHeadcounts?: {
+    beverages: {
+      saturday: { coffee: number; tea: number; none: number };
+      sunday: { coffee: number; tea: number; none: number };
+    };
+    meals: Array<{
+      slotId: string;
+      slotLabel: string;
+      slotDate: string;
+      vegCount: number;
+      nonVegCount: number;
+      skipCount: number;
+      totalEating: number;
+    }>;
+  } | null;
   version: number;
 };
 
@@ -200,6 +226,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   const [depositBusy, setDepositBusy] = useState(false);
   const [depositMsg, setDepositMsg] = useState<string | null>(null);
   const [showPackingModal, setShowPackingModal] = useState(false);
+  const [showMealModal, setShowMealModal] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
@@ -257,6 +284,25 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
     } finally {
       setDepositBusy(false);
     }
+  }
+
+  async function handleSaveMealPreferences(prefs: {
+    saturdayBeverage: string;
+    sundayBeverage: string;
+    defaultDiet: string;
+    mealChoices: Record<string, string>;
+    allergiesNotes?: string | null;
+  }) {
+    if (!details) return;
+    await api("save_meal_preferences", {
+      tripId: details.tripId,
+      saturdayBeverage: prefs.saturdayBeverage,
+      sundayBeverage: prefs.sundayBeverage,
+      defaultDiet: prefs.defaultDiet,
+      mealChoices: prefs.mealChoices,
+      allergiesNotes: prefs.allergiesNotes ?? null,
+    });
+    await refresh();
   }
 
   useEffect(() => {
@@ -423,6 +469,58 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
   if (isComing) requiredCompletedCount++;
   if (isDepositDone) requiredCompletedCount++;
   if (isChoresDone) requiredCompletedCount++;
+
+  const mealSlots: MealSlotItem[] = (details.mealHeadcounts?.meals ?? []).map((m) => ({
+    id: m.slotId,
+    label: m.slotLabel,
+    date: m.slotDate,
+  }));
+
+  const prefs = details.myMealPreferences;
+  const satBev = prefs?.saturdayBeverage === "tea" ? "Tea" : prefs?.saturdayBeverage === "none" ? "None" : "Coffee";
+  const sunBev = prefs?.sundayBeverage === "coffee" ? "Coffee" : prefs?.sundayBeverage === "none" ? "None" : "Tea";
+
+  let mealVegCount = 0;
+  let mealNonVegCount = 0;
+  let mealSkipCount = 0;
+  const mealList = details.mealHeadcounts?.meals ?? [];
+  if (mealList.length > 0) {
+    for (const m of mealList) {
+      const choice = prefs?.mealChoices?.[m.slotId];
+      if (choice === "skip") {
+        mealSkipCount++;
+      } else if (choice === "non_veg") {
+        mealNonVegCount++;
+      } else if (choice === "veg") {
+        mealVegCount++;
+      } else {
+        if (prefs?.defaultDiet === "non_vegetarian") {
+          mealNonVegCount++;
+        } else {
+          mealVegCount++;
+        }
+      }
+    }
+  } else {
+    if (prefs?.defaultDiet === "non_vegetarian") {
+      mealNonVegCount = 1;
+    } else {
+      mealVegCount = 1;
+    }
+  }
+
+  let dietSummary = "Veg (All)";
+  if (mealSkipCount > 0) {
+    dietSummary = `Skipping ${mealSkipCount} ${mealSkipCount === 1 ? "meal" : "meals"}`;
+  } else if (mealNonVegCount > 0 && mealVegCount > 0) {
+    dietSummary = "Custom";
+  } else if (mealNonVegCount > 0 && mealVegCount === 0) {
+    dietSummary = "Non-Veg (All)";
+  } else {
+    dietSummary = "Veg (All)";
+  }
+
+  const mealSummaryText = `Sat: ${satBev}, Sun: ${sunBev} · ${dietSummary}`;
 
   const individualPackItems = details.commitments?.individualPack
     ?? details.commitmentsList?.filter((c) => c.commitmentType === "individual_pack" && c.isActive)
@@ -987,6 +1085,44 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
                         Choose Chores &rarr;
                       </button>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Item 4: Meals & Drinks */}
+              {isComing && (
+                <div
+                  data-testid="hub-meals-row"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#ffffff",
+                    padding: "0.6rem 0.85rem",
+                    borderRadius: "8px",
+                    border: "1px solid #86efac",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "#16a34a", fontWeight: 700, marginRight: "0.35rem" }}>
+                      ✓
+                    </span>
+                    <strong>☕🍽️ Meals &amp; Drinks</strong>:{" "}
+                    <span style={{ color: "#166534", fontWeight: 600 }}>
+                      {mealSummaryText}
+                    </span>
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                      onClick={() => setShowMealModal(true)}
+                    >
+                      Edit Choices
+                    </button>
                   </div>
                 </div>
               )}
@@ -1654,6 +1790,17 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi }:
         <PersonalPackingListModal
           items={individualPackItems}
           onClose={() => setShowPackingModal(false)}
+        />
+      )}
+
+      {showMealModal && details && (
+        <MealPreferencesModal
+          isOpen={showMealModal}
+          onClose={() => setShowMealModal(false)}
+          tripId={details.tripId}
+          mealSlots={mealSlots}
+          initialPreferences={details.myMealPreferences}
+          onSave={handleSaveMealPreferences}
         />
       )}
     </section>
