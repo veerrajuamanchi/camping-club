@@ -278,6 +278,54 @@ test("trip_meal_preferences and not_coming guardrails", async (t) => {
     assert.equal(prefCountAfter, 0);
   });
 
+  await t.test("releases duty assignments, commitments, and meal preferences when member withdraws via phase2_request_withdrawal", async () => {
+    const { tripId } = await createTestTrip(60);
+    // Set trip to open interest poll
+    await serviceClient.from("camping_trips").update({
+      poll_status: "open",
+      club_timezone_snapshot: "America/Los_Angeles",
+      poll_deadline_at: new Date(Date.now() + 7 * 86400000).toISOString(),
+    }).eq("id", tripId);
+
+    const { rsvp } = await setupRsvp(tripId, member.memberId, "coming");
+
+    const commitmentId = randomUUID();
+    await serviceClient.from("trip_commitments").insert({
+      id: commitmentId,
+      trip_id: tripId,
+      category: "gear",
+      item_name: "Camping Stove",
+      assigned_member_id: member.memberId,
+    });
+
+    await serviceClient.from("trip_meal_preferences").insert({
+      trip_id: tripId,
+      member_id: member.memberId,
+      saturday_beverage: "coffee",
+      sunday_beverage: "tea",
+      default_diet: "vegetarian",
+    });
+
+    // Request withdrawal
+    const { data: withdrawResult, error: withdrawErr } = await serviceClient.rpc("phase2_request_withdrawal", {
+      p_auth_user_id: member.authUserId,
+      p_trip_id: tripId,
+      p_reason: "Family emergency, cannot attend",
+      p_request_id: randomUUID(),
+    });
+    assert.ifError(withdrawErr);
+    assert.equal(withdrawResult.state, "withdrawn_from_interest_poll");
+    assert.equal(withdrawResult.response, "not_coming");
+
+    // Commitments must be released
+    const { data: commitAfter } = await serviceClient.from("trip_commitments").select("assigned_member_id").eq("id", commitmentId).single();
+    assert.equal(commitAfter.assigned_member_id, null);
+
+    // Meal preferences must be deleted
+    const { count: prefCountAfter } = await serviceClient.from("trip_meal_preferences").select("*", { count: "exact" }).eq("trip_id", tripId).eq("member_id", member.memberId);
+    assert.equal(prefCountAfter, 0);
+  });
+
   await t.test("trip_meal_preferences RLS policies enforce access control", async () => {
     const { tripId } = await createTestTrip(60);
     await setupRsvp(tripId, member.memberId, "coming");
@@ -340,7 +388,7 @@ test("trip_meal_preferences and not_coming guardrails", async (t) => {
       item_name: "Lantern",
     });
 
-    // Attempt to claim commitment as not_coming member
+    // Attempt to claim commitment as not_coming member via service_role
     const { error: claimErr } = await serviceClient.rpc("phase4_manage_commitment", {
       p_action: "claim",
       p_trip_id: tripId,
@@ -349,5 +397,15 @@ test("trip_meal_preferences and not_coming guardrails", async (t) => {
       p_is_admin: false,
     });
     assert.ok(claimErr, "Not-going member must be blocked from volunteering for commitments");
+
+    // Authenticated client directly calling phase4_manage_commitment must be rejected (privilege revoked)
+    const { error: directRpcErr } = await member.client.rpc("phase4_manage_commitment", {
+      p_action: "claim",
+      p_trip_id: tripId,
+      p_commitment_id: commitmentId,
+      p_actor_id: member.memberId,
+      p_is_admin: false,
+    });
+    assert.ok(directRpcErr, "Authenticated client must not have execute permission on phase4_manage_commitment");
   });
 });

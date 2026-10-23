@@ -390,8 +390,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.phase4_manage_commitment(UUID, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, UUID, UUID, BOOLEAN) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.phase4_manage_commitment(UUID, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, UUID, UUID, BOOLEAN) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.phase4_manage_commitment(UUID, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, UUID, UUID, BOOLEAN) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.phase4_manage_commitment(UUID, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, UUID, UUID, BOOLEAN) TO service_role;
 
 -- 6. Update phase2_request_withdrawal with auto-release logic on immediate withdrawal
 CREATE OR REPLACE FUNCTION public.phase2_request_withdrawal(p_auth_user_id UUID, p_trip_id UUID, p_reason TEXT, p_request_id UUID)
