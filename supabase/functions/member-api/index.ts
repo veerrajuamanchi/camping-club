@@ -6,7 +6,7 @@ import { corsHeaders, emailSchema, isOriginAllowed, json, profileSchema, readBod
 
 const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 const inviteSchema = z.object({ email: emailSchema });
-const membershipSchema = z.object({ memberId: z.string().uuid(), memberRole: z.enum(["member", "admin"]), accountStatus: z.enum(["active", "inactive", "suspended"]), reason: z.string().trim().min(1).max(500) });
+const membershipSchema = z.object({ memberId: z.string().uuid(), memberRole: z.enum(["member", "admin", "accountant"]), accountStatus: z.enum(["active", "inactive", "suspended"]), reason: z.string().trim().min(1).max(500) });
 const accessRequestActionSchema = z.object({
   requestId: z.string().uuid(),
   adminNote: z.string().max(500).optional(),
@@ -16,7 +16,7 @@ const requestSchema = z.object({
   input: z.unknown().optional(),
 });
 
-type Member = { member_id: string; auth_user_id: string; display_name: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended" };
+type Member = { member_id: string; auth_user_id: string; display_name: string; member_role: "member" | "admin" | "accountant"; account_status: "active" | "inactive" | "suspended" };
 type IdempotencyClaim = { state: "started" | "in_progress" | "replay"; resultId?: string; resultCode?: string };
 
 async function claim(principal: string, action: string, key: string, input: unknown): Promise<IdempotencyClaim> {

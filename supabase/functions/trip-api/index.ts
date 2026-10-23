@@ -163,6 +163,10 @@ const inputSchemas = {
       memberId: uuid,
       allocatedCents: z.number().int().nonnegative(),
     })).optional(),
+    splitMode: z.enum(["all_attendees", "custom"]).optional(),
+    receiptStoragePath: z.string().trim().nullable().optional(),
+    receiptFileName: z.string().trim().nullable().optional(),
+    receiptContentType: z.string().trim().nullable().optional(),
   }).strict(),
   admin_finalize_settlement: z.object({
     tripId: uuid,
@@ -380,7 +384,7 @@ const inputSchemas = {
   }).strict(),
 };
 
-type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin"; account_status: "active" | "inactive" | "suspended" };
+type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin" | "accountant"; account_status: "active" | "inactive" | "suspended" };
 type IdempotencyClaim = { state: "started" | "in_progress" | "replay"; resultId?: string; resultCode?: string };
 type Action = typeof actionNames[number];
 
@@ -395,7 +399,6 @@ const adminActions = new Set<Action>([
   "admin_manage_carpool", "admin_override_duty",
   "admin_finalize_settlement",
   "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
-  "verify_deposit",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -1179,6 +1182,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       .select(`
         id, trip_id, expense_type, payer_member_id, amount_cents, description,
         incurred_date, receipt_url, source_reference_id, is_locked, created_at,
+        split_mode, receipt_storage_path, receipt_file_name, receipt_content_type,
         allocations:trip_expense_allocations(id, member_id, allocated_cents)
       `)
       .eq("trip_id", tripId)
@@ -1256,26 +1260,50 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     }
   }
 
-  const expenses = rawExpenses.map((exp: any) => ({
-    id: exp.id,
-    tripId: exp.trip_id,
-    expenseType: exp.expense_type,
-    payerMemberId: exp.payer_member_id,
-    payerName: nameMap.get(exp.payer_member_id) ?? "Member",
-    amountCents: exp.amount_cents,
-    description: exp.description,
-    incurredDate: exp.incurred_date,
-    receiptUrl: exp.receipt_url,
-    isLocked: exp.is_locked,
-    isMine: exp.payer_member_id === member.member_id,
-    allocations: (exp.allocations ?? []).map((a: any) => ({
-      id: a.id,
-      memberId: a.member_id,
-      memberName: nameMap.get(a.member_id) ?? "Member",
-      allocatedCents: a.allocated_cents,
-      isMe: a.member_id === member.member_id,
-    })),
-  }));
+  const isFinalized = latestRun != null && (latestRun.status === "finalized" || latestRun.status === "settled");
+
+  const expenses = rawExpenses.map((exp: any) => {
+    let expAllocs: Array<{ id?: string; memberId: string; memberName: string; allocatedCents: number; isMe: boolean }>;
+    if (exp.split_mode === "all_attendees" && !isFinalized) {
+      const dynamicAllocs = confirmedAttendees.length > 0
+        ? calculateEqualAllocations(exp.amount_cents, confirmedAttendees)
+        : [];
+      expAllocs = dynamicAllocs.map((a) => ({
+        id: `dyn-${exp.id}-${a.memberId}`,
+        memberId: a.memberId,
+        memberName: nameMap.get(a.memberId) ?? "Member",
+        allocatedCents: a.allocatedCents,
+        isMe: a.memberId === member.member_id,
+      }));
+    } else {
+      expAllocs = (exp.allocations ?? []).map((a: any) => ({
+        id: a.id,
+        memberId: a.member_id,
+        memberName: nameMap.get(a.member_id) ?? "Member",
+        allocatedCents: a.allocated_cents,
+        isMe: a.member_id === member.member_id,
+      }));
+    }
+
+    return {
+      id: exp.id,
+      tripId: exp.trip_id,
+      expenseType: exp.expense_type,
+      payerMemberId: exp.payer_member_id,
+      payerName: nameMap.get(exp.payer_member_id) ?? "Member",
+      amountCents: exp.amount_cents,
+      description: exp.description,
+      incurredDate: exp.incurred_date,
+      receiptUrl: exp.receipt_url,
+      splitMode: exp.split_mode ?? "all_attendees",
+      receiptStoragePath: exp.receipt_storage_path ?? null,
+      receiptFileName: exp.receipt_file_name ?? null,
+      receiptContentType: exp.receipt_content_type ?? null,
+      isLocked: exp.is_locked,
+      isMine: exp.payer_member_id === member.member_id,
+      allocations: expAllocs,
+    };
+  });
 
   const ratePerMile = trip.trip_mileage_rate_cents ?? 76;
   const carpoolReimbursements = rawCarpools
@@ -1329,7 +1357,6 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
   let settlementRun = null;
   let balances: any[] = [];
   let transfers: any[] = [];
-  const isFinalized = latestRun != null && (latestRun.status === "finalized" || latestRun.status === "settled");
 
   if (isFinalized && latestRun) {
     settlementRun = {
@@ -1374,14 +1401,26 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     const engineExpenses: ExpenseInput[] = [];
 
     for (const exp of rawExpenses) {
+      let expAllocations: Array<{ memberId: string; allocatedCents: number }>;
+      if (exp.split_mode === "all_attendees" && !isFinalized) {
+        const dynamicAllocs = confirmedAttendees.length > 0
+          ? calculateEqualAllocations(exp.amount_cents, confirmedAttendees)
+          : [];
+        expAllocations = dynamicAllocs.map((a) => ({
+          memberId: a.memberId,
+          allocatedCents: a.allocatedCents,
+        }));
+      } else {
+        expAllocations = (exp.allocations ?? []).map((a: any) => ({
+          memberId: a.member_id,
+          allocatedCents: a.allocated_cents,
+        }));
+      }
       engineExpenses.push({
         id: exp.id,
         payerMemberId: exp.payer_member_id,
         amountCents: exp.amount_cents,
-        allocations: (exp.allocations ?? []).map((a: any) => ({
-          memberId: a.member_id,
-          allocatedCents: a.allocated_cents,
-        })),
+        allocations: expAllocations,
       });
     }
 
@@ -1521,7 +1560,13 @@ Deno.serve(async (request) => {
   try { parsed = await readBody(request, requestSchema); }
   catch { return errorResponse(request, 400, "invalid_request", requestId); }
   const action = parsed.action;
-  if (adminActions.has(action) && member.member_role !== "admin") return errorResponse(request, 403, "administrator_required", requestId);
+  if (action === "verify_deposit") {
+    if (member.member_role !== "admin" && member.member_role !== "accountant") {
+      return errorResponse(request, 403, "admin_or_accountant_required", requestId);
+    }
+  } else if (adminActions.has(action) && member.member_role !== "admin") {
+    return errorResponse(request, 403, "administrator_required", requestId);
+  }
   let input: Record<string, unknown>;
   try {
     input = inputSchemas[action].parse(parsed.input ?? {}) as Record<string, unknown>;
@@ -2299,7 +2344,20 @@ Deno.serve(async (request) => {
         p_actor_id: member.member_id,
       };
       break;
-    case "admin_manage_trip_expense":
+    case "admin_manage_trip_expense": {
+      const splitMode = (input.splitMode as "all_attendees" | "custom" | undefined) ?? "all_attendees";
+      if (input.action === "create" && splitMode === "all_attendees") {
+        const { data: attendees, error: attError } = await service.from("trip_rsvps")
+          .select("member_id")
+          .eq("trip_id", input.tripId)
+          .eq("response", "coming");
+        if (attError) {
+          return errorResponse(request, 500, "attendee_lookup_failed", requestId);
+        }
+        if (!attendees || attendees.length === 0) {
+          return errorResponse(request, 400, "no_confirmed_attendees", requestId, "Cannot create dynamic split expense with no confirmed attendees.");
+        }
+      }
       rpcName = "phase5_manage_expense";
       rpcArgs = {
         p_trip_id: input.tripId,
@@ -2318,26 +2376,52 @@ Deno.serve(async (request) => {
         })),
         p_actor_id: member.member_id,
         p_is_admin: member.member_role === "admin",
+        p_split_mode: splitMode,
+        p_receipt_storage_path: input.receiptStoragePath ?? null,
+        p_receipt_file_name: input.receiptFileName ?? null,
+        p_receipt_content_type: input.receiptContentType ?? null,
       };
       break;
+    }
     case "admin_finalize_settlement": {
       const fin = await getTripFinancials(member, input.tripId as string);
       if (!fin.settlementRun) {
         return errorResponse(request, 400, "settlement_calculation_failed", requestId, "No expenses or balances found to finalize.");
       }
+
+      // Materialize dynamic allocations for all_attendees expenses into trip_expense_allocations
+      const expenses = (fin.expenses as any[]) ?? [];
+      for (const exp of expenses) {
+        if (exp.splitMode === "all_attendees") {
+          await service.from("trip_expense_allocations").delete().eq("expense_id", exp.id);
+          if (exp.allocations && exp.allocations.length > 0) {
+            const allocRows = exp.allocations.map((a: any) => ({
+              expense_id: exp.id,
+              member_id: a.memberId,
+              allocated_cents: a.allocatedCents,
+            }));
+            const { error: insertErr } = await service.from("trip_expense_allocations").insert(allocRows);
+            if (insertErr) {
+              console.error("Failed to materialize allocations for expense:", exp.id, insertErr);
+              return errorResponse(request, 500, "allocation_materialization_failed", requestId);
+            }
+          }
+        }
+      }
+
       rpcName = "phase5_record_settlement_run";
       rpcArgs = {
         p_trip_id: input.tripId,
-        p_algorithm_used: fin.settlementRun.algorithmUsed,
-        p_total_expenses_cents: fin.settlementRun.totalExpensesCents,
+        p_algorithm_used: (fin.settlementRun as any).algorithmUsed,
+        p_total_expenses_cents: (fin.settlementRun as any).totalExpensesCents,
         p_snapshot_hash: `settle-${Date.now()}`,
-        p_balances: fin.balances.map((b: any) => ({
+        p_balances: (fin.balances as any[]).map((b: any) => ({
           member_id: b.memberId,
           total_paid_cents: b.totalPaidCents,
           total_allocated_cents: b.totalAllocatedCents,
           net_balance_cents: b.netBalanceCents,
         })),
-        p_transfers: fin.transfers.map((t: any) => ({
+        p_transfers: (fin.transfers as any[]).map((t: any) => ({
           payer_member_id: t.payerMemberId,
           recipient_member_id: t.recipientMemberId,
           amount_cents: t.amountCents,
@@ -2370,6 +2454,22 @@ Deno.serve(async (request) => {
       requestId,
       error.message
     );
+  }
+  if (action === "admin_finalize_settlement") {
+    try {
+      await service.rpc("purge_expired_receipts");
+    } catch (purgeErr) {
+      console.error("purge_expired_receipts error in admin_finalize_settlement:", purgeErr);
+    }
+  }
+  if (action === "admin_transition_trip_lifecycle") {
+    if (input.toStatus === "completed" || input.toStatus === "financially_settled") {
+      try {
+        await service.rpc("purge_expired_receipts");
+      } catch (purgeErr) {
+        console.error("purge_expired_receipts error in admin_transition_trip_lifecycle:", purgeErr);
+      }
+    }
   }
   if (action === "admin_configure_trip") {
     if (typeof input.cabinCount !== "undefined" || typeof input.perCabinCapacity !== "undefined" || typeof input.cabinPayerMemberId !== "undefined") {
