@@ -33,7 +33,7 @@ begin
   if v_trip.starts_on is null or v_trip.ends_on is null or v_trip.starts_on>v_trip.ends_on then
     raise exception 'Confirm event dates before scheduling daily responsibilities.' using errcode='22023';
   end if;
-  if jsonb_typeof(p_days)<>'array' or jsonb_array_length(p_days)=0 or
+  if p_request_id is null or jsonb_typeof(p_days) is distinct from 'array' or jsonb_array_length(p_days)=0 or
     jsonb_array_length(p_days)<>(v_trip.ends_on-v_trip.starts_on+1) then
     raise exception 'Provide responsibility choices for each event day.' using errcode='22023';
   end if;
@@ -73,6 +73,21 @@ begin
   for v_day in select value from jsonb_array_elements(v_selected) loop
     v_date := (v_day->>'date')::date; v_id := (v_day->>'id')::uuid;
     select * into v_master from public.master_responsibilities where id=v_id;
+    if exists(select 1 from public.trip_slot_duties d join public.trip_time_slots s on s.id=d.time_slot_id
+      where s.trip_id=p_trip_id and s.slot_date=v_date and s.is_enabled and d.is_active and d.master_responsibility_id=v_id) then
+      update public.trip_slot_duties d
+      set workload_weight=v_master.workload_weight,
+          capacity=v_master.default_capacity,
+          updated_at=now()
+      from public.trip_time_slots s
+      where s.id=d.time_slot_id
+        and s.trip_id=p_trip_id
+        and s.slot_date=v_date
+        and s.is_enabled
+        and d.is_active
+        and d.master_responsibility_id=v_id;
+      continue;
+    end if;
     insert into public.trip_time_slots(trip_id,slot_date,time_block,slot_type,label,is_custom,is_enabled)
       values(p_trip_id,v_date,'daily','custom','Daily responsibilities',true,true)
       on conflict(trip_id,slot_date,time_block,label) do update set is_enabled=true,updated_at=now() returning id into v_slot;
@@ -81,6 +96,7 @@ begin
       on conflict(time_slot_id,master_responsibility_id) do update set
         is_active=true,
         workload_weight=excluded.workload_weight,
+        capacity=excluded.capacity,
         updated_at=now();
   end loop;
   update public.camping_trips set version=version+1,updated_at=now(),updated_by=p_actor_id where id=p_trip_id;
