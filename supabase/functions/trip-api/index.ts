@@ -401,6 +401,7 @@ const inputSchemas = {
     locationName: z.string().trim().max(200).nullable().optional(),
     address: z.string().trim().max(500).nullable().optional(),
     directionsUrl: optionalUrl,
+    bookingUrl: optionalUrl,
     unitLabel: z.string().trim().max(50).optional(),
     unitCapacity: z.number().int().positive().optional(),
     bookingNotes: z.string().trim().max(2000).nullable().optional(),
@@ -420,6 +421,7 @@ const inputSchemas = {
     locationName: z.string().trim().max(200).nullable().optional(),
     address: z.string().trim().max(500).nullable().optional(),
     directionsUrl: optionalUrl,
+    bookingUrl: optionalUrl,
     unitLabel: z.string().trim().max(50).optional(),
     unitCapacity: z.number().int().positive().optional(),
     bookingNotes: z.string().trim().max(2000).nullable().optional(),
@@ -438,12 +440,38 @@ const inputSchemas = {
   admin_manage_activity_pairings: z.object({
     tripId: uuid.optional(),
     activityId: uuid,
-    pairingsAction: z.enum(["create_group", "delete_group", "assign", "unassign", "auto_assign", "auto_shuffle", "lock_pairings", "unlock_pairings", "set_pairings"]).optional(),
-    action: z.enum(["create_group", "delete_group", "assign", "unassign", "auto_assign", "auto_shuffle", "lock_pairings", "unlock_pairings", "set_pairings"]).optional(),
+    pairingsAction: z.enum([
+      "create_group",
+      "delete_group",
+      "assign_members",
+      "set_group_members",
+      "assign",
+      "unassign",
+      "auto_assign",
+      "auto_shuffle",
+      "lock_pairings",
+      "unlock_pairings",
+      "set_pairings",
+    ]).optional(),
+    action: z.enum([
+      "create_group",
+      "delete_group",
+      "assign_members",
+      "set_group_members",
+      "assign",
+      "unassign",
+      "auto_assign",
+      "auto_shuffle",
+      "lock_pairings",
+      "unlock_pairings",
+      "set_pairings",
+    ]).optional(),
     groupId: uuid.optional(),
     memberId: uuid.optional(),
     groupNumber: z.number().int().positive().optional(),
     groupName: z.string().trim().max(100).optional(),
+    groupLabel: z.string().trim().max(100).optional(),
+    memberIds: z.array(uuid).optional(),
     lockPairings: z.boolean().optional(),
     groups: z.array(z.object({
       id: uuid.optional(),
@@ -2783,6 +2811,7 @@ Deno.serve(async (request) => {
           location_name: input.locationName ?? null,
           address: input.address ?? null,
           directions_url: input.directionsUrl ?? null,
+          booking_url: input.bookingUrl ?? null,
           unit_label: input.unitLabel ?? null,
           unit_capacity: input.unitCapacity ?? null,
           booking_notes: input.bookingNotes ?? null,
@@ -2808,6 +2837,7 @@ Deno.serve(async (request) => {
           location_name: input.locationName ?? null,
           address: input.address ?? null,
           directions_url: input.directionsUrl ?? null,
+          booking_url: input.bookingUrl ?? null,
           unit_label: input.unitLabel ?? null,
           unit_capacity: input.unitCapacity ?? null,
           booking_notes: input.bookingNotes ?? null,
@@ -2832,7 +2862,7 @@ Deno.serve(async (request) => {
       let pairingsAction = input.pairingsAction ?? input.action;
       let payload: Record<string, unknown> = {};
 
-      if (input.groups || input.assignments) {
+      if ((input.groups || input.assignments) && (!pairingsAction || pairingsAction === "set_pairings")) {
         pairingsAction = "set_pairings";
         const assignments: Array<{ group_id: string; member_id: string }> = [];
         if (input.assignments) {
@@ -2860,7 +2890,9 @@ Deno.serve(async (request) => {
           group_id: input.groupId,
           member_id: input.memberId,
           group_number: input.groupNumber,
-          group_name: input.groupName,
+          group_name: input.groupName ?? input.groupLabel,
+          group_label: input.groupLabel ?? input.groupName,
+          ...(input.memberIds !== undefined ? { member_ids: input.memberIds } : {}),
         };
       }
 
@@ -2939,6 +2971,16 @@ Deno.serve(async (request) => {
   if ((action === "request_partner_swap" || action === "respond_partner_swap") && data && typeof data === "object") {
     (data as any).swap_request_id = (data as any).request_id;
     (data as any).swapRequestId = (data as any).request_id;
+  }
+  if (action === "admin_manage_activity_pairings" && data && typeof data === "object") {
+    if ((data as any).group_id && !(data as any).groupId) {
+      (data as any).groupId = (data as any).group_id;
+    }
+  }
+  if (action === "admin_manage_trip_activity" && data && typeof data === "object") {
+    if ((data as any).activity_id && !(data as any).activityId) {
+      (data as any).activityId = (data as any).activity_id;
+    }
   }
   if (action === "set_activity_participation" && input.notes !== undefined) {
     const targetMemberId = (member.member_role === "admin" && input.memberId) ? input.memberId : member.member_id;

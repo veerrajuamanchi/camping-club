@@ -196,6 +196,7 @@ test("trip activities API endpoints and voucher credential masking", async (t) =
       locationName: "Cannery Row Rentals",
       address: "100 Ocean View Blvd, Pacific Grove, CA",
       directionsUrl: "https://maps.google.com/?q=Cannery+Row+Rentals",
+      bookingUrl: "https://www.groupon.com/deals/sea-car-tours-monterey",
       unitLabel: "GoCar",
       unitCapacity: 2,
       bookingNotes: "Groupon voucher covers 2 riders per car.",
@@ -213,6 +214,14 @@ test("trip activities API endpoints and voucher credential masking", async (t) =
     const found = res.body.activities.find((a) => a.id === masterActivityId);
     assert.ok(found, "created master activity should be returned in activities");
     assert.equal(found.title, "Monterey GoCar Full-Day Tour");
+    assert.equal(found.booking_url, "https://www.groupon.com/deals/sea-car-tours-monterey");
+
+    // Also verify get_master_activities returns booking_url
+    const masterActRes = await callTripApi("get_master_activities", memberA.accessToken, {});
+    assert.equal(masterActRes.status, 200);
+    const masterFound = masterActRes.body.activities.find((a) => a.id === masterActivityId);
+    assert.ok(masterFound, "master activity found via get_master_activities");
+    assert.equal(masterFound.booking_url, "https://www.groupon.com/deals/sea-car-tours-monterey");
   });
 
   await t.test("admin_manage_trip_activity clones template into trip activity with groups", async () => {
@@ -225,6 +234,26 @@ test("trip activities API endpoints and voucher credential masking", async (t) =
     assert.equal(res.status, 200, JSON.stringify(res.body));
     tripActivityId = res.body?.activity_id || res.raw?.activity_id;
     assert.ok(tripActivityId, "trip activity ID created");
+
+    // Verify booking_url was inherited from master activity
+    const getTripAct = await callTripApi("get_trip_activities", admin.accessToken, { tripId });
+    assert.equal(getTripAct.status, 200);
+    const tripAct = getTripAct.body.activities.find((a) => a.id === tripActivityId);
+    assert.ok(tripAct, "trip activity found in get_trip_activities");
+    assert.equal(tripAct.booking_url, "https://www.groupon.com/deals/sea-car-tours-monterey", "booking_url inherited");
+
+    // Update booking_url explicitly and verify it updates and returns in get_trip_activities
+    const updateRes = await callTripApi("admin_manage_trip_activity", admin.accessToken, {
+      action: "update",
+      tripId,
+      activityId: tripActivityId,
+      bookingUrl: "https://custom-booking.example.test/tour",
+    });
+    assert.equal(updateRes.status, 200, JSON.stringify(updateRes.body));
+
+    const refreshedTripAct = await callTripApi("get_trip_activities", admin.accessToken, { tripId });
+    const updatedAct = refreshedTripAct.body.activities.find((a) => a.id === tripActivityId);
+    assert.equal(updatedAct.booking_url, "https://custom-booking.example.test/tour", "booking_url updated");
   });
 
   await t.test("set_activity_participation registers member attendance and opt-out", async () => {
@@ -386,5 +415,97 @@ test("trip activities API endpoints and voucher credential masking", async (t) =
 
     assert.ok(finalGA.members.some((m) => m.member_id === memberB.memberId), "Member B moved to Group A");
     assert.ok(finalGB.members.some((m) => m.member_id === memberA.memberId), "Member A moved to Group B");
+  });
+
+  await t.test("admin_manage_activity_pairings supports create_group, assign_members, and delete_group", async () => {
+    const act3Res = await callTripApi("admin_manage_trip_activity", admin.accessToken, {
+      action: "create",
+      tripId,
+      title: "ATV Dune Riding",
+      unitLabel: "ATV",
+      unitCapacity: 2,
+      groupCount: 0,
+    });
+    assert.equal(act3Res.status, 200, JSON.stringify(act3Res.body));
+    const act3Id = act3Res.body?.activity_id || act3Res.body?.activityId;
+
+    // Set Member A and Member B attending
+    await callTripApi("set_activity_participation", memberA.accessToken, {
+      tripId,
+      activityId: act3Id,
+      status: "attending",
+    });
+    await callTripApi("set_activity_participation", memberB.accessToken, {
+      tripId,
+      activityId: act3Id,
+      status: "attending",
+    });
+
+    // 1. Create a new vehicle with action: 'create_group'
+    const createRes = await callTripApi("admin_manage_activity_pairings", admin.accessToken, {
+      tripId,
+      activityId: act3Id,
+      action: "create_group",
+      groupLabel: "ATV #1",
+      groupNumber: 1,
+    });
+    assert.equal(createRes.status, 200, JSON.stringify(createRes.body));
+    const createdGroupId = createRes.body?.group_id || createRes.body?.groupId;
+    assert.ok(createdGroupId, "vehicle group created");
+
+    // Verify it appears in get_trip_activities
+    let getRes = await callTripApi("get_trip_activities", admin.accessToken, { tripId });
+    let act = getRes.body.activities.find((a) => a.id === act3Id);
+    let vehicle = act.groups.find((g) => g.id === createdGroupId);
+    assert.ok(vehicle, "vehicle group found in trip activities");
+    assert.equal(vehicle.group_name, "ATV #1");
+    assert.equal(vehicle.members.length, 0);
+
+    // 2. Assign members to that vehicle with action: 'assign_members'
+    const assignRes = await callTripApi("admin_manage_activity_pairings", admin.accessToken, {
+      tripId,
+      activityId: act3Id,
+      action: "assign_members",
+      groupId: createdGroupId,
+      memberIds: [memberA.memberId],
+    });
+    assert.equal(assignRes.status, 200, JSON.stringify(assignRes.body));
+
+    // Verify member assigned in get_trip_activities
+    getRes = await callTripApi("get_trip_activities", admin.accessToken, { tripId });
+    act = getRes.body.activities.find((a) => a.id === act3Id);
+    vehicle = act.groups.find((g) => g.id === createdGroupId);
+    assert.equal(vehicle.members.length, 1);
+    assert.equal(vehicle.members[0].member_id, memberA.memberId);
+
+    // Also test set_group_members reassigns or sets members
+    const setRes = await callTripApi("admin_manage_activity_pairings", admin.accessToken, {
+      tripId,
+      activityId: act3Id,
+      action: "set_group_members",
+      groupId: createdGroupId,
+      memberIds: [memberA.memberId, memberB.memberId],
+    });
+    assert.equal(setRes.status, 200, JSON.stringify(setRes.body));
+
+    getRes = await callTripApi("get_trip_activities", admin.accessToken, { tripId });
+    act = getRes.body.activities.find((a) => a.id === act3Id);
+    vehicle = act.groups.find((g) => g.id === createdGroupId);
+    assert.equal(vehicle.members.length, 2);
+
+    // 3. Delete group with action: 'delete_group'
+    const deleteRes = await callTripApi("admin_manage_activity_pairings", admin.accessToken, {
+      tripId,
+      activityId: act3Id,
+      action: "delete_group",
+      groupId: createdGroupId,
+    });
+    assert.equal(deleteRes.status, 200, JSON.stringify(deleteRes.body));
+
+    // Verify group is deleted in get_trip_activities
+    getRes = await callTripApi("get_trip_activities", admin.accessToken, { tripId });
+    act = getRes.body.activities.find((a) => a.id === act3Id);
+    vehicle = act.groups.find((g) => g.id === createdGroupId);
+    assert.equal(vehicle, undefined, "vehicle group removed");
   });
 });
