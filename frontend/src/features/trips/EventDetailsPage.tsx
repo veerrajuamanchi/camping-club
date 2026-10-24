@@ -2478,6 +2478,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           isAdmin={isAdmin}
           isConfirmedAttendee={isComing}
           currentMemberId={authProfileMemberId}
+          tripAttendees={confirmedAttendees}
           api={api}
           onRefresh={refresh}
         />

@@ -1753,6 +1753,16 @@ async function getTripActivities(member: Member, tripId: string): Promise<Record
   const rawActivities = activities ?? [];
   const memberIdSet = new Set<string>();
 
+  const { data: tripRsvps } = await service
+    .from("trip_rsvps")
+    .select("member_id")
+    .eq("trip_id", tripId)
+    .eq("response", "coming");
+
+  for (const r of tripRsvps ?? []) {
+    if (r.member_id) memberIdSet.add(r.member_id);
+  }
+
   for (const act of rawActivities) {
     for (const p of act.participants ?? []) {
       if (p.member_id) memberIdSet.add(p.member_id);
@@ -1811,17 +1821,29 @@ async function getTripActivities(member: Member, tripId: string): Promise<Record
       target_display_name: memberProfileMap.get(s.target_member_id) ?? null,
     }));
 
+    const tripAttendees = (tripRsvps ?? []).map((r: any) => ({
+      member_id: r.member_id,
+      display_name: memberProfileMap.get(r.member_id) ?? "Camper",
+    }));
+
     return {
       ...act,
       participants,
+      trip_attendees: tripAttendees,
       groups,
       swap_requests: swapRequests,
     };
   });
 
+  const tripAttendees = (tripRsvps ?? []).map((r: any) => ({
+    member_id: r.member_id,
+    display_name: memberProfileMap.get(r.member_id) ?? "Camper",
+  }));
+
   return {
     tripId,
     activities: sanitizedActivities,
+    tripAttendees,
   };
 }
 

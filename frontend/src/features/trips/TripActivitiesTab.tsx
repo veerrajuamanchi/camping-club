@@ -75,6 +75,7 @@ export type TripActivityItem = {
   }>;
   groups?: TripActivityGroup[];
   swap_requests?: TripActivitySwapRequest[];
+  trip_attendees?: Array<{ member_id: string; display_name: string }>;
 };
 
 export type TripActivitiesTabProps = {
@@ -82,6 +83,7 @@ export type TripActivitiesTabProps = {
   isAdmin: boolean;
   isConfirmedAttendee: boolean;
   currentMemberId?: string;
+  tripAttendees?: Array<{ memberId: string; displayName: string }>;
   api?: TripApiType;
   onRefresh?: () => Promise<void> | void;
 };
@@ -154,6 +156,7 @@ export function TripActivitiesTab({
   isAdmin,
   isConfirmedAttendee,
   currentMemberId,
+  tripAttendees,
   api = defaultApi,
   onRefresh,
 }: TripActivitiesTabProps) {
@@ -1327,6 +1330,7 @@ export function TripActivitiesTab({
         <AssignCampersModal
           activity={assignModalGroup.activity}
           group={assignModalGroup.group}
+          tripAttendees={tripAttendees}
           busy={actionBusy}
           onClose={() => setAssignModalGroup(null)}
           onSubmit={(memberIds) =>
@@ -1844,12 +1848,14 @@ function PartnerSwapModal({
 function AssignCampersModal({
   activity,
   group,
+  tripAttendees,
   busy,
   onClose,
   onSubmit,
 }: {
   activity: TripActivityItem;
   group: TripActivityGroup;
+  tripAttendees?: Array<{ memberId: string; displayName: string }>;
   busy: boolean;
   onClose: () => void;
   onSubmit: (memberIds: string[]) => void;
@@ -1857,9 +1863,56 @@ function AssignCampersModal({
   const groupLabel =
     group.group_name || `${activity.unit_label || "Vehicle"} #${group.group_number}`;
   const capacity = group.capacity || activity.unit_capacity || 2;
-  const attendingCampers = (activity.participants || []).filter(
-    (p) => p.status === "attending"
+
+  // Build list of all campers eligible for vehicle assignment:
+  // 1. Confirmed trip attendees
+  // 2. Activity participants who have status === "attending"
+  // 3. Existing members in this group
+  // Exclude anyone who has status === "opted_out"
+  const optedOutIds = new Set(
+    (activity.participants || [])
+      .filter((p) => p.status === "opted_out")
+      .map((p) => p.member_id)
   );
+
+  const eligibleMap = new Map<string, string>();
+  for (const p of activity.participants || []) {
+    if (p.status === "attending" && p.member_id) {
+      eligibleMap.set(p.member_id, p.display_name || "Camper");
+    }
+  }
+  for (const a of tripAttendees || []) {
+    if (!optedOutIds.has(a.memberId)) {
+      eligibleMap.set(a.memberId, a.displayName || "Camper");
+    }
+  }
+  for (const a of activity.trip_attendees || []) {
+    if (!optedOutIds.has(a.member_id)) {
+      eligibleMap.set(a.member_id, a.display_name || "Camper");
+    }
+  }
+  for (const m of group.members || []) {
+    if (m.member_id && !optedOutIds.has(m.member_id)) {
+      eligibleMap.set(m.member_id, m.display_name || "Camper");
+    }
+  }
+
+  // Map each member to their currently assigned vehicle in this activity
+  const memberVehicleMap = new Map<string, string>();
+  for (const g of activity.groups || []) {
+    const vLabel = g.group_name || `${activity.unit_label || "Vehicle"} #${g.group_number}`;
+    for (const m of g.members || []) {
+      memberVehicleMap.set(m.member_id, vLabel);
+    }
+  }
+
+  const eligibleCampers = Array.from(eligibleMap.entries())
+    .map(([member_id, display_name]) => ({
+      member_id,
+      display_name,
+      assignedVehicle: memberVehicleMap.get(member_id) || null,
+    }))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
   const [slots, setSlots] = useState<string[]>(() => {
     const initial = Array(capacity).fill("");
@@ -1911,11 +1964,17 @@ function AssignCampersModal({
                 aria-label={`Slot ${idx + 1}`}
               >
                 <option value="">(Empty / Open Spot)</option>
-                {attendingCampers.map((p) => (
-                  <option key={p.member_id} value={p.member_id}>
-                    {p.display_name || "Unknown"}
-                  </option>
-                ))}
+                {eligibleCampers.map((c) => {
+                  let suffix = " (Unassigned)";
+                  if (c.assignedVehicle) {
+                    suffix = c.assignedVehicle === groupLabel ? " (Assigned here)" : ` (${c.assignedVehicle})`;
+                  }
+                  return (
+                    <option key={c.member_id} value={c.member_id}>
+                      {c.display_name}{suffix}
+                    </option>
+                  );
+                })}
               </select>
             </label>
           ))}

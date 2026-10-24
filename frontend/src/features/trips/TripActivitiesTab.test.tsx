@@ -1,7 +1,7 @@
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { TripActivitiesTab } from "./TripActivitiesTab";
+import { TripActivitiesTab, type TripActivityItem } from "./TripActivitiesTab";
 
 const mockTripActivities = [
   {
@@ -20,7 +20,7 @@ const mockTripActivities = [
     end_time: "17:00:00",
     unit_label: "GoCar",
     unit_capacity: 2,
-    opt_out_policy: "locked_on_voucher",
+    opt_out_policy: "locked_on_voucher" as const,
     is_pairings_locked: false,
     participants: [
       {
@@ -682,6 +682,93 @@ describe("TripActivitiesTab", () => {
         action: "assign_members",
         groupId: "grp-1",
         memberIds: ["mem-bob", "mem-alice"],
+      })
+    );
+  });
+
+  it("shows all confirmed trip attendees in Assign Campers dropdown even when not in activity participants", async () => {
+    const user = userEvent.setup();
+    const actWithOnlyAdmin: TripActivityItem[] = [
+      {
+        ...mockTripActivities[0],
+        participants: [
+          {
+            id: "part-admin",
+            activity_id: "act-1",
+            member_id: "mem-current",
+            status: "attending",
+            display_name: "Admin Leader",
+          },
+        ],
+        groups: [
+          {
+            id: "grp-1",
+            activity_id: "act-1",
+            group_number: 1,
+            group_name: "GoCar #1",
+            voucher_status: "needed",
+            members: [],
+          },
+        ],
+      },
+    ];
+
+    const confirmedTripCampers = [
+      { memberId: "mem-current", displayName: "Admin Leader" },
+      { memberId: "mem-charlie", displayName: "Charlie Brown" },
+      { memberId: "mem-david", displayName: "David Hassel" },
+    ];
+
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: actWithOnlyAdmin };
+      }
+      if (action === "admin_manage_activity_pairings") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        tripAttendees={confirmedTripCampers}
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    const assignBtns = screen.getAllByRole("button", { name: /Assign Campers/i });
+    await user.click(assignBtns[0]);
+
+    const dialog = screen.getByRole("dialog", { name: /Assign Campers - GoCar #1/i });
+    expect(dialog).toBeInTheDocument();
+
+    // Verify all trip attendees appear in slot dropdowns
+    const slot1Select = within(dialog).getByLabelText(/Slot 1/i);
+    expect(within(slot1Select).getByText(/Charlie Brown/i)).toBeInTheDocument();
+    expect(within(slot1Select).getByText(/David Hassel/i)).toBeInTheDocument();
+    expect(within(slot1Select).getByText(/Admin Leader/i)).toBeInTheDocument();
+
+    await user.selectOptions(slot1Select, "mem-charlie");
+    const slot2Select = within(dialog).getByLabelText(/Slot 2/i);
+    await user.selectOptions(slot2Select, "mem-david");
+
+    const saveBtn = within(dialog).getByRole("button", { name: /Save Assignments/i });
+    await user.click(saveBtn);
+
+    expect(api).toHaveBeenCalledWith(
+      "admin_manage_activity_pairings",
+      expect.objectContaining({
+        tripId: "trip-100",
+        activityId: "act-1",
+        action: "assign_members",
+        groupId: "grp-1",
+        memberIds: ["mem-charlie", "mem-david"],
       })
     );
   });

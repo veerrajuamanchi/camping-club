@@ -350,8 +350,8 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     await expect(assignModal).toBeVisible();
     await assertNoHorizontalOverflow(page, "admin-assign-campers-modal");
 
-    await assignModal.getByLabel("Slot 1").selectOption({ label: memberUser.displayName });
-    await assignModal.getByLabel("Slot 2").selectOption({ label: adminUser.displayName });
+    await assignModal.getByLabel("Slot 1").selectOption(memberUser.memberId);
+    await assignModal.getByLabel("Slot 2").selectOption(adminUser.memberId);
     await assignModal.getByRole("button", { name: "Save Assignments" }).click();
     await expect(assignModal).toBeHidden();
 
