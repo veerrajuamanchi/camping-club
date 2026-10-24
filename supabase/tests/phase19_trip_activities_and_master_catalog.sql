@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(98);
+select plan(119);
 
 -- 1. Table existence (6 tables)
 select has_table('public', 'master_activities', 'master_activities table exists');
@@ -122,6 +122,119 @@ select ok(not has_table_privilege('anon', 'public.trip_activity_participants', '
 select ok(not has_table_privilege('anon', 'public.trip_activity_groups', 'select'), 'anon has no select on trip_activity_groups');
 select ok(not has_table_privilege('anon', 'public.trip_activity_group_members', 'select'), 'anon has no select on trip_activity_group_members');
 select ok(not has_table_privilege('anon', 'public.trip_activity_swap_requests', 'select'), 'anon has no select on trip_activity_swap_requests');
+
+-- 12. Defense-in-depth: Sensitive columns masked and direct writes prevented (7 checks)
+select ok(not has_column_privilege('authenticated', 'public.trip_activity_groups', 'voucher_code', 'select'), 'authenticated denied select on voucher_code');
+select ok(not has_column_privilege('authenticated', 'public.trip_activity_groups', 'security_pin', 'select'), 'authenticated denied select on security_pin');
+select ok(has_column_privilege('authenticated', 'public.trip_activity_groups', 'group_name', 'select'), 'authenticated allowed select on group_name');
+select ok(not has_table_privilege('authenticated', 'public.master_activities', 'insert'), 'authenticated denied insert on master_activities');
+select ok(not has_table_privilege('authenticated', 'public.trip_activities', 'insert'), 'authenticated denied insert on trip_activities');
+select ok(not has_table_privilege('authenticated', 'public.trip_activity_groups', 'update'), 'authenticated denied update on trip_activity_groups');
+select ok(not has_table_privilege('authenticated', 'public.trip_activity_group_members', 'insert'), 'authenticated denied insert on trip_activity_group_members');
+
+-- 13. Authenticated test fixtures
+insert into auth.users(id, email)
+values
+  ('93000000-0000-0000-0000-000000000001', 'admin-p19@test.com'),
+  ('93000000-0000-0000-0000-000000000002', 'active-p19@test.com'),
+  ('93000000-0000-0000-0000-000000000003', 'inactive-p19@test.com');
+
+insert into public.member_profiles(member_id, auth_user_id, display_name, member_role, account_status)
+values
+  ('94000000-0000-0000-0000-000000000001', '93000000-0000-0000-0000-000000000001', 'Admin Member', 'admin', 'active'),
+  ('94000000-0000-0000-0000-000000000002', '93000000-0000-0000-0000-000000000002', 'Active Member', 'member', 'active'),
+  ('94000000-0000-0000-0000-000000000003', '93000000-0000-0000-0000-000000000003', 'Inactive Member', 'member', 'inactive');
+
+insert into public.campsites(id, rotation_position, name, location_description, cabin_capacity, active)
+values ('91000000-0000-0000-0000-000000000001', 99, 'Test Campsite', 'Test Location', 10, true);
+
+insert into public.camping_trips(id, month_key, rotation_position, suggested_campsite_id, selected_campsite_id, starts_on, ends_on, poll_status, event_status, version)
+values ('92000000-0000-0000-0000-000000000001', '2039-01-01'::date, 1, '91000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', current_date + 10, current_date + 13, 'closed', 'confirmed', 1);
+
+insert into public.master_activities(id, title, category, is_active)
+values ('95000000-0000-0000-0000-000000000001', 'Monterey GoCar Tour', 'Sightseeing', true);
+
+insert into public.trip_activities(id, trip_id, master_activity_id, title, activity_date)
+values ('96000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', '95000000-0000-0000-0000-000000000001', 'Saturday Monterey GoCar', current_date + 11);
+
+insert into public.trip_activity_groups(id, activity_id, group_number, group_name, voucher_code, security_pin)
+values ('97000000-0000-0000-0000-000000000001', '96000000-0000-0000-0000-000000000001', 1, 'Car #1', 'TOP-SECRET-CODE', '1234');
+
+-- 14. Authenticated active member verification (9 checks)
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '93000000-0000-0000-0000-000000000002', true);
+
+select is((select count(*)::integer from public.master_activities), 1, 'active member reads master_activities');
+select is((select count(*)::integer from public.trip_activities), 1, 'active member reads trip_activities');
+select is((select count(*)::integer from public.trip_activity_groups), 1, 'active member reads trip_activity_groups');
+
+select throws_ok(
+  $$ select voucher_code from public.trip_activity_groups $$,
+  '42501',
+  null,
+  'active member cannot select sensitive voucher_code column'
+);
+
+select throws_ok(
+  $$ select security_pin from public.trip_activity_groups $$,
+  '42501',
+  null,
+  'active member cannot select sensitive security_pin column'
+);
+
+select lives_ok(
+  $$ insert into public.trip_activity_participants(activity_id, member_id, status)
+     values ('96000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000002', 'attending') $$,
+  'active member can insert own participation'
+);
+
+select throws_ok(
+  $$ insert into public.trip_activity_participants(activity_id, member_id, status)
+     values ('96000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000001', 'attending') $$,
+  '42501',
+  null,
+  'active member cannot insert participation for other members'
+);
+
+select throws_ok(
+  $$ update public.trip_activity_groups set group_name = 'Hacked' where id = '97000000-0000-0000-0000-000000000001' $$,
+  '42501',
+  null,
+  'active member cannot directly update trip_activity_groups'
+);
+
+select throws_ok(
+  $$ insert into public.master_activities(title) values ('Unauthorized') $$,
+  '42501',
+  null,
+  'active member cannot directly insert into master_activities'
+);
+
+-- 15. Inactive member verification (3 checks)
+select set_config('request.jwt.claim.sub', '93000000-0000-0000-0000-000000000003', true);
+
+select is((select count(*)::integer from public.master_activities), 0, 'inactive member cannot read master_activities');
+select is((select count(*)::integer from public.trip_activities), 0, 'inactive member cannot read trip_activities');
+select is((select count(*)::integer from public.trip_activity_groups), 0, 'inactive member cannot read trip_activity_groups');
+
+-- 16. Anonymous role verification (2 checks)
+set local role anon;
+
+select throws_ok(
+  $$ select count(*) from public.master_activities $$,
+  '42501',
+  null,
+  'anon role cannot select master_activities'
+);
+
+select throws_ok(
+  $$ select count(*) from public.trip_activities $$,
+  '42501',
+  null,
+  'anon role cannot select trip_activities'
+);
+
+reset role;
 
 select * from finish();
 rollback;

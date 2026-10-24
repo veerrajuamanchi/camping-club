@@ -128,13 +128,34 @@ REVOKE ALL ON public.trip_activity_groups FROM anon, public;
 REVOKE ALL ON public.trip_activity_group_members FROM anon, public;
 REVOKE ALL ON public.trip_activity_swap_requests FROM anon, public;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.master_activities TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.trip_activities TO authenticated;
+-- Defense-in-depth grants for authenticated:
+-- Only SELECT on read-only / server-managed tables
+GRANT SELECT ON public.master_activities TO authenticated;
+GRANT SELECT ON public.trip_activities TO authenticated;
+GRANT SELECT ON public.trip_activity_group_members TO authenticated;
+
+-- For trip_activity_groups: authenticated only gets SELECT on non-sensitive columns
+-- (voucher_code and security_pin are never exposed to direct Data API select; direct updates disabled)
+GRANT SELECT (
+    id,
+    activity_id,
+    group_number,
+    group_name,
+    purchaser_member_id,
+    purchase_date,
+    amount_cents,
+    expense_id,
+    order_reference_number,
+    voucher_status,
+    created_at,
+    updated_at
+) ON public.trip_activity_groups TO authenticated;
+
+-- For participant and swap tables: authenticated gets standard CRUD (constrained by RLS to own records)
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.trip_activity_participants TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.trip_activity_groups TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.trip_activity_group_members TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.trip_activity_swap_requests TO authenticated;
 
+-- Full service_role access for edge functions and trusted operations
 GRANT ALL ON public.master_activities TO service_role;
 GRANT ALL ON public.trip_activities TO service_role;
 GRANT ALL ON public.trip_activity_participants TO service_role;
@@ -180,6 +201,11 @@ CREATE POLICY trip_activities_select ON public.trip_activities
     FOR SELECT TO authenticated
     USING (
         EXISTS (
+            SELECT 1 FROM public.member_profiles mp
+            WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
+              AND mp.account_status = 'active'
+        )
+        AND EXISTS (
             SELECT 1 FROM public.camping_trips ct
             WHERE ct.id = trip_activities.trip_id
               AND ct.deleted_at IS NULL
@@ -212,6 +238,11 @@ CREATE POLICY trip_activity_participants_select ON public.trip_activity_particip
     FOR SELECT TO authenticated
     USING (
         EXISTS (
+            SELECT 1 FROM public.member_profiles mp
+            WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
+              AND mp.account_status = 'active'
+        )
+        AND EXISTS (
             SELECT 1 FROM public.trip_activities ta
             JOIN public.camping_trips ct ON ct.id = ta.trip_id
             WHERE ta.id = trip_activity_participants.activity_id
@@ -269,6 +300,11 @@ CREATE POLICY trip_activity_groups_select ON public.trip_activity_groups
     FOR SELECT TO authenticated
     USING (
         EXISTS (
+            SELECT 1 FROM public.member_profiles mp
+            WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
+              AND mp.account_status = 'active'
+        )
+        AND EXISTS (
             SELECT 1 FROM public.trip_activities ta
             JOIN public.camping_trips ct ON ct.id = ta.trip_id
             WHERE ta.id = trip_activity_groups.activity_id
@@ -285,40 +321,6 @@ CREATE POLICY trip_activity_groups_admin_insert ON public.trip_activity_groups
             WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
               AND mp.member_role IN ('admin', 'administrator')
               AND mp.account_status = 'active'
-        )
-    );
-
-DROP POLICY IF EXISTS trip_activity_groups_update ON public.trip_activity_groups;
-CREATE POLICY trip_activity_groups_update ON public.trip_activity_groups
-    FOR UPDATE TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.member_profiles mp
-            WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
-              AND mp.account_status = 'active'
-              AND (
-                mp.member_role IN ('admin', 'administrator')
-                OR EXISTS (
-                  SELECT 1 FROM public.trip_activity_group_members gm
-                  WHERE gm.group_id = trip_activity_groups.id
-                    AND gm.member_id = mp.member_id
-                )
-              )
-        )
-    )
-    WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM public.member_profiles mp
-            WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
-              AND mp.account_status = 'active'
-              AND (
-                mp.member_role IN ('admin', 'administrator')
-                OR EXISTS (
-                  SELECT 1 FROM public.trip_activity_group_members gm
-                  WHERE gm.group_id = trip_activity_groups.id
-                    AND gm.member_id = mp.member_id
-                )
-              )
         )
     );
 
@@ -340,6 +342,11 @@ CREATE POLICY trip_activity_group_members_select ON public.trip_activity_group_m
     FOR SELECT TO authenticated
     USING (
         EXISTS (
+            SELECT 1 FROM public.member_profiles mp
+            WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
+              AND mp.account_status = 'active'
+        )
+        AND EXISTS (
             SELECT 1 FROM public.trip_activity_groups tag
             JOIN public.trip_activities ta ON ta.id = tag.activity_id
             JOIN public.camping_trips ct ON ct.id = ta.trip_id
@@ -374,6 +381,11 @@ CREATE POLICY trip_activity_swap_requests_select ON public.trip_activity_swap_re
     FOR SELECT TO authenticated
     USING (
         EXISTS (
+            SELECT 1 FROM public.member_profiles mp
+            WHERE (mp.auth_user_id = auth.uid() OR mp.member_id = auth.uid())
+              AND mp.account_status = 'active'
+        )
+        AND EXISTS (
             SELECT 1 FROM public.trip_activities ta
             JOIN public.camping_trips ct ON ct.id = ta.trip_id
             WHERE ta.id = trip_activity_swap_requests.activity_id
