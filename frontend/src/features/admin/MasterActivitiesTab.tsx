@@ -19,6 +19,7 @@ export interface MasterActivityItem {
   location_name: string | null;
   address: string | null;
   directions_url: string | null;
+  booking_url?: string | null;
   unit_label: string;
   unit_capacity: number;
   booking_notes: string | null;
@@ -67,6 +68,7 @@ export function MasterActivitiesTab({
   const [locationName, setLocationName] = useState("");
   const [address, setAddress] = useState("");
   const [directionsUrl, setDirectionsUrl] = useState("");
+  const [bookingUrl, setBookingUrl] = useState("");
   const [unitLabel, setUnitLabel] = useState("Vehicle");
   const [unitCapacity, setUnitCapacity] = useState("2");
   const [bookingNotes, setBookingNotes] = useState("");
@@ -130,6 +132,7 @@ export function MasterActivitiesTab({
     setLocationName("");
     setAddress("");
     setDirectionsUrl("");
+    setBookingUrl("");
     setUnitLabel("Vehicle");
     setUnitCapacity("2");
     setBookingNotes("");
@@ -145,6 +148,7 @@ export function MasterActivitiesTab({
     setLocationName(item.location_name || "");
     setAddress(item.address || "");
     setDirectionsUrl(item.directions_url || "");
+    setBookingUrl(item.booking_url || "");
     setUnitLabel(item.unit_label || "Vehicle");
     setUnitCapacity(String(item.unit_capacity || 2));
     setBookingNotes(item.booking_notes || "");
@@ -189,6 +193,7 @@ export function MasterActivitiesTab({
           locationName: locationName.trim() || null,
           address: address.trim() || null,
           directionsUrl: directionsUrl.trim() || null,
+          bookingUrl: bookingUrl.trim() || null,
           unitLabel: cleanUnitLabel,
           unitCapacity: cap,
           bookingNotes: bookingNotes.trim() || null,
@@ -202,6 +207,7 @@ export function MasterActivitiesTab({
           locationName: locationName.trim() || null,
           address: address.trim() || null,
           directionsUrl: directionsUrl.trim() || null,
+          bookingUrl: bookingUrl.trim() || null,
           unitLabel: cleanUnitLabel,
           unitCapacity: cap,
           bookingNotes: bookingNotes.trim() || null,
@@ -274,7 +280,8 @@ export function MasterActivitiesTab({
       const matchLoc = item.location_name?.toLowerCase().includes(cleanQuery) ?? false;
       const matchAddr = item.address?.toLowerCase().includes(cleanQuery) ?? false;
       const matchNotes = item.booking_notes?.toLowerCase().includes(cleanQuery) ?? false;
-      if (!matchTitle && !matchCat && !matchLoc && !matchAddr && !matchNotes) return false;
+      const matchBooking = item.booking_url?.toLowerCase().includes(cleanQuery) ?? false;
+      if (!matchTitle && !matchCat && !matchLoc && !matchAddr && !matchNotes && !matchBooking) return false;
     }
     return true;
   });
@@ -532,22 +539,39 @@ export function MasterActivitiesTab({
                     </div>
                   )}
 
-                  {/* Directions Link */}
-                  {item.directions_url && (
-                    <div>
-                      <a
-                        href={item.directions_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          fontSize: "0.8rem",
-                          fontWeight: 600,
-                          color: "#0284c7",
-                          textDecoration: "underline",
-                        }}
-                      >
-                        🗺️ Directions
-                      </a>
+                  {/* Directions & Booking Links */}
+                  {(item.directions_url || item.booking_url) && (
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+                      {item.directions_url && (
+                        <a
+                          href={item.directions_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            color: "#0284c7",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          🗺️ Directions
+                        </a>
+                      )}
+                      {item.booking_url && (
+                        <a
+                          href={item.booking_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            color: "#d97706",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          🎟️ Booking / Deal Link
+                        </a>
+                      )}
                     </div>
                   )}
 
@@ -764,6 +788,16 @@ export function MasterActivitiesTab({
                   value={directionsUrl}
                   onChange={(e) => setDirectionsUrl(e.target.value)}
                   placeholder="https://maps.google.com/?q=..."
+                />
+              </label>
+
+              <label>
+                Booking / Signup URL (e.g. Groupon)
+                <input
+                  type="url"
+                  value={bookingUrl}
+                  onChange={(e) => setBookingUrl(e.target.value)}
+                  placeholder="https://www.groupon.com/deals/..."
                 />
               </label>
 

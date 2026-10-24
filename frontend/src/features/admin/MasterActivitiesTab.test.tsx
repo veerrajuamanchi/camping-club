@@ -363,4 +363,77 @@ describe("MasterActivitiesTab", () => {
     // The image should be hidden and fallback visible
     expect(img).toHaveStyle({ display: "none" });
   });
+
+  it("Add Master Activity template includes bookingUrl and submits it, and displays booking link", async () => {
+    const user = userEvent.setup();
+    let activitiesState = [...mockActivities];
+
+    const api = vi.fn().mockImplementation((action: string, input: any) => {
+      if (action === "get_master_activities") {
+        return Promise.resolve({ activities: activitiesState });
+      }
+      if (action === "admin_manage_master_activity") {
+        if (input.action === "create") {
+          const created: MasterActivityItem = {
+            id: "act-booking-test",
+            title: input.title,
+            category: input.category,
+            image_url: input.imageUrl ?? null,
+            location_name: input.locationName ?? null,
+            address: input.address ?? null,
+            directions_url: input.directionsUrl ?? null,
+            booking_url: input.bookingUrl ?? null,
+            unit_label: input.unitLabel,
+            unit_capacity: input.unitCapacity,
+            booking_notes: input.bookingNotes ?? null,
+            is_active: true,
+            created_at: "2026-10-10T00:00:00Z",
+            updated_at: "2026-10-10T00:00:00Z",
+          };
+          activitiesState = [...activitiesState, created];
+          return Promise.resolve({ success: true, action: "create", id: created.id });
+        }
+      }
+      return Promise.reject(new Error(`unhandled: ${action}`));
+    });
+
+    render(<MasterActivitiesTab api={api} />);
+
+    await waitFor(() => expect(screen.getByText("GoCar Tour Monterey")).toBeInTheDocument());
+
+    const addBtn = screen.getByRole("button", { name: /\+ add activity template/i });
+    await user.click(addBtn);
+
+    const modal = screen.getByRole("dialog", { name: /add activity template/i });
+    expect(modal).toBeInTheDocument();
+
+    const titleInput = within(modal).getByLabelText(/activity title/i);
+    const bookingUrlInput = within(modal).getByLabelText(/booking \/ signup url \(e\.g\. groupon\)/i);
+
+    expect(bookingUrlInput).toBeInTheDocument();
+
+    await user.type(titleInput, "Monterey Bay Whale Watch");
+    await user.type(bookingUrlInput, "https://www.groupon.com/deals/monterey-whale-watch");
+
+    await user.click(within(modal).getByRole("button", { name: /save template/i }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        "admin_manage_master_activity",
+        expect.objectContaining({
+          action: "create",
+          title: "Monterey Bay Whale Watch",
+          bookingUrl: "https://www.groupon.com/deals/monterey-whale-watch",
+        })
+      );
+    });
+
+    // Check newly added card renders the booking link
+    await waitFor(() => {
+      expect(screen.getByText("Monterey Bay Whale Watch")).toBeInTheDocument();
+    });
+    const newCard = screen.getByText("Monterey Bay Whale Watch").closest(".event-card") as HTMLElement;
+    const dealLink = within(newCard).getByRole("link", { name: /🎟️ Booking \/ Deal Link/i });
+    expect(dealLink).toHaveAttribute("href", "https://www.groupon.com/deals/monterey-whale-watch");
+  });
 });

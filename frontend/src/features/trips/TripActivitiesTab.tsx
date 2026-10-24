@@ -174,6 +174,10 @@ export function TripActivitiesTab({
     activity: TripActivityItem;
     group: TripActivityGroup;
   } | null>(null);
+  const [assignModalGroup, setAssignModalGroup] = useState<{
+    activity: TripActivityItem;
+    group: TripActivityGroup;
+  } | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
 
   async function loadActivities() {
@@ -275,6 +279,71 @@ export function TripActivitiesTab({
   }
 
   // Admin controls
+  async function handleAddVehicle(activityId: string) {
+    setActionBusy(true);
+    setActionMsg(null);
+    try {
+      await api("admin_manage_activity_pairings", {
+        tripId,
+        activityId,
+        action: "create_group",
+      });
+      await refreshAll();
+    } catch (err: any) {
+      console.error("Add vehicle failed:", err);
+      setActionMsg(err?.message || "Failed to add vehicle.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleDeleteGroup(activityId: string, groupId: string, groupTitle: string) {
+    if (
+      typeof window !== "undefined" &&
+      window.confirm &&
+      !window.confirm(`Are you sure you want to delete ${groupTitle}?`)
+    ) {
+      return;
+    }
+    setActionBusy(true);
+    setActionMsg(null);
+    try {
+      await api("admin_manage_activity_pairings", {
+        tripId,
+        activityId,
+        action: "delete_group",
+        groupId,
+      });
+      await refreshAll();
+    } catch (err: any) {
+      console.error("Delete vehicle failed:", err);
+      setActionMsg(err?.message || "Failed to delete vehicle.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleAssignMembers(activityId: string, groupId: string, memberIds: string[]) {
+    setActionBusy(true);
+    setActionMsg(null);
+    try {
+      await api("admin_manage_activity_pairings", {
+        tripId,
+        activityId,
+        action: "assign_members",
+        groupId,
+        memberIds,
+      });
+      setAssignModalGroup(null);
+      await refreshAll();
+    } catch (err: any) {
+      console.error("Assign campers failed:", err);
+      setActionMsg(err?.message || "Failed to assign campers.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleAutoShuffle(activityId: string) {
     setActionBusy(true);
     setActionMsg(null);
@@ -788,6 +857,15 @@ export function TripActivitiesTab({
                         className="secondary-button"
                         style={{ fontSize: "0.82rem", padding: "6px 12px" }}
                         disabled={actionBusy}
+                        onClick={() => handleAddVehicle(act.id)}
+                      >
+                        + Add Vehicle
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ fontSize: "0.82rem", padding: "6px 12px" }}
+                        disabled={actionBusy}
                         onClick={() => handleAutoShuffle(act.id)}
                       >
                         🎲 Auto-Shuffle
@@ -812,6 +890,10 @@ export function TripActivitiesTab({
                       (m) => m.member_id === currentMemberId
                     );
                     const canEnterVoucher = isUserInGroup || isAdmin;
+                    const canDeleteGroup =
+                      isAdmin &&
+                      grp.voucher_status !== "purchased" &&
+                      grp.voucher_status !== "verified";
                     const maxCap = grp.capacity || act.unit_capacity || 2;
                     const memberCount = grp.members?.length || 0;
                     const cardTitle = grp.group_name || `${unitLabel} #${grp.group_number}`;
@@ -988,6 +1070,40 @@ export function TripActivitiesTab({
                             paddingTop: "8px",
                           }}
                         >
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              style={{ fontSize: "0.78rem", padding: "4px 8px" }}
+                              disabled={actionBusy}
+                              onClick={() =>
+                                setAssignModalGroup({
+                                  activity: act,
+                                  group: grp,
+                                })
+                              }
+                            >
+                              Assign Campers
+                            </button>
+                          )}
+                          {canDeleteGroup && (
+                            <button
+                              type="button"
+                              style={{
+                                fontSize: "0.78rem",
+                                padding: "4px 8px",
+                                background: "#fff1f2",
+                                color: "#e11d48",
+                                border: "1px solid #fecdd3",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                              }}
+                              disabled={actionBusy}
+                              onClick={() => handleDeleteGroup(act.id, grp.id, cardTitle)}
+                            >
+                              Delete Vehicle
+                            </button>
+                          )}
                           {canEnterVoucher && (
                             <button
                               type="button"
@@ -1202,6 +1318,23 @@ export function TripActivitiesTab({
           onClose={() => setSwapModalState(null)}
           onSubmit={(targetMemberId) =>
             handleRequestSwap(swapModalState.activity.id, targetMemberId)
+          }
+        />
+      )}
+
+      {/* ASSIGN CAMPERS MODAL (ADMIN) */}
+      {assignModalGroup && (
+        <AssignCampersModal
+          activity={assignModalGroup.activity}
+          group={assignModalGroup.group}
+          busy={actionBusy}
+          onClose={() => setAssignModalGroup(null)}
+          onSubmit={(memberIds) =>
+            handleAssignMembers(
+              assignModalGroup.activity.id,
+              assignModalGroup.group.id,
+              memberIds
+            )
           }
         />
       )}
@@ -1706,6 +1839,116 @@ function PartnerSwapModal({
 }
 
 // -------------------------------------------------------------
+// ASSIGN CAMPERS MODAL (ADMIN)
+// -------------------------------------------------------------
+function AssignCampersModal({
+  activity,
+  group,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  activity: TripActivityItem;
+  group: TripActivityGroup;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (memberIds: string[]) => void;
+}) {
+  const groupLabel =
+    group.group_name || `${activity.unit_label || "Vehicle"} #${group.group_number}`;
+  const capacity = group.capacity || activity.unit_capacity || 2;
+  const attendingCampers = (activity.participants || []).filter(
+    (p) => p.status === "attending"
+  );
+
+  const [slots, setSlots] = useState<string[]>(() => {
+    const initial = Array(capacity).fill("");
+    const existing = group.members || [];
+    for (let i = 0; i < capacity && i < existing.length; i++) {
+      initial[i] = existing[i].member_id;
+    }
+    return initial;
+  });
+
+  function handleSlotChange(index: number, value: string) {
+    setSlots((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const selectedMemberIds = slots.filter(Boolean);
+    onSubmit(selectedMemberIds);
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Assign Campers - ${groupLabel}`}
+        style={{ maxWidth: "480px", width: "95%" }}
+      >
+        <h3 style={{ margin: "0 0 8px 0" }}>Assign Campers - {groupLabel}</h3>
+        <p style={{ margin: "0 0 14px 0", color: "#64748b", fontSize: "0.85rem" }}>
+          Select attending campers to assign to each slot in this {activity.unit_label || "vehicle"}.
+        </p>
+
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+        >
+          {Array.from({ length: capacity }).map((_, idx) => (
+            <label key={idx}>
+              Slot {idx + 1}
+              <select
+                value={slots[idx] || ""}
+                onChange={(e) => handleSlotChange(idx, e.target.value)}
+                aria-label={`Slot ${idx + 1}`}
+              >
+                <option value="">(Empty / Open Spot)</option>
+                {attendingCampers.map((p) => (
+                  <option key={p.member_id} value={p.member_id}>
+                    {p.display_name || "Unknown"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: "8px",
+              marginTop: "12px",
+              paddingTop: "12px",
+              borderTop: "1px solid #e2e8f0",
+            }}
+          >
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="primary-button" disabled={busy}>
+              {busy ? "Saving…" : "Save Assignments"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
 // ADD / CLONE ACTIVITY MODAL (ADMIN)
 // -------------------------------------------------------------
 function AddActivityModal({
@@ -1739,6 +1982,7 @@ function AddActivityModal({
   const [locationName, setLocationName] = useState("");
   const [address, setAddress] = useState("");
   const [directionsUrl, setDirectionsUrl] = useState("");
+  const [bookingUrl, setBookingUrl] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [dealStrategyTip, setDealStrategyTip] = useState("");
 
@@ -1808,6 +2052,7 @@ function AddActivityModal({
         locationName: locationName.trim() || undefined,
         address: address.trim() || undefined,
         directionsUrl: directionsUrl.trim() || undefined,
+        bookingUrl: bookingUrl.trim() || undefined,
         imageUrl: imageUrl.trim() || undefined,
         dealStrategyTip: dealStrategyTip.trim() || undefined,
       });
@@ -2042,6 +2287,16 @@ function AddActivityModal({
                 value={directionsUrl}
                 onChange={(e) => setDirectionsUrl(e.target.value)}
                 placeholder="https://maps.google.com/..."
+              />
+            </label>
+
+            <label>
+              Booking / Signup URL (e.g. Groupon)
+              <input
+                type="url"
+                value={bookingUrl}
+                onChange={(e) => setBookingUrl(e.target.value)}
+                placeholder="https://www.groupon.com/deals/..."
               />
             </label>
 

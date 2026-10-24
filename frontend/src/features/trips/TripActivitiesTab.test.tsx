@@ -593,4 +593,203 @@ describe("TripActivitiesTab", () => {
       screen.getByRole("link", { name: /Activity Booking Link/i })
     ).toHaveAttribute("href", "https://gocartours.com/book-now");
   });
+
+  it("clicking '+ Add Vehicle' calls admin_manage_activity_pairings with action: 'create_group'", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      if (action === "admin_manage_activity_pairings") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    const addVehicleBtn = screen.getByRole("button", { name: /\+ Add Vehicle/i });
+    await user.click(addVehicleBtn);
+
+    expect(api).toHaveBeenCalledWith(
+      "admin_manage_activity_pairings",
+      expect.objectContaining({
+        tripId: "trip-100",
+        activityId: "act-1",
+        action: "create_group",
+      })
+    );
+  });
+
+  it("opens Assign Campers modal, picks 2 campers from dropdowns, and submits calls action: 'assign_members' with selected memberIds", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      if (action === "admin_manage_activity_pairings") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    // In admin view, GoCar #1 card has "Assign Campers" button
+    const assignBtns = screen.getAllByRole("button", { name: /Assign Campers/i });
+    expect(assignBtns.length).toBeGreaterThan(0);
+    await user.click(assignBtns[0]);
+
+    // Modal dialog is opened
+    const dialog = screen.getByRole("dialog", { name: /Assign Campers - GoCar #1/i });
+    expect(dialog).toBeInTheDocument();
+
+    const slot1Select = within(dialog).getByLabelText(/Slot 1/i);
+    const slot2Select = within(dialog).getByLabelText(/Slot 2/i);
+
+    // Pick 2 campers from dropdowns
+    await user.selectOptions(slot1Select, "mem-bob");
+    await user.selectOptions(slot2Select, "mem-alice");
+
+    const saveBtn = within(dialog).getByRole("button", { name: /Save Assignments/i });
+    await user.click(saveBtn);
+
+    expect(api).toHaveBeenCalledWith(
+      "admin_manage_activity_pairings",
+      expect.objectContaining({
+        tripId: "trip-100",
+        activityId: "act-1",
+        action: "assign_members",
+        groupId: "grp-1",
+        memberIds: ["mem-bob", "mem-alice"],
+      })
+    );
+  });
+
+  it("clicking 'Delete Vehicle' calls action: 'delete_group'", async () => {
+    const user = userEvent.setup();
+    window.confirm = vi.fn().mockReturnValue(true);
+
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      if (action === "admin_manage_activity_pairings") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    // GoCar #2 has voucher_status: 'needed', so Delete Vehicle button is rendered
+    // GoCar #1 has voucher_status: 'purchased', so it does NOT have Delete Vehicle button
+    const deleteBtns = screen.getAllByRole("button", { name: /Delete Vehicle/i });
+    expect(deleteBtns).toHaveLength(1);
+
+    await user.click(deleteBtns[0]);
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(api).toHaveBeenCalledWith(
+      "admin_manage_activity_pairings",
+      expect.objectContaining({
+        tripId: "trip-100",
+        activityId: "act-1",
+        action: "delete_group",
+        groupId: "grp-2",
+      })
+    );
+  });
+
+  it("Add Trip Activity modal includes bookingUrl and submits it", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      if (action === "get_master_activities") {
+        return { activities: [] };
+      }
+      if (action === "admin_manage_trip_activity") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    const addActivityBtn = screen.getByRole("button", { name: /\+ Add Activity/i });
+    await user.click(addActivityBtn);
+
+    const dialog = screen.getByRole("dialog", { name: /Add Trip Activity/i });
+    expect(dialog).toBeInTheDocument();
+
+    // Switch to "Create Custom Activity" tab
+    const createTabBtn = within(dialog).getByRole("button", { name: /Create Custom Activity/i });
+    await user.click(createTabBtn);
+
+    const titleInput = within(dialog).getByLabelText(/Activity Title/i);
+    const dateInput = within(dialog).getByLabelText(/Activity Date/i);
+    const bookingUrlInput = within(dialog).getByLabelText(/Booking \/ Signup URL \(e\.g\. Groupon\)/i);
+
+    expect(bookingUrlInput).toBeInTheDocument();
+
+    await user.type(titleInput, "Custom Kayak Adventure");
+    fireEvent.change(dateInput, { target: { value: "2026-11-20" } });
+    await user.type(bookingUrlInput, "https://www.groupon.com/deals/custom-kayak");
+
+    const submitBtn = within(dialog).getByRole("button", { name: /Create Activity/i });
+    await user.click(submitBtn);
+
+    expect(api).toHaveBeenCalledWith(
+      "admin_manage_trip_activity",
+      expect.objectContaining({
+        action: "create",
+        tripId: "trip-100",
+        title: "Custom Kayak Adventure",
+        activityDate: "2026-11-20",
+        bookingUrl: "https://www.groupon.com/deals/custom-kayak",
+      })
+    );
+  });
 });
