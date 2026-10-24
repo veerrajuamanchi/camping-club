@@ -84,6 +84,8 @@ const tripMutationActions = new Set([
   "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
   "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
   "submit_deposit", "verify_deposit", "admin_sync_trip_commitments",
+  "admin_manage_master_activity", "admin_manage_trip_activity", "set_activity_participation",
+  "admin_manage_activity_pairings", "submit_activity_voucher", "request_partner_swap", "respond_partner_swap",
 ]);
 
 export async function invokeTripApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {
