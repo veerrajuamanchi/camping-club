@@ -1,0 +1,452 @@
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { TripActivitiesTab } from "./TripActivitiesTab";
+
+const mockTripActivities = [
+  {
+    id: "act-1",
+    trip_id: "trip-100",
+    title: "San Francisco GoCar Tour",
+    category: "tour",
+    image_url: "https://example.com/gocar.jpg",
+    location_name: "Fisherman's Wharf",
+    address: "510 Beach St, San Francisco, CA 94133",
+    directions_url: "https://maps.google.com/?q=510+Beach+St",
+    deal_strategy_tip: "Purchase 2-person vouchers on Groupon (e.g., $174.60 with promo code Halloween vs $328 operator direct) and enter your voucher codes below!",
+    voucher_url: "https://www.groupon.com/deals/gocar-tours-sf",
+    activity_date: "2026-11-15",
+    start_time: "10:00:00",
+    end_time: "17:00:00",
+    unit_label: "GoCar",
+    unit_capacity: 2,
+    opt_out_policy: "locked_on_voucher",
+    is_pairings_locked: false,
+    participants: [
+      {
+        id: "part-1",
+        activity_id: "act-1",
+        member_id: "mem-current",
+        status: "attending",
+        display_name: "Current User",
+      },
+      {
+        id: "part-2",
+        activity_id: "act-1",
+        member_id: "mem-veerraju",
+        status: "attending",
+        display_name: "Veerraju Amanchi",
+      },
+      {
+        id: "part-3",
+        activity_id: "act-1",
+        member_id: "mem-bob",
+        status: "attending",
+        display_name: "Bob Smith",
+      },
+      {
+        id: "part-4",
+        activity_id: "act-1",
+        member_id: "mem-alice",
+        status: "attending",
+        display_name: "Alice Cooper",
+      },
+    ],
+    groups: [
+      {
+        id: "grp-1",
+        activity_id: "act-1",
+        group_number: 1,
+        group_name: "GoCar #1",
+        capacity: 2,
+        purchaser_member_id: "mem-veerraju",
+        purchaser_display_name: "Veerraju Amanchi",
+        purchase_date: "2026-10-24",
+        order_number: "ORD-9988",
+        voucher_code: "GP-12345",
+        security_pin: "9876",
+        voucher_amount_cents: 17460,
+        voucher_status: "purchased",
+        members: [
+          {
+            id: "gm-1",
+            group_id: "grp-1",
+            member_id: "mem-current",
+            display_name: "Current User",
+          },
+          {
+            id: "gm-2",
+            group_id: "grp-1",
+            member_id: "mem-veerraju",
+            display_name: "Veerraju Amanchi",
+          },
+        ],
+      },
+      {
+        id: "grp-2",
+        activity_id: "act-1",
+        group_number: 2,
+        group_name: "GoCar #2",
+        capacity: 2,
+        purchaser_member_id: null,
+        purchaser_display_name: null,
+        purchase_date: null,
+        order_number: null,
+        voucher_code: null,
+        security_pin: null,
+        voucher_amount_cents: null,
+        voucher_status: "needed",
+        members: [
+          {
+            id: "gm-3",
+            group_id: "grp-2",
+            member_id: "mem-bob",
+            display_name: "Bob Smith",
+          },
+          {
+            id: "gm-4",
+            group_id: "grp-2",
+            member_id: "mem-alice",
+            display_name: "Alice Cooper",
+          },
+        ],
+      },
+    ],
+    swap_requests: [
+      {
+        id: "swap-1",
+        activity_id: "act-1",
+        requester_member_id: "mem-bob",
+        requester_display_name: "Bob Smith",
+        target_member_id: "mem-current",
+        target_display_name: "Current User",
+        status: "pending",
+      },
+    ],
+  },
+];
+
+describe("TripActivitiesTab", () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it("renders activity banner image, title, schedule, address, directions link, and Groupon deal tip", async () => {
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+    expect(screen.getByText(/Nov 15 • 10:00 AM – 5:00 PM/)).toBeInTheDocument();
+    expect(screen.getByText(/510 Beach St, San Francisco, CA 94133/)).toBeInTheDocument();
+    expect(screen.getByText("🧭 Get Directions")).toHaveAttribute(
+      "href",
+      "https://maps.google.com/?q=510+Beach+St"
+    );
+    expect(screen.getByText(/Deal Strategy Tip:/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Purchase 2-person vouchers on Groupon/i)
+    ).toBeInTheDocument();
+  });
+
+  it("displays personalized rider badge when paired with a partner", async () => {
+    const api = vi.fn().mockResolvedValue({ activities: mockTripActivities });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(
+      await screen.findByText("✓ You are Riding with Veerraju Amanchi (GoCar #1)")
+    ).toBeInTheDocument();
+  });
+
+  it("displays personalized rider badge when attendee is unassigned", async () => {
+    const unassignedActivities = [
+      {
+        ...mockTripActivities[0],
+        groups: [
+          {
+            ...mockTripActivities[0].groups[0],
+            members: [mockTripActivities[0].groups[0].members[1]], // only Veerraju
+          },
+        ],
+      },
+    ];
+
+    const api = vi.fn().mockResolvedValue({ activities: unassignedActivities });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(
+      await screen.findByText("⚠️ You are attending, but not yet assigned to a vehicle.")
+    ).toBeInTheDocument();
+  });
+
+  it("displays personalized rider badge when user has opted out", async () => {
+    const optedOutActivities = [
+      {
+        ...mockTripActivities[0],
+        participants: [
+          {
+            id: "part-1",
+            activity_id: "act-1",
+            member_id: "mem-current",
+            status: "opted_out",
+            display_name: "Current User",
+          },
+        ],
+      },
+    ];
+
+    const api = vi.fn().mockResolvedValue({ activities: optedOutActivities });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(
+      await screen.findByText("🏕️ You have opted out of this tour (relaxing at camp).")
+    ).toBeInTheDocument();
+  });
+
+  it("opens voucher details modal, submits voucher codes, and calls submit_activity_voucher", async () => {
+    const user = userEvent.setup();
+    let currentVoucherStatus = "needed";
+
+    const api = vi.fn().mockImplementation(async (action: string, _input?: any) => {
+      if (action === "get_trip_activities") {
+        return {
+          activities: [
+            {
+              ...mockTripActivities[0],
+              groups: [
+                {
+                  ...mockTripActivities[0].groups[0],
+                  voucher_status: currentVoucherStatus,
+                },
+                mockTripActivities[0].groups[1],
+              ],
+            },
+          ],
+        };
+      }
+      if (action === "submit_activity_voucher") {
+        currentVoucherStatus = "purchased";
+        return { success: true, voucher_status: "purchased" };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    // Click "+ Enter Voucher Details" button
+    const enterVoucherBtn = screen.getByRole("button", { name: /\+ Enter Voucher Details/i });
+    await user.click(enterVoucherBtn);
+
+    // Modal opens
+    expect(screen.getByText(/Enter Voucher Details - GoCar #1/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Entering this cost will automatically post a shared trip expense to the ledger/i
+      )
+    ).toBeInTheDocument();
+
+    // Fill form fields
+    const orderInput = screen.getByLabelText(/Groupon Order \/ Ref #/i);
+    const codeInput = screen.getByLabelText(/Redemption \/ Voucher Code/i);
+    const pinInput = screen.getByLabelText(/Security Code \/ PIN/i);
+    const amountInput = screen.getByLabelText(/Amount in Dollars/i);
+
+    await user.clear(orderInput);
+    await user.type(orderInput, "ORD-9988");
+    await user.clear(codeInput);
+    await user.type(codeInput, "GP-12345");
+    await user.clear(pinInput);
+    await user.type(pinInput, "9876");
+    fireEvent.change(amountInput, { target: { value: "174.60" } });
+
+    // Submit modal
+    const submitBtn = screen.getByRole("button", { name: /Save Voucher/i });
+    fireEvent.submit(submitBtn.closest("form")!);
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        "submit_activity_voucher",
+        expect.objectContaining({
+          tripId: "trip-100",
+          groupId: "grp-1",
+          orderNumber: "ORD-9988",
+          voucherCode: "GP-12345",
+          securityPin: "9876",
+          voucherCostCents: 17460,
+        })
+      );
+    });
+
+    // Badge should be READY
+    expect(await screen.findByText("✓ READY")).toBeInTheDocument();
+  });
+
+  it("opens Tour Operator Call Sheet modal and copies formatted manifest to clipboard", async () => {
+    const user = userEvent.setup();
+    const writeTextSpy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    const api = vi.fn().mockResolvedValue({ activities: mockTripActivities });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    const callSheetBtn = screen.getByRole("button", { name: /📞 Tour Operator Call Sheet/i });
+    await user.click(callSheetBtn);
+
+    // Verify modal is open and table columns exist
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/Tour Operator Call Sheet - San Francisco GoCar Tour/i)).toBeInTheDocument();
+    expect(within(dialog).getByText("Veerraju Amanchi")).toBeInTheDocument();
+    expect(within(dialog).getByText("ORD-9988")).toBeInTheDocument();
+    expect(within(dialog).getByText("GP-12345")).toBeInTheDocument();
+
+    // Click "📋 Copy All to Clipboard"
+    const copyBtn = screen.getByRole("button", { name: /📋 Copy All to Clipboard/i });
+    await user.click(copyBtn);
+
+    expect(writeTextSpy).toHaveBeenCalled();
+    expect(await screen.findByText("✓ Copied to Clipboard!")).toBeInTheDocument();
+  });
+
+  it("displays incoming swap banner and handles Accept and Decline actions", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      if (action === "respond_partner_swap") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(
+      await screen.findByText(/⇄ Swap Request: Bob Smith wants to swap pairings with you!/i)
+    ).toBeInTheDocument();
+
+    const acceptBtn = screen.getByRole("button", { name: /Accept Swap/i });
+    await user.click(acceptBtn);
+
+    expect(api).toHaveBeenCalledWith("respond_partner_swap", {
+      swapRequestId: "swap-1",
+      status: "accepted",
+    });
+  });
+
+  it("renders admin controls and handles auto-shuffle and lock pairings", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      if (action === "admin_manage_activity_pairings") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    // Auto-Shuffle button
+    const shuffleBtn = screen.getByRole("button", { name: /🎲 Auto-Shuffle/i });
+    await user.click(shuffleBtn);
+
+    expect(api).toHaveBeenCalledWith("admin_manage_activity_pairings", {
+      activityId: "act-1",
+      action: "auto_shuffle",
+    });
+
+    // Lock Pairings button
+    const lockBtn = screen.getByRole("button", { name: /🔒 Lock Pairings/i });
+    await user.click(lockBtn);
+
+    expect(api).toHaveBeenCalledWith("admin_manage_activity_pairings", {
+      activityId: "act-1",
+      action: "lock_pairings",
+    });
+  });
+});

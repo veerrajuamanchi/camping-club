@@ -11,6 +11,7 @@ import { dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress"
 import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
+import { TripActivitiesTab } from "./TripActivitiesTab";
 
 type TripDetails = {
   tripId: string;
@@ -135,7 +136,7 @@ type TripDetails = {
   version: number;
 };
 
-type Tab = "overview" | "constitution" | "logistics" | "tasks" | "financials";
+type Tab = "overview" | "constitution" | "logistics" | "tasks" | "financials" | "activities";
 export type TripApiType = <T = unknown>(action: string, input?: unknown) => Promise<T>;
 
 export type TripActivityParticipant = {
@@ -235,7 +236,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get("tab") as Tab | null;
-  const validTabs: Tab[] = ["overview", "constitution", "logistics", "tasks", "financials"];
+  const validTabs: Tab[] = ["overview", "constitution", "logistics", "tasks", "financials", "activities"];
   const [tab, setTabState] = useState<Tab>(urlTab && validTabs.includes(urlTab) ? urlTab : "overview");
 
   useEffect(() => {
@@ -1028,7 +1029,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       </div>
 
       <div className="event-tabs" role="tablist" aria-label="Trip sections">
-        {(["overview", "constitution", "logistics", "tasks", "financials"] as Tab[]).map((t) => (
+        {(["overview", "constitution", "logistics", "tasks", "financials", "activities"] as Tab[]).map((t) => (
           <button
             key={t}
             role="tab"
@@ -1041,6 +1042,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             {t === "logistics" && "Logistics & Packing"}
             {t === "tasks" && "Tasks & Meals"}
             {t === "financials" && "Financials"}
+            {t === "activities" && "🎯 Activities"}
           </button>
         ))}
       </div>
@@ -2221,6 +2223,17 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           currentMemberId={authProfileMemberId}
           api={api}
           onDutyChanged={refresh}
+        />
+      )}
+
+      {tab === "activities" && (
+        <TripActivitiesTab
+          tripId={details.tripId}
+          isAdmin={isAdmin}
+          isConfirmedAttendee={isComing}
+          currentMemberId={authProfileMemberId}
+          api={api}
+          onRefresh={refresh}
         />
       )}
 
