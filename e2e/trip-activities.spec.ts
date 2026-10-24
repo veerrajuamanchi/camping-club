@@ -120,6 +120,7 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
       "https://gocartours.com/wp-content/uploads/2022/11/gocar-experience-monterey-e1669051849670.jpeg";
     const masterAddress = "700 Cannery Row, Monterey, CA 93940";
     const masterNotes = "Use Groupon promo code Halloween for $174.60 per car";
+    const masterBookingUrl = "https://www.groupon.com/deals/gocar-experience-monterey";
 
     await page.getByRole("button", { name: "+ Add Activity Template" }).click();
     const addActivityModal = page.locator(".modal-card", { hasText: "Add Activity Template" });
@@ -132,15 +133,19 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     await addActivityModal.getByLabel("Unit Capacity *").fill("2");
     await addActivityModal.getByLabel("Image URL").fill(masterImageUrl);
     await addActivityModal.getByLabel("Physical Address").fill(masterAddress);
+    await addActivityModal.getByLabel("Booking / Signup URL (e.g. Groupon)").fill(masterBookingUrl);
     await addActivityModal.getByLabel("Booking Notes").fill(masterNotes);
 
     await addActivityModal.getByRole("button", { name: "Save Template" }).click();
     await expect(addActivityModal).toBeHidden();
 
-    // Verify card renders with capacity badge 👥 2 per GoCar
+    // Verify card renders with capacity badge 👥 2 per GoCar and booking link
     const activityCard = page.locator(".event-card", { hasText: masterActivityTitle });
     await expect(activityCard).toBeVisible();
     await expect(activityCard.getByText("👥 2 per GoCar")).toBeVisible();
+    const bookingLink = activityCard.getByRole("link", { name: "🎟️ Booking / Deal Link" });
+    await expect(bookingLink).toBeVisible();
+    await expect(bookingLink).toHaveAttribute("href", masterBookingUrl);
 
     // Track ID for cleanup
     const masterRow = await supabaseAdmin
@@ -159,6 +164,9 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     const reloadedCard = page.locator(".event-card", { hasText: masterActivityTitle });
     await expect(reloadedCard).toBeVisible();
     await expect(reloadedCard.getByText("👥 2 per GoCar")).toBeVisible();
+    const reloadedBookingLink = reloadedCard.getByRole("link", { name: "🎟️ Booking / Deal Link" });
+    await expect(reloadedBookingLink).toBeVisible();
+    await expect(reloadedBookingLink).toHaveAttribute("href", masterBookingUrl);
     await assertNoHorizontalOverflow(page, "admin-catalogs-activities-reloaded");
 
     // =========================================================================
@@ -293,29 +301,85 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     await expect(memberActivityRow.getByText("Attending ✓")).toBeVisible();
     await assertNoHorizontalOverflow(memberPage, "member-scorecard-5-of-5");
 
-    // Admin runs Auto-Shuffle to pair attendees into GoCar #1
+    // Member verifies Compact Activity Card renders after the scorecard on Overview tab
+    const overviewCard = memberPage.getByTestId("hub-activity-overview-card");
+    await expect(overviewCard).toBeVisible();
+    await expect(overviewCard.locator(`img[alt="${masterActivityTitle}"]`)).toBeVisible();
+    await expect(overviewCard.getByRole("button", { name: masterActivityTitle })).toBeVisible();
+    await expect(overviewCard.getByText(/Saturday, Sep 11/i)).toBeVisible();
+    await expect(overviewCard.getByText(masterAddress)).toBeVisible();
+
+    const overviewDealLink = overviewCard.getByRole("link", {
+      name: "🎟️ Buy on Groupon / Booking Link →",
+    });
+    await expect(overviewDealLink).toBeVisible();
+    await expect(overviewDealLink).toHaveAttribute("href", masterBookingUrl);
+    await assertNoHorizontalOverflow(memberPage, "member-overview-compact-card");
+
+    // Verify clicking "View Activity & Pairings →" navigates to 🎯 Activities tab
+    await overviewCard.getByRole("button", { name: "View Activity & Pairings →" }).click();
+    await expect(memberPage.getByRole("tab", { name: "🎯 Activities" })).toHaveAttribute("aria-selected", "true");
+    await expect(memberPage.getByRole("heading", { name: masterActivityTitle })).toBeVisible();
+
+    // Verify scorecard Item #5 link also navigates to 🎯 Activities tab
+    await memberPage.getByRole("tab", { name: "Overview & attendees" }).click();
+    await memberPage.waitForLoadState("networkidle");
+    await memberPage.locator(".hub-activity-row-btn").click();
+    await expect(memberPage.getByRole("tab", { name: "🎯 Activities" })).toHaveAttribute("aria-selected", "true");
+
+    // =========================================================================
+    // Journey 3: Admin Multi-Vehicle & Manual Assignment
+    // =========================================================================
+    // In Admin's view on Activities tab:
     await page.getByRole("tab", { name: "🎯 Activities" }).click();
     await page.waitForLoadState("networkidle");
-    await page.getByRole("button", { name: "🎲 Auto-Shuffle" }).click();
+
+    // Admin clicks "+ Add Vehicle" to create GoCar #1
+    await page.getByRole("button", { name: "+ Add Vehicle" }).click();
+    await expect(page.getByRole("heading", { name: "GoCar #1" })).toBeVisible();
+
+    // Admin clicks "+ Add Vehicle" and verifies a second vehicle group (GoCar #2) is created directly without auto-shuffle!
+    await page.getByRole("button", { name: "+ Add Vehicle" }).click();
+    await expect(page.getByRole("heading", { name: "GoCar #2" })).toBeVisible();
+    await assertNoHorizontalOverflow(page, "admin-activities-multi-vehicle");
+
+    // Admin clicks "Assign Campers" on GoCar #1, selects Member and Admin in the dropdown slots, and saves
+    await page.getByRole("button", { name: "Assign Campers" }).first().click();
+
+    const assignModal = page.locator(".modal-card", { hasText: "Assign Campers - GoCar #1" });
+    await expect(assignModal).toBeVisible();
+    await assertNoHorizontalOverflow(page, "admin-assign-campers-modal");
+
+    await assignModal.getByLabel("Slot 1").selectOption({ label: memberUser.displayName });
+    await assignModal.getByLabel("Slot 2").selectOption({ label: adminUser.displayName });
+    await assignModal.getByRole("button", { name: "Save Assignments" }).click();
+    await expect(assignModal).toBeHidden();
 
     // Verify pairings completed on admin's page
     await expect(
       page.getByText(`✓ You are Riding with ${memberUser.displayName} (GoCar #1)`)
     ).toBeVisible();
 
-    // Member navigates to Activities tab and verifies personalized partner badge
+    // =========================================================================
+    // Journey 4: Participant Focused Vehicle View & Voucher Submission
+    // =========================================================================
+    // Member reloads to fetch updated assignments and navigates to Activities tab
+    await memberPage.reload();
+    await memberPage.waitForLoadState("networkidle");
     await memberPage.getByRole("tab", { name: "🎯 Activities" }).click();
     await memberPage.waitForLoadState("networkidle");
     await assertNoHorizontalOverflow(memberPage, "member-activities-tab");
 
-    // Verifies rider badge displays paired status: "✓ You are Riding with <Partner> (GoCar #1)"
+    // Member sees ONLY their assigned vehicle (GoCar #1) under "🏎️ Your Assigned Vehicle"
+    await expect(memberPage.getByText("🏎️ Your Assigned Vehicle")).toBeVisible();
+    await expect(memberPage.getByRole("heading", { name: "GoCar #1" })).toBeVisible();
     await expect(
       memberPage.getByText(`✓ You are Riding with ${adminUser.displayName} (GoCar #1)`)
     ).toBeVisible();
 
-    // =========================================================================
-    // Journey 3: Voucher Submission, Dynamic Ledger Posting, & Reload Persistence
-    // =========================================================================
+    // Member does NOT see GoCar #2
+    await expect(memberPage.getByText("GoCar #2")).not.toBeVisible();
+
     // Member verifies initial status shows "⚠️ VOUCHER NEEDED" on GoCar #1 card
     await expect(memberPage.getByText("⚠️ VOUCHER NEEDED").first()).toBeVisible();
 
@@ -341,9 +405,17 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     // Verifies reload persistence from Supabase PostgreSQL
     await memberPage.reload();
     await memberPage.waitForLoadState("networkidle");
+    await memberPage.getByRole("tab", { name: "🎯 Activities" }).click();
+    await memberPage.waitForLoadState("networkidle");
     await expect(memberPage.getByText("✓ READY").first()).toBeVisible();
+    await expect(memberPage.getByText("🏎️ Your Assigned Vehicle")).toBeVisible();
+    await expect(memberPage.getByRole("heading", { name: "GoCar #1" })).toBeVisible();
+    await expect(memberPage.getByText("GoCar #2")).not.toBeVisible();
     await assertNoHorizontalOverflow(memberPage, "member-voucher-persisted-reload");
 
+    // =========================================================================
+    // Journey 5: Shared Expense Dynamic Posting & Tour Operator Call Sheet
+    // =========================================================================
     // Member navigates to Financials tab and verifies shared expense was automatically posted
     await memberPage.getByRole("tab", { name: "Financials" }).click();
     await memberPage.waitForLoadState("networkidle");
@@ -354,9 +426,6 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     await expect(memberPage.getByText(/Voucher/i).first()).toBeVisible();
     await expect(memberPage.getByText(/All Attendees \(Dynamic\)/i).first()).toBeVisible();
 
-    // =========================================================================
-    // Journey 4: Tour Operator Call Sheet & Clipboard
-    // =========================================================================
     // Admin reloads page to fetch updated PostgreSQL state and navigates to Activities tab
     await page.reload();
     await page.waitForLoadState("networkidle");
