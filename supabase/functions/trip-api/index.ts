@@ -24,6 +24,9 @@ const actionNames = [
   "get_trip_financials", "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
   "get_master_catalogs", "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
   "submit_deposit", "verify_deposit", "save_meal_preferences", "admin_sync_trip_commitments",
+  "get_trip_activities", "get_master_activities", "admin_manage_master_activity", "admin_manage_trip_activity",
+  "set_activity_participation", "admin_manage_activity_pairings", "submit_activity_voucher",
+  "request_partner_swap", "respond_partner_swap",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -383,6 +386,107 @@ const inputSchemas = {
     additionalInformation: z.string().max(4000).optional().default(""),
     reason,
   }).strict(),
+  get_trip_activities: z.object({
+    tripId: uuid,
+  }).strict(),
+  get_master_activities: z.object({
+    includeInactive: z.boolean().optional(),
+  }).strict().optional().default({}),
+  admin_manage_master_activity: z.object({
+    action: z.enum(["create", "update", "delete"]),
+    id: uuid.optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    category: z.string().trim().max(100).optional(),
+    imageUrl: optionalUrl,
+    locationName: z.string().trim().max(200).nullable().optional(),
+    address: z.string().trim().max(500).nullable().optional(),
+    directionsUrl: optionalUrl,
+    unitLabel: z.string().trim().max(50).optional(),
+    unitCapacity: z.number().int().positive().optional(),
+    bookingNotes: z.string().trim().max(2000).nullable().optional(),
+    isActive: z.boolean().optional(),
+  }).strict(),
+  admin_manage_trip_activity: z.object({
+    action: z.enum(["create", "clone", "clone_from_master", "update", "delete"]),
+    tripId: uuid,
+    activityId: uuid.optional(),
+    masterActivityId: uuid.optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    category: z.string().trim().max(100).optional(),
+    imageUrl: optionalUrl,
+    activityDate: date.optional(),
+    startTime: time.nullable().optional(),
+    endTime: time.nullable().optional(),
+    locationName: z.string().trim().max(200).nullable().optional(),
+    address: z.string().trim().max(500).nullable().optional(),
+    directionsUrl: optionalUrl,
+    unitLabel: z.string().trim().max(50).optional(),
+    unitCapacity: z.number().int().positive().optional(),
+    bookingNotes: z.string().trim().max(2000).nullable().optional(),
+    optOutPolicy: z.enum(["locked_on_voucher", "flexible"]).optional(),
+    groupCount: z.number().int().nonnegative().optional(),
+    autoInitializeGroups: z.boolean().optional(),
+    isPairingsLocked: z.boolean().optional(),
+  }).strict(),
+  set_activity_participation: z.object({
+    tripId: uuid.optional(),
+    activityId: uuid,
+    status: z.enum(["attending", "opted_out"]),
+    notes: z.string().trim().max(500).nullable().optional(),
+    memberId: uuid.optional(),
+  }).strict(),
+  admin_manage_activity_pairings: z.object({
+    tripId: uuid.optional(),
+    activityId: uuid,
+    pairingsAction: z.enum(["create_group", "delete_group", "assign", "unassign", "auto_assign", "auto_shuffle", "lock_pairings", "unlock_pairings", "set_pairings"]).optional(),
+    action: z.enum(["create_group", "delete_group", "assign", "unassign", "auto_assign", "auto_shuffle", "lock_pairings", "unlock_pairings", "set_pairings"]).optional(),
+    groupId: uuid.optional(),
+    memberId: uuid.optional(),
+    groupNumber: z.number().int().positive().optional(),
+    groupName: z.string().trim().max(100).optional(),
+    lockPairings: z.boolean().optional(),
+    groups: z.array(z.object({
+      id: uuid.optional(),
+      groupId: uuid.optional(),
+      group_id: uuid.optional(),
+      groupNumber: z.number().int().positive().optional(),
+      group_number: z.number().int().positive().optional(),
+      groupName: z.string().trim().max(100).optional(),
+      group_name: z.string().trim().max(100).optional(),
+      memberIds: z.array(uuid).optional(),
+      members: z.array(uuid).optional(),
+    })).optional(),
+    assignments: z.array(z.object({
+      groupId: uuid.optional(),
+      group_id: uuid.optional(),
+      memberId: uuid.optional(),
+      member_id: uuid.optional(),
+    })).optional(),
+  }).strict(),
+  submit_activity_voucher: z.object({
+    tripId: uuid.optional(),
+    groupId: uuid,
+    purchaseDate: date.optional(),
+    orderNumber: z.string().trim().max(100).nullable().optional(),
+    orderReferenceNumber: z.string().trim().max(100).nullable().optional(),
+    voucherCode: z.string().trim().max(100).nullable().optional(),
+    securityPin: z.string().trim().max(50).nullable().optional(),
+    voucherCostCents: z.number().int().nonnegative().optional(),
+    amountCents: z.number().int().nonnegative().optional(),
+    purchasedByMemberId: uuid.optional(),
+    purchaserMemberId: uuid.optional(),
+  }).strict(),
+  request_partner_swap: z.object({
+    tripId: uuid.optional(),
+    activityId: uuid,
+    targetMemberId: uuid.optional(),
+    targetGroupId: uuid.optional(),
+  }).strict(),
+  respond_partner_swap: z.object({
+    swapRequestId: uuid.optional(),
+    requestId: uuid.optional(),
+    status: z.enum(["accepted", "declined", "cancelled", "accept", "decline", "cancel"]),
+  }).strict(),
 };
 
 type Member = { member_id: string; auth_user_id: string; member_role: "member" | "admin" | "accountant"; account_status: "active" | "inactive" | "suspended" };
@@ -401,6 +505,7 @@ const adminActions = new Set<Action>([
   "admin_finalize_settlement",
   "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
   "admin_sync_trip_commitments",
+  "admin_manage_master_activity", "admin_manage_trip_activity", "admin_manage_activity_pairings",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -415,6 +520,8 @@ const mutatingActions = new Set<Action>([
   "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
   "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
   "submit_deposit", "verify_deposit", "admin_sync_trip_commitments",
+  "admin_manage_master_activity", "admin_manage_trip_activity", "set_activity_participation",
+  "admin_manage_activity_pairings", "submit_activity_voucher", "request_partner_swap", "respond_partner_swap",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -430,7 +537,7 @@ function databaseStatus(code: string | undefined): number {
 }
 
 function aggregateId(action: Action, input: Record<string, unknown>, memberId: string): string {
-  for (const key of ["tripId", "campsiteId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId", "commitmentId", "carpoolId", "dutyId", "expenseId", "transferId", "id"]) if (typeof input[key] === "string") return input[key] as string;
+  for (const key of ["tripId", "campsiteId", "activityId", "groupId", "swapRequestId", "memberId", "slotId", "timeSlotId", "slotDutyId", "assignmentId", "commitmentId", "carpoolId", "dutyId", "expenseId", "transferId", "id"]) if (typeof input[key] === "string") return input[key] as string;
   return memberId;
 }
 
@@ -459,7 +566,7 @@ async function finish(principal: string, action: Action, aggregate: string, key:
 function resultId(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const result = value as Record<string, unknown>;
-  for (const key of ["rsvpId", "tripId", "ruleVersionId", "overrideId", "campsiteId", "invitationId", "id"]) {
+  for (const key of ["rsvpId", "tripId", "ruleVersionId", "overrideId", "campsiteId", "invitationId", "activity_id", "activityId", "group_id", "groupId", "request_id", "requestId", "id"]) {
     if (typeof result[key] === "string") return result[key] as string;
   }
   return null;
@@ -1592,6 +1699,104 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
   };
 }
 
+async function getTripActivities(member: Member, tripId: string): Promise<Record<string, unknown>> {
+  const trip = await service.from("camping_trips").select("id").eq("id", tripId).is("deleted_at", null).maybeSingle();
+  checkError(trip.error);
+  if (!trip.data) {
+    throw Object.assign(new Error("trip not found"), { status: 404, code: "22023" });
+  }
+
+  const { data: activities, error } = await service
+    .from("trip_activities")
+    .select(`
+      *,
+      participants:trip_activity_participants(*),
+      groups:trip_activity_groups(
+        *,
+        members:trip_activity_group_members(*)
+      ),
+      swap_requests:trip_activity_swap_requests(*)
+    `)
+    .eq("trip_id", tripId)
+    .order("activity_date", { ascending: true })
+    .order("start_time", { ascending: true });
+  checkError(error);
+
+  const rawActivities = activities ?? [];
+  const memberIdSet = new Set<string>();
+
+  for (const act of rawActivities) {
+    for (const p of act.participants ?? []) {
+      if (p.member_id) memberIdSet.add(p.member_id);
+    }
+    for (const g of act.groups ?? []) {
+      if (g.purchaser_member_id) memberIdSet.add(g.purchaser_member_id);
+      for (const m of g.members ?? []) {
+        if (m.member_id) memberIdSet.add(m.member_id);
+      }
+    }
+    for (const s of act.swap_requests ?? []) {
+      if (s.requester_member_id) memberIdSet.add(s.requester_member_id);
+      if (s.target_member_id) memberIdSet.add(s.target_member_id);
+    }
+  }
+
+  const memberProfileMap = new Map<string, string>();
+  if (memberIdSet.size > 0) {
+    const { data: profiles } = await service
+      .from("member_profiles")
+      .select("member_id, display_name")
+      .in("member_id", Array.from(memberIdSet));
+    for (const p of profiles ?? []) {
+      memberProfileMap.set(p.member_id, p.display_name);
+    }
+  }
+
+  const isAdmin = member.member_role === "admin" || member.member_role === "administrator";
+
+  const sanitizedActivities = rawActivities.map((act: any) => {
+    const participants = (act.participants ?? []).map((p: any) => ({
+      ...p,
+      display_name: memberProfileMap.get(p.member_id) ?? null,
+    }));
+
+    const sortedGroups = (act.groups ?? []).sort((a: any, b: any) => (a.group_number ?? 0) - (b.group_number ?? 0));
+    const groups = sortedGroups.map((g: any) => {
+      const isAssigned = (g.members ?? []).some((m: any) => m.member_id === member.member_id) || g.purchaser_member_id === member.member_id;
+      const groupMembers = (g.members ?? []).map((m: any) => ({
+        ...m,
+        display_name: memberProfileMap.get(m.member_id) ?? null,
+      }));
+
+      return {
+        ...g,
+        purchaser_display_name: g.purchaser_member_id ? (memberProfileMap.get(g.purchaser_member_id) ?? null) : null,
+        members: groupMembers,
+        voucher_code: (isAdmin || isAssigned) ? g.voucher_code : null,
+        security_pin: (isAdmin || isAssigned) ? g.security_pin : null,
+      };
+    });
+
+    const swapRequests = (act.swap_requests ?? []).map((s: any) => ({
+      ...s,
+      requester_display_name: memberProfileMap.get(s.requester_member_id) ?? null,
+      target_display_name: memberProfileMap.get(s.target_member_id) ?? null,
+    }));
+
+    return {
+      ...act,
+      participants,
+      groups,
+      swap_requests: swapRequests,
+    };
+  });
+
+  return {
+    tripId,
+    activities: sanitizedActivities,
+  };
+}
+
 async function getConstitution(member: Member, tripId?: string): Promise<Record<string, unknown>> {
   const definitionQuery = service.from("rule_definitions").select("id,stable_key,category,scope,trip_id,active,created_at").order("stable_key");
   const { data: allDefinitions, error: definitionsError } = await definitionQuery;
@@ -1715,29 +1920,59 @@ Deno.serve(async (request) => {
       return errorResponse(request, 500, "master_responsibilities_read_failed", requestId);
     }
   }
+  if (action === "get_trip_activities") {
+    try {
+      return json(request, 200, { ...(await getTripActivities(member, input.tripId as string)), requestId });
+    } catch (err: unknown) {
+      console.error("get_trip_activities failed:", err);
+      const error = err as { message?: string; code?: string; status?: number } | null;
+      if (error?.message === "trip not found" || error?.code === "22023" || error?.status === 404) {
+        return errorResponse(request, 404, "trip_not_found", requestId);
+      }
+      return errorResponse(request, 500, "trip_activities_read_failed", requestId, error?.message);
+    }
+  }
   if (action === "get_master_catalogs") {
     try {
       const includeInactive = Boolean((input as any)?.includeInactive);
       let gearQuery = service.from("master_gear").select("*").order("gear_type", { ascending: true }).order("category", { ascending: true }).order("name", { ascending: true });
       let foodQuery = service.from("master_food_groceries").select("*").order("category", { ascending: true }).order("name", { ascending: true });
       let respQuery = service.from("master_responsibilities").select("*").order("category", { ascending: true }).order("title", { ascending: true });
+      let actQuery = service.from("master_activities").select("*").order("category", { ascending: true }).order("title", { ascending: true });
       if (!includeInactive) {
         gearQuery = gearQuery.eq("active", true);
         foodQuery = foodQuery.eq("active", true);
         respQuery = respQuery.eq("active", true);
+        actQuery = actQuery.eq("is_active", true);
       }
-      const [gearRes, foodRes, respRes] = await Promise.all([gearQuery, foodQuery, respQuery]);
+      const [gearRes, foodRes, respRes, actRes] = await Promise.all([gearQuery, foodQuery, respQuery, actQuery]);
       checkError(gearRes.error);
       checkError(foodRes.error);
       checkError(respRes.error);
+      checkError(actRes.error);
       return json(request, 200, {
         gear: gearRes.data ?? [],
         food: foodRes.data ?? [],
         responsibilities: respRes.data ?? [],
+        activities: actRes.data ?? [],
         requestId,
       });
     } catch {
       return errorResponse(request, 500, "master_catalogs_read_failed", requestId);
+    }
+  }
+  if (action === "get_master_activities") {
+    try {
+      const includeInactive = Boolean((input as any)?.includeInactive);
+      let actQuery = service.from("master_activities").select("*").order("category", { ascending: true }).order("title", { ascending: true });
+      if (!includeInactive) {
+        actQuery = actQuery.eq("is_active", true);
+      }
+      const { data, error } = await actQuery;
+      checkError(error);
+      return json(request, 200, { activities: data ?? [], requestId });
+    } catch {
+      return errorResponse(request, 500, "master_activities_read_failed", requestId);
     }
   }
   if (action === "get_trip_time_slots") {
@@ -2536,6 +2771,158 @@ Deno.serve(async (request) => {
         p_actor_id: member.member_id,
       };
       break;
+    case "admin_manage_master_activity":
+      rpcName = "phase6_manage_master_activity";
+      rpcArgs = {
+        p_action: input.action,
+        p_id: input.id ?? null,
+        p_payload: {
+          title: input.title ?? null,
+          category: input.category ?? null,
+          image_url: input.imageUrl ?? null,
+          location_name: input.locationName ?? null,
+          address: input.address ?? null,
+          directions_url: input.directionsUrl ?? null,
+          unit_label: input.unitLabel ?? null,
+          unit_capacity: input.unitCapacity ?? null,
+          booking_notes: input.bookingNotes ?? null,
+          is_active: input.isActive ?? null,
+        },
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_manage_trip_activity":
+      rpcName = "phase6_manage_trip_activity";
+      rpcArgs = {
+        p_action: input.action === "clone_from_master" ? "clone" : input.action,
+        p_trip_id: input.tripId,
+        p_activity_id: input.activityId ?? null,
+        p_payload: {
+          master_activity_id: input.masterActivityId ?? null,
+          title: input.title ?? null,
+          category: input.category ?? null,
+          image_url: input.imageUrl ?? null,
+          activity_date: input.activityDate ?? null,
+          start_time: input.startTime ?? null,
+          end_time: input.endTime ?? null,
+          location_name: input.locationName ?? null,
+          address: input.address ?? null,
+          directions_url: input.directionsUrl ?? null,
+          unit_label: input.unitLabel ?? null,
+          unit_capacity: input.unitCapacity ?? null,
+          booking_notes: input.bookingNotes ?? null,
+          opt_out_policy: input.optOutPolicy ?? null,
+          group_count: input.groupCount ?? null,
+          auto_initialize_groups: input.autoInitializeGroups ?? null,
+          is_pairings_locked: input.isPairingsLocked ?? null,
+        },
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "set_activity_participation":
+      rpcName = "phase6_set_activity_participation";
+      rpcArgs = {
+        p_activity_id: input.activityId,
+        p_member_id: (member.member_role === "admin" && input.memberId) ? input.memberId : member.member_id,
+        p_status: input.status,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "admin_manage_activity_pairings": {
+      let pairingsAction = input.pairingsAction ?? input.action;
+      let payload: Record<string, unknown> = {};
+
+      if (input.groups || input.assignments) {
+        pairingsAction = "set_pairings";
+        const assignments: Array<{ group_id: string; member_id: string }> = [];
+        if (input.assignments) {
+          for (const a of (input.assignments as any[])) {
+            const gId = a.groupId ?? a.group_id;
+            const mId = a.memberId ?? a.member_id;
+            if (gId && mId) assignments.push({ group_id: gId, member_id: mId });
+          }
+        }
+        if (input.groups) {
+          for (const g of (input.groups as any[])) {
+            const gId = g.id ?? g.groupId ?? g.group_id;
+            const members = g.memberIds ?? g.members ?? [];
+            for (const mId of members) {
+              if (gId && mId) assignments.push({ group_id: gId, member_id: mId });
+            }
+          }
+        }
+        payload = { assignments };
+      } else if (!pairingsAction && input.lockPairings !== undefined) {
+        pairingsAction = input.lockPairings ? "lock_pairings" : "unlock_pairings";
+      } else {
+        pairingsAction = pairingsAction ?? "auto_assign";
+        payload = {
+          group_id: input.groupId,
+          member_id: input.memberId,
+          group_number: input.groupNumber,
+          group_name: input.groupName,
+        };
+      }
+
+      rpcName = "phase6_manage_activity_pairings";
+      rpcArgs = {
+        p_activity_id: input.activityId,
+        p_action: pairingsAction,
+        p_payload: payload,
+        p_actor_id: member.member_id,
+      };
+      break;
+    }
+    case "submit_activity_voucher":
+      rpcName = "phase6_submit_voucher";
+      rpcArgs = {
+        p_group_id: input.groupId,
+        p_purchaser_member_id: input.purchasedByMemberId ?? input.purchaserMemberId ?? member.member_id,
+        p_purchase_date: input.purchaseDate ?? new Date().toISOString().slice(0, 10),
+        p_amount_cents: input.voucherCostCents ?? input.amountCents ?? null,
+        p_order_ref: input.orderNumber ?? input.orderReferenceNumber ?? null,
+        p_voucher_code: input.voucherCode ?? null,
+        p_security_pin: input.securityPin ?? null,
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "request_partner_swap": {
+      let targetMemberId = input.targetMemberId;
+      if (!targetMemberId && input.targetGroupId) {
+        const { data: gm } = await service
+          .from("trip_activity_group_members")
+          .select("member_id")
+          .eq("group_id", input.targetGroupId)
+          .limit(1)
+          .maybeSingle();
+        if (gm?.member_id) targetMemberId = gm.member_id;
+      }
+      rpcName = "phase6_request_partner_swap";
+      rpcArgs = {
+        p_activity_id: input.activityId,
+        p_requester_id: member.member_id,
+        p_target_id: targetMemberId ?? null,
+        p_actor_id: member.member_id,
+      };
+      break;
+    }
+    case "respond_partner_swap": {
+      const swapActionMap: Record<string, string> = {
+        accepted: "accept",
+        accept: "accept",
+        declined: "decline",
+        decline: "decline",
+        cancelled: "cancel",
+        cancel: "cancel",
+      };
+      rpcName = "phase6_respond_partner_swap";
+      rpcArgs = {
+        p_request_id: input.swapRequestId ?? input.requestId,
+        p_action: swapActionMap[(input.status as string)] || input.status,
+        p_actor_id: member.member_id,
+      };
+      break;
+    }
     default: return errorResponse(request, 400, "unsupported_operation", requestId);
   }
 
@@ -2548,6 +2935,21 @@ Deno.serve(async (request) => {
       requestId,
       error.message
     );
+  }
+  if ((action === "request_partner_swap" || action === "respond_partner_swap") && data && typeof data === "object") {
+    (data as any).swap_request_id = (data as any).request_id;
+    (data as any).swapRequestId = (data as any).request_id;
+  }
+  if (action === "set_activity_participation" && input.notes !== undefined) {
+    const targetMemberId = (member.member_role === "admin" && input.memberId) ? input.memberId : member.member_id;
+    await service.from("trip_activity_participants").update({ notes: input.notes }).eq("activity_id", input.activityId).eq("member_id", targetMemberId);
+  }
+  if (action === "admin_manage_activity_pairings" && input.lockPairings !== undefined && (input.groups || input.assignments)) {
+    await service.rpc("phase6_manage_activity_pairings", {
+      p_activity_id: input.activityId,
+      p_action: input.lockPairings ? "lock_pairings" : "unlock_pairings",
+      p_actor_id: member.member_id,
+    });
   }
   if (action === "admin_finalize_settlement") {
     try {
