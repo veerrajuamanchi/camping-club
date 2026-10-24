@@ -80,6 +80,23 @@ const mockCatalogs: MasterCatalogsData = {
       updated_at: "2026-10-10T00:00:00Z",
     },
   ],
+  activities: [
+    {
+      id: "act-1",
+      title: "GoCar Tour Monterey",
+      category: "tour",
+      image_url: null,
+      location_name: "Cannery Row",
+      address: "Monterey, CA",
+      directions_url: null,
+      unit_label: "GoCar",
+      unit_capacity: 2,
+      booking_notes: null,
+      is_active: true,
+      created_at: "2026-10-10T00:00:00Z",
+      updated_at: "2026-10-10T00:00:00Z",
+    },
+  ],
 };
 
 describe("MasterCatalogPage", () => {
@@ -103,6 +120,7 @@ describe("MasterCatalogPage", () => {
       expect(screen.getByRole("tab", { name: /camping gear/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /food & groceries/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /responsibilities/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /activities/i })).toBeInTheDocument();
     });
 
     // Default tab is Camping Gear
@@ -199,6 +217,13 @@ describe("MasterCatalogPage", () => {
     await user.click(screen.getByRole("tab", { name: /responsibilities/i }));
     expect(screen.getByText("Campfire Setup")).toBeInTheDocument();
     expect(screen.queryByText("Pancake Mix")).not.toBeInTheDocument();
+
+    // Switch to Activities
+    await user.click(screen.getByRole("tab", { name: /activities/i }));
+    expect(screen.getByText("GoCar Tour Monterey")).toBeInTheDocument();
+    expect(screen.getByText(/2 per GoCar/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\+ add activity template/i })).toBeInTheDocument();
+    expect(screen.queryByText("Campfire Setup")).not.toBeInTheDocument();
   });
 
   it("opens delete confirmation modal with safe unlinking explanation and sends delete action", async () => {

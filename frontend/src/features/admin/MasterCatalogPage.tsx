@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import type { TripApi } from "../trips/TripCalendarPage";
+import { MasterActivitiesTab, type MasterActivityItem } from "./MasterActivitiesTab";
 
 const defaultApi: TripApi = (action, input, key) => invokeTripApi(action, input, key);
 
@@ -76,6 +77,7 @@ export interface MasterCatalogsData {
   gear: MasterGearItem[];
   food: MasterFoodItem[];
   responsibilities: MasterResponsibilityItem[];
+  activities?: MasterActivityItem[];
 }
 
 export const GEAR_CATEGORY_LABELS: Record<GearCategory, { label: string; icon: string }> = {
@@ -109,7 +111,7 @@ export const RESP_CATEGORY_LABELS: Record<ResponsibilityCategory, { label: strin
   other: { label: "General & Campfire", icon: "🪵" },
 };
 
-type CatalogTab = "gear" | "food" | "responsibilities";
+type CatalogTab = "gear" | "food" | "responsibilities" | "activities";
 type GearFilter = "all" | "individual" | "shared";
 
 export function MasterCatalogPage({ api = defaultApi }: { api?: TripApi }) {
@@ -117,6 +119,7 @@ export function MasterCatalogPage({ api = defaultApi }: { api?: TripApi }) {
     gear: [],
     food: [],
     responsibilities: [],
+    activities: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -177,6 +180,7 @@ export function MasterCatalogPage({ api = defaultApi }: { api?: TripApi }) {
         gear: res.gear ?? [],
         food: res.food ?? [],
         responsibilities: res.responsibilities ?? [],
+        activities: res.activities ?? [],
       });
     } catch {
       setError("Could not load master catalogs. Please try again.");
@@ -499,12 +503,14 @@ export function MasterCatalogPage({ api = defaultApi }: { api?: TripApi }) {
           </Link>
           <h2 style={{ margin: "0.25rem 0" }}>📦 Master Catalogs Directory</h2>
           <p className="admin-subtitle" style={{ color: "#64748b", margin: 0, fontSize: "0.9rem" }}>
-            Reusable templates for Camping Gear, Food & Groceries, and Responsibilities. All active items are automatically seeded into newly created trips.
+            Reusable templates for Camping Gear, Food & Groceries, Responsibilities, and Activities. All active items are automatically seeded into newly created trips.
           </p>
         </div>
-        <button type="button" className="btn-primary" onClick={openAddModal}>
-          + Add {activeTab === "gear" ? "Gear" : activeTab === "food" ? "Grocery Item" : "Responsibility"}
-        </button>
+        {activeTab !== "activities" && (
+          <button type="button" className="btn-primary" onClick={openAddModal}>
+            + Add {activeTab === "gear" ? "Gear" : activeTab === "food" ? "Grocery Item" : "Responsibility"}
+          </button>
+        )}
       </div>
 
       {error && <p className="form-error" role="alert" style={{ marginBottom: "1rem" }}>{error}</p>}
@@ -547,58 +553,72 @@ export function MasterCatalogPage({ api = defaultApi }: { api?: TripApi }) {
         >
           🛠️ Responsibilities ({data.responsibilities.length})
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "activities"}
+          className={activeTab === "activities" ? "active" : ""}
+          onClick={() => {
+            setActiveTab("activities");
+            setSearchQuery("");
+          }}
+        >
+          🎯 Activities ({(data.activities ?? []).length})
+        </button>
       </div>
 
       {/* Controls Bar: Search & Sub-filters */}
-      <div className="filter-bar" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", marginBottom: "1.25rem" }}>
-        <div style={{ flex: "1 1 240px", minWidth: "200px" }}>
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={`Search ${activeTab === "gear" ? "camping gear" : activeTab === "food" ? "food & groceries" : "responsibilities"}…`}
-            style={{ width: "100%", padding: "0.55rem 0.85rem", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-            aria-label="Search items"
-          />
-        </div>
-
-        {/* Instant Filter Pills for Camping Gear */}
-        {activeTab === "gear" && (
-          <div className="rsvp-pills" style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className={`rsvp-pill-btn ${gearFilter === "all" ? "active" : ""}`}
-              onClick={() => setGearFilter("all")}
-            >
-              All ({data.gear.length})
-            </button>
-            <button
-              type="button"
-              className={`rsvp-pill-btn ${gearFilter === "individual" ? "active" : ""}`}
-              onClick={() => setGearFilter("individual")}
-            >
-              🎒 Individual ({data.gear.filter((g) => g.gear_type === "individual").length})
-            </button>
-            <button
-              type="button"
-              className={`rsvp-pill-btn ${gearFilter === "shared" ? "active" : ""}`}
-              onClick={() => setGearFilter("shared")}
-            >
-              ⛺ Shared ({data.gear.filter((g) => g.gear_type === "shared").length})
-            </button>
+      {activeTab !== "activities" && (
+        <div className="filter-bar" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", marginBottom: "1.25rem" }}>
+          <div style={{ flex: "1 1 240px", minWidth: "200px" }}>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={`Search ${activeTab === "gear" ? "camping gear" : activeTab === "food" ? "food & groceries" : "responsibilities"}…`}
+              style={{ width: "100%", padding: "0.55rem 0.85rem", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+              aria-label="Search items"
+            />
           </div>
-        )}
 
-        <label style={{ marginLeft: "auto", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", minHeight: "44px" }}>
-          <input
-            type="checkbox"
-            style={{ width: "18px", height: "18px" }}
-            checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
-          />
-          <span>Show inactive / retired</span>
-        </label>
-      </div>
+          {/* Instant Filter Pills for Camping Gear */}
+          {activeTab === "gear" && (
+            <div className="rsvp-pills" style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={`rsvp-pill-btn ${gearFilter === "all" ? "active" : ""}`}
+                onClick={() => setGearFilter("all")}
+              >
+                All ({data.gear.length})
+              </button>
+              <button
+                type="button"
+                className={`rsvp-pill-btn ${gearFilter === "individual" ? "active" : ""}`}
+                onClick={() => setGearFilter("individual")}
+              >
+                🎒 Individual ({data.gear.filter((g) => g.gear_type === "individual").length})
+              </button>
+              <button
+                type="button"
+                className={`rsvp-pill-btn ${gearFilter === "shared" ? "active" : ""}`}
+                onClick={() => setGearFilter("shared")}
+              >
+                ⛺ Shared ({data.gear.filter((g) => g.gear_type === "shared").length})
+              </button>
+            </div>
+          )}
+
+          <label style={{ marginLeft: "auto", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", minHeight: "44px" }}>
+            <input
+              type="checkbox"
+              style={{ width: "18px", height: "18px" }}
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+            <span>Show inactive / retired</span>
+          </label>
+        </div>
+      )}
 
       {loading ? (
         <p role="status">Loading master catalogs…</p>
@@ -932,6 +952,15 @@ export function MasterCatalogPage({ api = defaultApi }: { api?: TripApi }) {
                 </div>
               ))}
             </div>
+          )}
+
+          {/* TAB 4: ACTIVITIES */}
+          {activeTab === "activities" && (
+            <MasterActivitiesTab
+              api={api}
+              activities={data.activities}
+              onRefresh={load}
+            />
           )}
 
           {((activeTab === "gear" && filteredGear.length === 0) ||
