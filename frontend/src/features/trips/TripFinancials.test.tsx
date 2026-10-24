@@ -634,4 +634,107 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
 
     expect(screen.queryByRole("dialog", { name: /Receipt Preview/i })).not.toBeInTheDocument();
   });
+
+  it("allows admin to switch an expense between dynamic and custom split modes", async () => {
+    const user = userEvent.setup();
+    const mockFinWithAllAttendees = {
+      ...mockDraftFinancials,
+      expenses: [
+        {
+          ...mockDraftFinancials.expenses[0],
+          splitMode: "all_attendees" as const,
+        },
+      ],
+    };
+
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockFinWithAllAttendees);
+      if (action === "admin_manage_trip_expense") return Promise.resolve({ success: true });
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-admin"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    // exp-1 in mockFinWithAllAttendees has splitMode all_attendees
+    expect(await screen.findByText(/All Attendees \(Dynamic\)/i)).toBeInTheDocument();
+
+    const makeCustomBtn = screen.getByRole("button", { name: /Make Custom/i });
+    await user.click(makeCustomBtn);
+
+    expect(mockApi).toHaveBeenCalledWith("admin_manage_trip_expense", {
+      tripId: "trip-1",
+      action: "update",
+      expenseId: "exp-1",
+      splitMode: "custom",
+    });
+  });
+
+  it("submits as all_attendees when clicking Select All in Custom Subset", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+      if (action === "admin_manage_trip_expense") return Promise.resolve({ success: true, expenseId: "new-exp" });
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-admin"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    const addBtn = await screen.findByRole("button", { name: /\+ Add Shared Expense/i });
+    await user.click(addBtn);
+
+    // Switch to Custom Subset
+    const customRadio = screen.getByRole("radio", { name: /Custom Subset/i });
+    await user.click(customRadio);
+
+    // Click Select All (Dynamic)
+    const selectAllBtn = screen.getByRole("button", { name: /Select All/i });
+    await user.click(selectAllBtn);
+
+    // Fill in required fields
+    const descInput = screen.getByPlaceholderText(/S'mores, firewood, groceries/i);
+    await user.type(descInput, "Group Smores");
+    const amountInput = screen.getByPlaceholderText(/25\.00/i);
+    await user.type(amountInput, "60.00");
+
+    const form = screen.getByText(/\+ Record Shared Expense/i).closest("div")?.querySelector("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form!);
+
+    await waitFor(() => {
+      expect(mockApi).toHaveBeenCalledWith(
+        "admin_manage_trip_expense",
+        expect.objectContaining({
+          action: "create",
+          splitMode: "all_attendees",
+          description: "Group Smores",
+          amountCents: 6000,
+        })
+      );
+    });
+  });
 });

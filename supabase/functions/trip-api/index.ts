@@ -151,7 +151,7 @@ const inputSchemas = {
   get_trip_financials: z.object({ tripId: uuid }).strict(),
   admin_manage_trip_expense: z.object({
     tripId: uuid,
-    action: z.enum(["create", "delete"]),
+    action: z.enum(["create", "delete", "update"]),
     expenseId: uuid.optional(),
     expenseType: z.enum(["cabin_deposit", "carpool_mileage", "shared_receipt", "other"]).optional(),
     payerMemberId: uuid.optional(),
@@ -1333,7 +1333,11 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   const expenses = rawExpenses.map((exp: any) => {
     let expAllocs: Array<{ id?: string; memberId: string; memberName: string; allocatedCents: number; isMe: boolean }>;
-    if (exp.split_mode === "all_attendees" && !isFinalized) {
+    const isDynamic = !isFinalized && (
+      exp.split_mode === "all_attendees" ||
+      (!exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
+    );
+    if (isDynamic) {
       const dynamicAllocs = confirmedAttendees.length > 0
         ? calculateEqualAllocations(exp.amount_cents, confirmedAttendees)
         : [];
@@ -1364,7 +1368,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       description: exp.description,
       incurredDate: exp.incurred_date,
       receiptUrl: exp.receipt_url,
-      splitMode: exp.split_mode ?? "all_attendees",
+      splitMode: isDynamic ? "all_attendees" : (exp.split_mode ?? "custom"),
       receiptStoragePath: exp.receipt_storage_path ?? null,
       receiptFileName: exp.receipt_file_name ?? null,
       receiptContentType: exp.receipt_content_type ?? null,
@@ -1489,7 +1493,11 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
     for (const exp of rawExpenses) {
       let expAllocations: Array<{ memberId: string; allocatedCents: number }>;
-      if (exp.split_mode === "all_attendees" && !isFinalized) {
+      const isDynamic = !isFinalized && (
+        exp.split_mode === "all_attendees" ||
+        (!exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
+      );
+      if (isDynamic) {
         const dynamicAllocs = confirmedAttendees.length > 0
           ? calculateEqualAllocations(exp.amount_cents, confirmedAttendees)
           : [];
@@ -2422,8 +2430,10 @@ Deno.serve(async (request) => {
       };
       break;
     case "admin_manage_trip_expense": {
-      const splitMode = (input.splitMode as "all_attendees" | "custom" | undefined) ?? "all_attendees";
-      if (input.action === "create" && splitMode === "all_attendees") {
+      const splitMode = input.action === "create"
+        ? ((input.splitMode as "all_attendees" | "custom" | undefined) ?? "all_attendees")
+        : (input.splitMode as "all_attendees" | "custom" | undefined);
+      if ((input.action === "create" || input.action === "update") && splitMode === "all_attendees") {
         const { data: attendees, error: attError } = await service.from("trip_rsvps")
           .select("member_id")
           .eq("trip_id", input.tripId)
@@ -2432,7 +2442,7 @@ Deno.serve(async (request) => {
           return errorResponse(request, 500, "attendee_lookup_failed", requestId);
         }
         if (!attendees || attendees.length === 0) {
-          return errorResponse(request, 400, "no_confirmed_attendees", requestId, "Cannot create dynamic split expense with no confirmed attendees.");
+          return errorResponse(request, 400, "no_confirmed_attendees", requestId, "Cannot use dynamic split expense with no confirmed attendees.");
         }
       }
       rpcName = "phase5_manage_expense";
@@ -2453,7 +2463,7 @@ Deno.serve(async (request) => {
         })),
         p_actor_id: member.member_id,
         p_is_admin: member.member_role === "admin",
-        p_split_mode: splitMode,
+        p_split_mode: splitMode ?? null,
         p_receipt_storage_path: input.receiptStoragePath ?? null,
         p_receipt_file_name: input.receiptFileName ?? null,
         p_receipt_content_type: input.receiptContentType ?? null,

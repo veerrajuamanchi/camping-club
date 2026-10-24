@@ -257,14 +257,19 @@ export function TripFinancialsTab({
     }
     const amountCents = Math.round(dollars * 100);
 
+    const effectiveSplitMode =
+      splitMode === "all_attendees" || (splitMode === "custom" && selectedParticipantIds.length === attendeesList.length && attendeesList.length > 0)
+        ? "all_attendees"
+        : "custom";
+
     const participantsToSplit =
-      splitMode === "all_attendees"
+      effectiveSplitMode === "all_attendees"
         ? attendeesList.map((a) => a.memberId)
         : selectedParticipantIds;
 
     if (participantsToSplit.length === 0) {
       setErrorMsg(
-        splitMode === "all_attendees"
+        effectiveSplitMode === "all_attendees"
           ? "No confirmed attendees available to split this expense."
           : "Please select at least one participant to split this expense."
       );
@@ -312,7 +317,7 @@ export function TripFinancialsTab({
         description: desc.trim(),
         incurredDate,
         receiptUrl: receiptUrl.trim() || undefined,
-        splitMode,
+        splitMode: effectiveSplitMode,
         receiptStoragePath: receiptStoragePath || undefined,
         receiptFileName: receiptFileName || undefined,
         receiptContentType: receiptContentType || undefined,
@@ -327,6 +332,24 @@ export function TripFinancialsTab({
       await fetchFinancials();
     } catch (err: any) {
       setErrorMsg(err?.message || "Failed to record expense.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleToggleExpenseSplitMode = async (expenseId: string, nextMode: "all_attendees" | "custom") => {
+    try {
+      setActionBusy(true);
+      setErrorMsg(null);
+      await api("admin_manage_trip_expense", {
+        tripId,
+        action: "update",
+        expenseId,
+        splitMode: nextMode,
+      });
+      await fetchFinancials();
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Failed to update expense split mode.");
     } finally {
       setActionBusy(false);
     }
@@ -774,8 +797,37 @@ export function TripFinancialsTab({
                   }}
                 >
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                       <strong style={{ fontSize: "0.9rem" }}>{exp.description}</strong>
+                      {exp.splitMode === "all_attendees" ? (
+                        <span
+                          style={{
+                            background: "#dcfce7",
+                            color: "#166534",
+                            border: "1px solid #86efac",
+                            fontSize: "0.75rem",
+                            padding: "0.15rem 0.5rem",
+                            borderRadius: "9999px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          🌐 All Attendees (Dynamic)
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            background: "#fef3c7",
+                            color: "#92400e",
+                            border: "1px solid #fde68a",
+                            fontSize: "0.75rem",
+                            padding: "0.15rem 0.5rem",
+                            borderRadius: "9999px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          👥 Custom Split ({exp.allocations.length} campers)
+                        </span>
+                      )}
                       {(exp.receiptStoragePath || exp.receiptUrl) && (
                         <button
                           type="button"
@@ -799,10 +851,36 @@ export function TripFinancialsTab({
                     </div>
                     <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
                       Paid by {exp.payerName} on {exp.incurredDate} • Split among {exp.allocations.length} members
+                      {exp.splitMode === "all_attendees" && " (auto-includes new attendees)"}
                     </div>
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    {!isFinalized && isAdmin && (
+                      exp.splitMode === "all_attendees" ? (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={actionBusy}
+                          onClick={() => handleToggleExpenseSplitMode(exp.id, "custom")}
+                          style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                          title="Convert to fixed static allocations for current attendees"
+                        >
+                          Make Custom 🎯
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={actionBusy}
+                          onClick={() => handleToggleExpenseSplitMode(exp.id, "all_attendees")}
+                          style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                          title="Convert to dynamic split across all confirmed attendees"
+                        >
+                          Make Dynamic 🌐
+                        </button>
+                      )
+                    )}
                     <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f172a" }}>
                       {formatMoney(exp.amountCents)}
                     </span>
@@ -984,7 +1062,7 @@ export function TripFinancialsTab({
                 </div>
               ) : (
                 <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.25rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}>
                     <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>
                       Split Between Participants:
                     </span>
@@ -1007,6 +1085,16 @@ export function TripFinancialsTab({
                       </button>
                     </div>
                   </div>
+
+                  {selectedParticipantIds.length === attendeesList.length && attendeesList.length > 0 ? (
+                    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "6px", padding: "0.4rem 0.65rem", fontSize: "0.8rem", color: "#166534", fontWeight: 500 }}>
+                      🌐 All {attendeesList.length} campers selected — this expense will dynamically split across all attendees, including any new campers who join later.
+                    </div>
+                  ) : (
+                    <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "6px", padding: "0.4rem 0.65rem", fontSize: "0.8rem", color: "#92400e" }}>
+                      🎯 Custom subset: {selectedParticipantIds.length} of {attendeesList.length} campers selected (fixed split).
+                    </div>
+                  )}
 
                   <div
                     data-testid="expense-split-list"

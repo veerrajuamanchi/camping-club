@@ -224,8 +224,15 @@ test.describe("Trip Hub, Master Catalogs, Deposit Submission, and Expense Split 
     await page.waitForLoadState("networkidle");
 
     // Enable daily workload target = 2.0x
-    await page.locator("summary", { hasText: "Configure Daily Workload Target" }).click();
+    const summary = page.locator("summary", { hasText: "Configure Daily Workload Target" });
+    await expect(summary).toBeVisible();
+    const workloadDetails = page.locator("details", { has: summary });
+    const isOpen = await workloadDetails.evaluate((el: HTMLDetailsElement) => el.open);
+    if (!isOpen) {
+      await summary.click();
+    }
     const targetCheckbox = page.getByLabel("Use a daily workload target for this trip");
+    await expect(targetCheckbox).toBeVisible();
     if (!(await targetCheckbox.isChecked())) {
       await targetCheckbox.check();
     }
