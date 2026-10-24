@@ -625,5 +625,248 @@ describe("EventDetailsPage", () => {
     // Must NOT see "Manage Meals & Chores" button
     expect(screen.queryByRole("button", { name: /manage meals & chores/i })).not.toBeInTheDocument();
   });
+
+  describe("5-Item Readiness Scorecard with Activity Participation", () => {
+    const readyTripData = {
+      ...tripData,
+      depositStatus: "confirmed" as const,
+      myRsvp: {
+        response: "coming" as const,
+        version: 1,
+        acknowledgmentId: "ack-1",
+        updatedAt: "2026-10-14T00:00:00Z",
+      },
+      myDailyWorkload: {
+        target: 2,
+        tripVersion: 1,
+        satisfied: true,
+        days: [
+          {
+            date: "2026-12-05",
+            selectedWeight: 2,
+            totalWeight: 2,
+            remainingWeight: 0,
+            eligibleSlots: 0,
+            status: "target_met" as const,
+          },
+        ],
+      },
+    };
+
+    const scheduledActivity = {
+      id: "act-1",
+      trip_id: "trip-1",
+      title: "Monterey GoCar Tour",
+      activity_date: "2026-12-06",
+      start_time: "10:00",
+      participants: [] as Array<{
+        id: string;
+        activity_id: string;
+        member_id: string;
+        status: "attending" | "opted_out";
+      }>,
+      groups: [],
+      swap_requests: [],
+    };
+
+    it("displays 5 items when an activity is scheduled for the trip, with 4 of 5 Completed when unanswered", async () => {
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [scheduledActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+
+      await screen.findByText("December Camping");
+      expect(await screen.findByText(/⚡ Required From You \(4 of 5 Completed\)/i)).toBeInTheDocument();
+      expect(screen.getByTestId("hub-activity-row")).toBeInTheDocument();
+      expect(screen.getByText(/Signature Activity/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /count me in/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /opt out/i })).toBeInTheDocument();
+    });
+
+    it("clicking Count Me In! invokes set_activity_participation with status: 'attending' and updates to 5 of 5 Completed (All Done ✓)", async () => {
+      const user = userEvent.setup();
+      let activityParticipants: Array<{
+        id: string;
+        activity_id: string;
+        member_id: string;
+        status: "attending" | "opted_out";
+      }> = [];
+
+      const apiMock = vi.fn().mockImplementation((action: string, input?: any) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") {
+          return Promise.resolve({
+            tripId: "trip-1",
+            activities: [{ ...scheduledActivity, participants: [...activityParticipants] }],
+          });
+        }
+        if (action === "set_activity_participation") {
+          activityParticipants = [
+            { id: "p-1", activity_id: input.activityId, member_id: "m1", status: input.status },
+          ];
+          return Promise.resolve({ success: true });
+        }
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+
+      await screen.findByText("December Camping");
+      expect(await screen.findByText(/⚡ Required From You \(4 of 5 Completed\)/i)).toBeInTheDocument();
+
+      const countMeInBtn = screen.getByRole("button", { name: /count me in/i });
+      await user.click(countMeInBtn);
+
+      expect(apiMock).toHaveBeenCalledWith(
+        "set_activity_participation",
+        expect.objectContaining({
+          activityId: "act-1",
+          status: "attending",
+        })
+      );
+
+      expect(await screen.findByText(/⚡ Required From You \(5 of 5 Completed\)/i)).toBeInTheDocument();
+      expect(screen.getByText("All Done ✓")).toBeInTheDocument();
+      expect(screen.getByText(/Participating in Monterey GoCar Tour/i)).toBeInTheDocument();
+    });
+
+    it("clicking Opt Out invokes set_activity_participation with status: 'opted_out' and updates to 5 of 5 Completed", async () => {
+      const user = userEvent.setup();
+      let activityParticipants: Array<{
+        id: string;
+        activity_id: string;
+        member_id: string;
+        status: "attending" | "opted_out";
+      }> = [];
+
+      const apiMock = vi.fn().mockImplementation((action: string, input?: any) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") {
+          return Promise.resolve({
+            tripId: "trip-1",
+            activities: [{ ...scheduledActivity, participants: [...activityParticipants] }],
+          });
+        }
+        if (action === "set_activity_participation") {
+          activityParticipants = [
+            { id: "p-1", activity_id: input.activityId, member_id: "m1", status: input.status },
+          ];
+          return Promise.resolve({ success: true });
+        }
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+
+      await screen.findByText("December Camping");
+      expect(await screen.findByText(/⚡ Required From You \(4 of 5 Completed\)/i)).toBeInTheDocument();
+
+      const optOutBtn = screen.getByRole("button", { name: /opt out/i });
+      await user.click(optOutBtn);
+
+      expect(apiMock).toHaveBeenCalledWith(
+        "set_activity_participation",
+        expect.objectContaining({
+          activityId: "act-1",
+          status: "opted_out",
+        })
+      );
+
+      expect(await screen.findByText(/⚡ Required From You \(5 of 5 Completed\)/i)).toBeInTheDocument();
+      expect(screen.getByText("All Done ✓")).toBeInTheDocument();
+      expect(screen.getByText(/Opted Out \(Stay at Camp\)/i)).toBeInTheDocument();
+    });
+
+    it("allows user to change choice when pairings are unlocked, but hides Change button when pairings are locked", async () => {
+      const user = userEvent.setup();
+      let activityParticipants: Array<{
+        id: string;
+        activity_id: string;
+        member_id: string;
+        status: "attending" | "opted_out";
+      }> = [
+        { id: "p-1", activity_id: "act-1", member_id: "m1", status: "attending" },
+      ];
+
+      const apiMock = vi.fn().mockImplementation((action: string, input?: any) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") {
+          return Promise.resolve({
+            tripId: "trip-1",
+            activities: [{ ...scheduledActivity, is_pairings_locked: false, participants: [...activityParticipants] }],
+          });
+        }
+        if (action === "set_activity_participation") {
+          activityParticipants = [
+            { id: "p-1", activity_id: input.activityId, member_id: "m1", status: input.status },
+          ];
+          return Promise.resolve({ success: true });
+        }
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      const { unmount } = renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+
+      await screen.findByText("December Camping");
+      expect(await screen.findByText(/⚡ Required From You \(5 of 5 Completed\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Participating in Monterey GoCar Tour/i)).toBeInTheDocument();
+
+      const activityRow = screen.getByTestId("hub-activity-row");
+      const changeBtn = within(activityRow).getByRole("button", { name: "Change" });
+      expect(changeBtn).toBeInTheDocument();
+      await user.click(changeBtn);
+
+      const optOutBtn = within(activityRow).getByRole("button", { name: /opt out/i });
+      expect(optOutBtn).toBeInTheDocument();
+      await user.click(optOutBtn);
+
+      expect(apiMock).toHaveBeenCalledWith(
+        "set_activity_participation",
+        expect.objectContaining({
+          activityId: "act-1",
+          status: "opted_out",
+        })
+      );
+      expect(await screen.findByText(/Opted Out \(Stay at Camp\)/i)).toBeInTheDocument();
+
+      unmount();
+
+      // Now verify that when pairings are locked, Change button is hidden
+      const lockedApiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") {
+          return Promise.resolve({
+            tripId: "trip-1",
+            activities: [{ ...scheduledActivity, is_pairings_locked: true, participants: [...activityParticipants] }],
+          });
+        }
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, lockedApiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+      expect(await screen.findByText(/⚡ Required From You \(5 of 5 Completed\)/i)).toBeInTheDocument();
+      const lockedActivityRow = screen.getByTestId("hub-activity-row");
+      expect(within(lockedActivityRow).queryByRole("button", { name: "Change" })).not.toBeInTheDocument();
+    });
+  });
 });
 

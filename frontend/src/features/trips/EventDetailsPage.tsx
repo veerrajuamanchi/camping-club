@@ -138,6 +138,31 @@ type TripDetails = {
 type Tab = "overview" | "constitution" | "logistics" | "tasks" | "financials";
 export type TripApiType = <T = unknown>(action: string, input?: unknown) => Promise<T>;
 
+export type TripActivityParticipant = {
+  id: string;
+  activity_id: string;
+  member_id: string;
+  status: "attending" | "opted_out";
+  paired_with_member_id?: string | null;
+  notes?: string | null;
+  display_name?: string | null;
+};
+
+export type TripActivityItem = {
+  id: string;
+  trip_id: string;
+  title: string;
+  activity_date?: string | null;
+  start_time?: string | null;
+  unit_label?: string | null;
+  unit_capacity?: number | null;
+  opt_out_policy?: "locked_on_voucher" | "flexible" | null;
+  is_pairings_locked?: boolean | null;
+  participants?: TripActivityParticipant[];
+  groups?: any[];
+  swap_requests?: any[];
+};
+
 const constitutionGroups: Array<{ label: string; categories: string[] }> = [
   { label: "Travel & Cabin", categories: ["transport", "cabin"] },
   { label: "Food & Expenses", categories: ["expenses", "conduct"] },
@@ -249,14 +274,19 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const [showPackingModal, setShowPackingModal] = useState(false);
   const [showMealModal, setShowMealModal] = useState(false);
   const [showConfirmGoingModal, setShowConfirmGoingModal] = useState(false);
+  const [tripActivities, setTripActivities] = useState<TripActivityItem[]>([]);
+  const [activityBusy, setActivityBusy] = useState(false);
+  const [activityMsg, setActivityMsg] = useState<string | null>(null);
+  const [isEditingActivityChoice, setIsEditingActivityChoice] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
     setError(null);
     try {
-      const [tripResult, constitutionResult] = await Promise.all([
+      const [tripResult, constitutionResult, activitiesResult] = await Promise.all([
         api<TripDetails>("get_trip_details", { tripId }),
         Promise.resolve(api<{ definitions?: Array<{ stable_key: string; category: string }> }>("get_constitution", { tripId })).catch(() => null),
+        Promise.resolve(api<{ activities?: TripActivityItem[] }>("get_trip_activities", { tripId })).catch(() => null),
       ]);
       setDetails(tripResult);
       if (constitutionResult?.definitions) {
@@ -266,11 +296,64 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         }
         setCategoryMap(mapping);
       }
+      if (activitiesResult?.activities) {
+        setTripActivities(activitiesResult.activities);
+      } else {
+        setTripActivities([]);
+      }
     } catch (err: any) {
       console.error("Failed to load trip details:", err);
       setError("Could not load trip details. Please try again.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleActivityParticipation(status: "attending" | "opted_out") {
+    if (!primaryActivity || !details) return;
+    setActivityBusy(true);
+    setActivityMsg(null);
+    try {
+      await api("set_activity_participation", {
+        tripId: details.tripId,
+        activityId: primaryActivity.id,
+        status,
+      });
+      setTripActivities((prev) =>
+        prev.map((act) => {
+          if (act.id !== primaryActivity.id) return act;
+          const currentMemberIdVal = authProfileMemberId || "m1";
+          const participants = act.participants || [];
+          const existingIdx = participants.findIndex((p) =>
+            authProfileMemberId ? p.member_id === authProfileMemberId : true
+          );
+          let updatedParticipants: TripActivityParticipant[];
+          if (existingIdx >= 0) {
+            updatedParticipants = [...participants];
+            updatedParticipants[existingIdx] = {
+              ...updatedParticipants[existingIdx],
+              status,
+            };
+          } else {
+            updatedParticipants = [
+              ...participants,
+              {
+                id: `part-${Date.now()}`,
+                activity_id: act.id,
+                member_id: currentMemberIdVal,
+                status,
+              },
+            ];
+          }
+          return { ...act, participants: updatedParticipants };
+        })
+      );
+      setIsEditingActivityChoice(false);
+      await refresh();
+    } catch {
+      setActivityMsg("Failed to update activity choice. Please try again.");
+    } finally {
+      setActivityBusy(false);
     }
   }
 
@@ -590,11 +673,26 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const prefs = details.myMealPreferences;
   const isMealsDone = isComing;
 
+  const primaryActivity = tripActivities.length > 0 ? tripActivities[0] : null;
+  const hasActivities = Boolean(primaryActivity);
+  const totalRequiredCount = hasActivities ? 5 : 4;
+  const myActivityParticipant = primaryActivity?.participants?.find((p) =>
+    authProfileMemberId
+      ? p.member_id === authProfileMemberId
+      : (p.member_id === "m1" || (primaryActivity.participants && primaryActivity.participants.length === 1))
+  );
+  const isActivityDone = Boolean(
+    myActivityParticipant &&
+    (myActivityParticipant.status === "attending" || myActivityParticipant.status === "opted_out")
+  );
+  const canChangeActivity = !primaryActivity?.is_pairings_locked;
+
   let requiredCompletedCount = 0;
   if (isComing) requiredCompletedCount++;
   if (isDepositDone) requiredCompletedCount++;
   if (isChoresDone) requiredCompletedCount++;
   if (isMealsDone) requiredCompletedCount++;
+  if (hasActivities && isComing && isActivityDone) requiredCompletedCount++;
   const satBev = prefs?.saturdayBeverage === "tea" ? "Tea" : prefs?.saturdayBeverage === "none" ? "None" : "Coffee";
   const sunBev = prefs?.sundayBeverage === "coffee" ? "Coffee" : prefs?.sundayBeverage === "none" ? "None" : "Tea";
 
@@ -953,8 +1051,8 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           <div
             className="card"
             style={{
-              background: details.myRsvp?.response === "not_coming" ? "#f8fafc" : requiredCompletedCount === 3 ? "#f0fdf4" : "#fffbeb",
-              border: `1.5px solid ${details.myRsvp?.response === "not_coming" ? "#cbd5e1" : requiredCompletedCount === 3 ? "#86efac" : "#f59e0b"}`,
+              background: details.myRsvp?.response === "not_coming" ? "#f8fafc" : requiredCompletedCount === totalRequiredCount ? "#f0fdf4" : "#fffbeb",
+              border: `1.5px solid ${details.myRsvp?.response === "not_coming" ? "#cbd5e1" : requiredCompletedCount === totalRequiredCount ? "#86efac" : "#f59e0b"}`,
               padding: "1rem 1.25rem",
               borderRadius: "10px",
             }}
@@ -973,19 +1071,19 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 style={{
                   margin: 0,
                   fontWeight: 700,
-                  color: details.myRsvp?.response === "not_coming" ? "#475569" : requiredCompletedCount === 4 ? "#166534" : "#92400e",
+                  color: details.myRsvp?.response === "not_coming" ? "#475569" : requiredCompletedCount === totalRequiredCount ? "#166534" : "#92400e",
                   fontSize: "1.05rem",
                   letterSpacing: "0.3px",
                 }}
               >
                 {details.myRsvp?.response === "not_coming"
                   ? "⚡ Required From You"
-                  : `⚡ Required From You (${requiredCompletedCount} of 4 Completed)`}
+                  : `⚡ Required From You (${requiredCompletedCount} of ${totalRequiredCount} Completed)`}
               </h2>
               <span
                 style={{
-                  background: details.myRsvp?.response === "not_coming" ? "#f1f5f9" : requiredCompletedCount === 4 ? "#dcfce7" : "#fef3c7",
-                  color: details.myRsvp?.response === "not_coming" ? "#64748b" : requiredCompletedCount === 4 ? "#15803d" : "#b45309",
+                  background: details.myRsvp?.response === "not_coming" ? "#f1f5f9" : requiredCompletedCount === totalRequiredCount ? "#dcfce7" : "#fef3c7",
+                  color: details.myRsvp?.response === "not_coming" ? "#64748b" : requiredCompletedCount === totalRequiredCount ? "#15803d" : "#b45309",
                   fontSize: "0.75rem",
                   fontWeight: 700,
                   padding: "3px 8px",
@@ -994,7 +1092,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               >
                 {details.myRsvp?.response === "not_coming"
                   ? "Not Attending"
-                  : requiredCompletedCount === 4
+                  : requiredCompletedCount === totalRequiredCount
                   ? "All Done ✓"
                   : "Action Needed"}
               </span>
@@ -1258,7 +1356,131 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                   </div>
                 </div>
               )}
+
+              {/* Item 5: Signature Activity */}
+              {isComing && hasActivities && primaryActivity && (
+                <div
+                  data-testid="hub-activity-row"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#ffffff",
+                    padding: "0.6rem 0.85rem",
+                    borderRadius: "8px",
+                    border: `1px solid ${isActivityDone && !isEditingActivityChoice ? "#86efac" : "#fde68a"}`,
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <span
+                      style={{
+                        color: isActivityDone && !isEditingActivityChoice ? "#16a34a" : "#d97706",
+                        fontWeight: 700,
+                        marginRight: "0.35rem",
+                      }}
+                    >
+                      {isActivityDone && !isEditingActivityChoice ? "✓" : "⚠️"}
+                    </span>
+                    <strong>Signature Activity</strong>:{" "}
+                    {myActivityParticipant?.status === "attending" && !isEditingActivityChoice ? (
+                      <span style={{ color: "#16a34a", fontWeight: 600 }}>
+                        Participating in {primaryActivity.title}
+                      </span>
+                    ) : myActivityParticipant?.status === "opted_out" && !isEditingActivityChoice ? (
+                      <span style={{ color: "#16a34a", fontWeight: 600 }}>
+                        Opted Out (Stay at Camp)
+                      </span>
+                    ) : (
+                      <span style={{ color: "#b45309", fontWeight: 600 }}>
+                        Action Needed
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    {isActivityDone && !isEditingActivityChoice ? (
+                      <>
+                        <span
+                          style={{
+                            fontSize: "0.8rem",
+                            color: "#16a34a",
+                            fontWeight: 600,
+                            background: "#dcfce7",
+                            padding: "0.25rem 0.6rem",
+                            borderRadius: "9999px",
+                          }}
+                        >
+                          {myActivityParticipant?.status === "attending" ? "Attending ✓" : "Opted Out ✓"}
+                        </span>
+                        {canChangeActivity && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                            onClick={() => setIsEditingActivityChoice(true)}
+                          >
+                            Change
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={activityBusy}
+                          onClick={() => void handleActivityParticipation("attending")}
+                          style={{
+                            padding: "0.35rem 0.75rem",
+                            fontSize: "0.825rem",
+                            borderRadius: "6px",
+                            background: "#16a34a",
+                            color: "#ffffff",
+                            border: "none",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {activityBusy ? "Saving…" : "✓ Count Me In! 🚗"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={activityBusy}
+                          onClick={() => void handleActivityParticipation("opted_out")}
+                          style={{
+                            padding: "0.35rem 0.75rem",
+                            fontSize: "0.825rem",
+                            borderRadius: "6px",
+                            background: "#f1f5f9",
+                            color: "#475569",
+                            border: "1px solid #cbd5e1",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {activityBusy ? "Saving…" : "Opt Out 🏕️"}
+                        </button>
+                        {isEditingActivityChoice && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                            onClick={() => setIsEditingActivityChoice(false)}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
+            )}
+            {activityMsg && (
+              <p style={{ margin: "0.5rem 0 0", fontSize: "0.825rem", color: "#b91c1c" }} role="alert">
+                {activityMsg}
+              </p>
             )}
             {depositMsg && (
               <p style={{ margin: "0.5rem 0 0", fontSize: "0.825rem", color: "#15803d" }} role="status">
