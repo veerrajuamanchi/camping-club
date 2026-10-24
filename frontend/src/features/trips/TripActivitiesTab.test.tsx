@@ -449,4 +449,148 @@ describe("TripActivitiesTab", () => {
       action: "lock_pairings",
     });
   });
+
+  it("non-admin attendee assigned to GoCar #1 only sees GoCar #1 card, and does not see GoCar #2", async () => {
+    const activitiesWithoutSwap = [
+      {
+        ...mockTripActivities[0],
+        swap_requests: [],
+      },
+    ];
+    const api = vi.fn().mockResolvedValue({ activities: activitiesWithoutSwap });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    // Assigned Vehicle header
+    expect(screen.getByText("🏎️ Your Assigned Vehicle")).toBeInTheDocument();
+
+    // GoCar #1 is present with partner and you tags
+    expect(screen.getByText("GoCar #1")).toBeInTheDocument();
+    expect(screen.getByText(/Current User.*\(You\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Veerraju Amanchi.*\(Partner\)/i)).toBeInTheDocument();
+
+    // Buttons are present on assigned vehicle card
+    expect(
+      screen.getByRole("button", { name: /\+ Enter Voucher Details/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /⇄ Request Swap/i })
+    ).toBeInTheDocument();
+
+    // GoCar #2 and other vehicle riders must NOT be rendered for non-admin
+    expect(screen.queryByText("GoCar #2")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bob Smith/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Alice Cooper/i)).not.toBeInTheDocument();
+  });
+
+  it("non-admin attendee who is unassigned sees the friendly waiting banner", async () => {
+    const unassignedActivities = [
+      {
+        ...mockTripActivities[0],
+        groups: [
+          {
+            ...mockTripActivities[0].groups[0],
+            members: [mockTripActivities[0].groups[0].members[1]], // only Veerraju
+          },
+          mockTripActivities[0].groups[1], // Bob & Alice
+        ],
+      },
+    ];
+
+    const api = vi.fn().mockResolvedValue({ activities: unassignedActivities });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    // Friendly waiting banner
+    expect(
+      screen.getByText(
+        /You are confirmed for this tour! The trip organizer will assign your vehicle shortly/i
+      )
+    ).toBeInTheDocument();
+
+    // Vehicle cards must NOT be displayed
+    expect(screen.queryByText("🏎️ Your Assigned Vehicle")).not.toBeInTheDocument();
+    expect(screen.queryByText("GoCar #1")).not.toBeInTheDocument();
+    expect(screen.queryByText("GoCar #2")).not.toBeInTheDocument();
+  });
+
+  it("renders prominent Groupon / Booking button with booking_url link in hero banner", async () => {
+    const activityWithBooking = [
+      {
+        ...mockTripActivities[0],
+        booking_url: "https://www.groupon.com/deals/gocar-tours-sf-promo",
+      },
+    ];
+
+    const api = vi.fn().mockResolvedValue({ activities: activityWithBooking });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    // Prominent Groupon button with price tag from tip ($174.60)
+    const bookingBtn = screen.getByRole("link", {
+      name: /Buy Voucher on Groupon.*\(\$174\.60\)/i,
+    });
+    expect(bookingBtn).toBeInTheDocument();
+    expect(bookingBtn).toHaveAttribute(
+      "href",
+      "https://www.groupon.com/deals/gocar-tours-sf-promo"
+    );
+    expect(bookingBtn).toHaveAttribute("target", "_blank");
+    expect(bookingBtn).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("renders generic activity booking link when booking_url is not Groupon", async () => {
+    const activityWithGenericBooking = [
+      {
+        ...mockTripActivities[0],
+        booking_url: "https://gocartours.com/book-now",
+      },
+    ];
+    const genericApi = vi.fn().mockResolvedValue({ activities: activityWithGenericBooking });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-200"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={genericApi}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Activity Booking Link/i })
+    ).toHaveAttribute("href", "https://gocartours.com/book-now");
+  });
 });

@@ -55,6 +55,7 @@ export type TripActivityItem = {
   directions_url?: string | null;
   deal_strategy_tip?: string | null;
   voucher_url?: string | null;
+  booking_url?: string | null;
   activity_date: string;
   start_time?: string | null;
   end_time?: string | null;
@@ -92,6 +93,18 @@ export const ACTIVITY_CATEGORIES: Record<string, { label: string; icon: string }
   entertainment: { label: "Entertainment & Games", icon: "🎪" },
   other: { label: "Other / Leisure", icon: "🎯" },
 };
+
+export function getBookingButtonLabel(act: TripActivityItem): string {
+  const url = (act.booking_url || act.voucher_url || "").toLowerCase();
+  const tip = act.deal_strategy_tip || "";
+  const priceMatch = tip.match(/\$[\d,]+(\.\d{2})?/);
+  const priceSuffix = priceMatch ? ` (${priceMatch[0]})` : "";
+
+  if (url.includes("groupon")) {
+    return `🎟️ Buy Voucher on Groupon${priceSuffix} →`;
+  }
+  return `🎟️ Activity Booking Link →`;
+}
 
 export function formatActivitySchedule(
   dateStr?: string | null,
@@ -541,10 +554,10 @@ export function TripActivitiesTab({
                     justifyContent: "space-between",
                     alignItems: "flex-start",
                     flexWrap: "wrap",
-                    gap: "8px",
+                    gap: "12px",
                   }}
                 >
-                  <div>
+                  <div style={{ flex: "1 1 300px" }}>
                     <h3 style={{ margin: "0 0 6px 0", fontSize: "1.3rem", color: "#0f172a" }}>
                       {act.title}
                     </h3>
@@ -584,6 +597,34 @@ export function TripActivitiesTab({
                       )}
                     </div>
                   </div>
+
+                  {act.booking_url && (
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <a
+                        href={act.booking_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="primary-button"
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          background: "#d97706",
+                          borderColor: "#b45309",
+                          color: "#ffffff",
+                          fontWeight: 700,
+                          fontSize: "0.9rem",
+                          padding: "8px 16px",
+                          borderRadius: "6px",
+                          textDecoration: "none",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {getBookingButtonLabel(act)}
+                      </a>
+                    </div>
+                  )}
                 </div>
 
                 {/* Deal Strategy Tip Banner */}
@@ -764,16 +805,9 @@ export function TripActivitiesTab({
                   )}
                 </div>
 
-                {/* Vehicle Pairing Cards Grid */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))",
-                    gap: "14px",
-                    marginTop: "16px",
-                  }}
-                >
-                  {(act.groups || []).map((grp) => {
+                {/* Vehicles Section */}
+                {(() => {
+                  const renderGroupCard = (grp: TripActivityGroup) => {
                     const isUserInGroup = (grp.members || []).some(
                       (m) => m.member_id === currentMemberId
                     );
@@ -855,36 +889,40 @@ export function TripActivitiesTab({
 
                         {/* Assigned Riders */}
                         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                          {(grp.members || []).map((m) => (
-                            <div
-                              key={m.id || m.member_id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                fontSize: "0.85rem",
-                                padding: "5px 8px",
-                                background: "#f1f5f9",
-                                borderRadius: "4px",
-                              }}
-                            >
-                              <span style={{ fontWeight: m.member_id === currentMemberId ? 600 : 400 }}>
-                                {m.display_name || "Unknown"}
-                                {m.member_id === currentMemberId ? " (You)" : ""}
-                              </span>
-                              {m.member_id === grp.purchaser_member_id && (
-                                <span
-                                  style={{
-                                    fontSize: "0.72rem",
-                                    color: "#b45309",
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  👑 Purchaser
+                          {(grp.members || []).map((m) => {
+                            const isMe = m.member_id === currentMemberId;
+                            const isPartner = isUserInGroup && !isMe;
+                            return (
+                              <div
+                                key={m.id || m.member_id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  fontSize: "0.85rem",
+                                  padding: "5px 8px",
+                                  background: "#f1f5f9",
+                                  borderRadius: "4px",
+                                }}
+                              >
+                                <span style={{ fontWeight: isMe || isPartner ? 600 : 400 }}>
+                                  {m.display_name || "Unknown"}
+                                  {isMe ? " (You)" : isPartner ? " (Partner)" : ""}
                                 </span>
-                              )}
-                            </div>
-                          ))}
+                                {m.member_id === grp.purchaser_member_id && (
+                                  <span
+                                    style={{
+                                      fontSize: "0.72rem",
+                                      color: "#b45309",
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    👑 Purchaser
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                           {memberCount < maxCap && (
                             <div
                               style={{
@@ -989,8 +1027,142 @@ export function TripActivitiesTab({
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  };
+
+                  if (isAdmin) {
+                    return (
+                      <div style={{ marginTop: "16px" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "10px",
+                          }}
+                        >
+                          <h4
+                            style={{
+                              margin: 0,
+                              fontSize: "1.05rem",
+                              fontWeight: 700,
+                              color: "#0f172a",
+                            }}
+                          >
+                            🏎️ Vehicle Pairings ({(act.groups || []).length})
+                          </h4>
+                        </div>
+
+                        {(act.groups || []).length === 0 ? (
+                          <div
+                            style={{
+                              padding: "16px",
+                              textAlign: "center",
+                              color: "#64748b",
+                              fontSize: "0.9rem",
+                              border: "1px dashed #cbd5e1",
+                              borderRadius: "8px",
+                            }}
+                          >
+                            No vehicle pairings created yet.
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns:
+                                "repeat(auto-fill, minmax(min(100%, 280px), 1fr))",
+                              gap: "14px",
+                            }}
+                          >
+                            {(act.groups || []).map((grp) => renderGroupCard(grp))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  // Non-admin camper view
+                  const myGroup = assignedGroup;
+
+                  if (myGroup) {
+                    return (
+                      <div style={{ marginTop: "16px" }}>
+                        <h4
+                          style={{
+                            margin: "0 0 10px 0",
+                            fontSize: "1.05rem",
+                            fontWeight: 700,
+                            color: "#0f172a",
+                          }}
+                        >
+                          🏎️ Your Assigned Vehicle
+                        </h4>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fill, minmax(min(100%, 320px), 1fr))",
+                            gap: "14px",
+                          }}
+                        >
+                          {renderGroupCard(myGroup)}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (isAttending) {
+                    return (
+                      <div
+                        style={{
+                          marginTop: "16px",
+                          padding: "16px 20px",
+                          background: "#f0fdf4",
+                          border: "1px solid #bbf7d0",
+                          borderLeft: "4px solid #22c55e",
+                          borderRadius: "8px",
+                          color: "#166534",
+                          fontWeight: 600,
+                          fontSize: "0.95rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                        }}
+                      >
+                        <span>🚗</span>
+                        <span>
+                          You are confirmed for this tour! The trip organizer will assign your vehicle shortly.
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  if (isOptedOut) {
+                    return (
+                      <div
+                        style={{
+                          marginTop: "16px",
+                          padding: "16px 20px",
+                          background: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                          borderLeft: "4px solid #64748b",
+                          borderRadius: "8px",
+                          color: "#475569",
+                          fontWeight: 600,
+                          fontSize: "0.95rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                        }}
+                      >
+                        <span>🏕️</span>
+                        <span>You have opted out of this tour (relaxing at campsite).</span>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
               </div>
             </div>
           );
