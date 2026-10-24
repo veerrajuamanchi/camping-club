@@ -371,7 +371,7 @@ export function TripTasksAndMealsTab({
       )}
 
       {isAdmin && dailyWorkload && (
-        <details className="card" style={{ marginBottom: "0.5rem" }}>
+        <details open className="card" style={{ marginBottom: "0.5rem" }}>
           <summary style={{ cursor: "pointer", fontWeight: 600, color: "#1e293b" }}>⚙️ Admin: Configure Daily Workload Target</summary>
           <form onSubmit={event => void saveDailyTarget(event)} style={{ marginTop: "0.75rem", display: "grid", gap: "0.75rem" }}>
             <label className="checkbox-label" style={{ minHeight: "44px", display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -638,12 +638,12 @@ export function TripTasksAndMealsTab({
 
                     const myAssignment = dutyAssignments.find((a) => a.member_id === currentMemberId);
                     const iHaveClaimed = Boolean(myAssignment);
-                    const isGreyedOut = isDoneForThisDay && !iHaveClaimed;
+                    const isGreyedOut = Boolean(dailyWorkload?.target != null && isDoneForThisDay && !iHaveClaimed);
 
                     return (
                       <div
                         key={duty.id}
-                        className="duty-item-row"
+                        className="duty-item-row time-slot-card"
                         style={{
                           background: iHaveClaimed ? "#f0fdf4" : isGreyedOut ? "#f8fafc" : "#ffffff",
                           border: `1px solid ${iHaveClaimed ? "#86efac" : "#e2e8f0"}`,

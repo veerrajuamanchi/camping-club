@@ -23,7 +23,7 @@ const actionNames = [
   "get_trip_logistics", "manage_trip_commitment", "manage_trip_commitments", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
   "get_trip_financials", "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
   "get_master_catalogs", "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
-  "submit_deposit", "verify_deposit", "save_meal_preferences",
+  "submit_deposit", "verify_deposit", "save_meal_preferences", "admin_sync_trip_commitments",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -191,6 +191,7 @@ const inputSchemas = {
     alcoholBeverages: z.array(z.string()).optional().default([]),
   }).strict(),
   get_trip_details: z.object({ tripId: uuid }).strict(),
+  admin_sync_trip_commitments: z.object({ tripId: uuid }).strict(),
   get_trip_time_slots: z.object({ tripId: uuid }).strict(),
   admin_configure_club: z.object({
     timezone: z.string().trim().min(1).max(100), leadDays: z.number().int().min(1).max(120), closeTime: time.nullable(),
@@ -399,6 +400,7 @@ const adminActions = new Set<Action>([
   "admin_manage_carpool", "admin_override_duty",
   "admin_finalize_settlement",
   "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
+  "admin_sync_trip_commitments",
 ]);
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
@@ -412,7 +414,7 @@ const mutatingActions = new Set<Action>([
   "manage_trip_commitment", "manage_trip_commitments", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
   "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
   "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
-  "submit_deposit", "verify_deposit",
+  "submit_deposit", "verify_deposit", "admin_sync_trip_commitments",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -849,7 +851,40 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   const campsite = campsiteResult.data;
   const rsvps = rsvpResult.data ?? [];
   const waitlist = waitlistResult.data ?? [];
-  const rawCommitments = commitmentsResult.data ?? [];
+  let rawCommitments = commitmentsResult.data ?? [];
+  if (rawCommitments.length === 0) {
+    try {
+      let seedActorId = member.member_role === "admin" ? member.member_id : null;
+      if (!seedActorId) {
+        const { data: adminRow } = await service
+          .from("member_profiles")
+          .select("member_id")
+          .eq("member_role", "admin")
+          .eq("account_status", "active")
+          .limit(1)
+          .maybeSingle();
+        seedActorId = adminRow?.member_id ?? null;
+      }
+      if (seedActorId) {
+        const { data: seedRes } = await service.rpc("seed_trip_commitments_from_master", {
+          p_trip_id: tripId,
+          p_actor_id: seedActorId,
+        });
+        if (seedRes && ((seedRes as any).gear_seeded > 0 || (seedRes as any).food_seeded > 0)) {
+          const { data: refreshed } = await service
+            .from("trip_commitments")
+            .select("id,trip_id,category,item_name,quantity_description,assigned_member_id,is_critical,master_gear_id,master_food_id,commitment_type,is_active,created_at,updated_at")
+            .eq("trip_id", tripId)
+            .order("created_at");
+          if (refreshed && refreshed.length > 0) {
+            rawCommitments = refreshed;
+          }
+        }
+      }
+    } catch (seedErr) {
+      console.warn("Auto-seed commitments in getTripDetails warning:", seedErr);
+    }
+  }
   const commitmentMemberIds = rawCommitments.map((c: any) => c.assigned_member_id).filter(Boolean);
   const memberIds = [...new Set([...rsvps.map((r) => r.member_id), ...waitlist.map((w) => w.member_id), ...commitmentMemberIds])];
   const { data: memberRows, error: memberRowsError } = memberIds.length
@@ -1074,7 +1109,41 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
   checkError(commitmentsResult.error);
   checkError(carpoolsResult.error);
 
-  const rawCommitments = commitmentsResult.data ?? [];
+  let rawCommitments = commitmentsResult.data ?? [];
+  if (rawCommitments.length === 0) {
+    try {
+      let seedActorId = member.member_role === "admin" ? member.member_id : null;
+      if (!seedActorId) {
+        const { data: adminRow } = await service
+          .from("member_profiles")
+          .select("member_id")
+          .eq("member_role", "admin")
+          .eq("account_status", "active")
+          .limit(1)
+          .maybeSingle();
+        seedActorId = adminRow?.member_id ?? null;
+      }
+      if (seedActorId) {
+        const { data: seedRes } = await service.rpc("seed_trip_commitments_from_master", {
+          p_trip_id: tripId,
+          p_actor_id: seedActorId,
+        });
+        if (seedRes && ((seedRes as any).gear_seeded > 0 || (seedRes as any).food_seeded > 0)) {
+          const { data: refreshed } = await service
+            .from("trip_commitments")
+            .select("id, trip_id, category, item_name, quantity_description, assigned_member_id, is_critical, master_gear_id, master_food_id, commitment_type, is_active, created_at, updated_at")
+            .eq("trip_id", tripId)
+            .order("category")
+            .order("item_name");
+          if (refreshed && refreshed.length > 0) {
+            rawCommitments = refreshed;
+          }
+        }
+      }
+    } catch (seedErr) {
+      console.warn("Auto-seed commitments in getTripLogistics warning:", seedErr);
+    }
+  }
   const rawCarpools = carpoolsResult.data ?? [];
 
   const memberIdSet = new Set<string>();
@@ -2448,6 +2517,13 @@ Deno.serve(async (request) => {
         p_notes: input.notes ?? null,
         p_actor_id: member.member_id,
         p_is_admin: member.member_role === "admin",
+      };
+      break;
+    case "admin_sync_trip_commitments":
+      rpcName = "seed_trip_commitments_from_master";
+      rpcArgs = {
+        p_trip_id: input.tripId,
+        p_actor_id: member.member_id,
       };
       break;
     default: return errorResponse(request, 400, "unsupported_operation", requestId);

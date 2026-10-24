@@ -363,6 +363,9 @@ test.describe("Trip Hub, Master Catalogs, Deposit Submission, and Expense Split 
       await expect(memberPage.getByRole("heading", { name: "+ Record Shared Expense" })).toBeVisible();
       await assertNoHorizontalOverflow(memberPage, "member-expense-modal");
 
+      // Switch to Custom Subset so participant list and checkboxes are visible
+      await memberPage.getByLabel(/Custom Subset/i).click();
+
       // Verify full attendee names are visible next to checkboxes
       const splitList = memberPage.getByTestId("expense-split-list");
       await expect(splitList).toBeVisible();

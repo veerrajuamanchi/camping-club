@@ -221,6 +221,19 @@ export function TripLogisticsTab({
     }
   }
 
+  async function handleSyncFromCatalog() {
+    setActionBusy(true);
+    setErrorMsg(null);
+    try {
+      await api("admin_sync_trip_commitments", { tripId });
+      await loadLogistics();
+    } catch {
+      setErrorMsg("Failed to sync commitments from Master Catalog.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleSaveNewCommitment(e: React.FormEvent) {
     e.preventDefault();
     if (!newItemName.trim()) return;
@@ -614,14 +627,26 @@ export function TripLogisticsTab({
             </p>
           </div>
           {isAdmin && (
-            <button
-              type="button"
-              className="primary-button"
-              style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
-              onClick={() => setShowAddCommitmentModal(true)}
-            >
-              + Add Item
-            </button>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+                disabled={actionBusy}
+                onClick={() => void handleSyncFromCatalog()}
+                title="Sync shared and individual gear/groceries from Master Catalog"
+              >
+                🔄 Sync from Catalog
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+                onClick={() => setShowAddCommitmentModal(true)}
+              >
+                + Add Item
+              </button>
+            </div>
           )}
         </div>
 

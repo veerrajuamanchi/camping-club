@@ -83,7 +83,7 @@ const tripMutationActions = new Set([
   "manage_trip_commitment", "manage_trip_commitments", "admin_manage_carpool", "record_carpool_mileage", "admin_override_duty",
   "admin_manage_trip_expense", "admin_finalize_settlement", "update_settlement_transfer",
   "admin_manage_master_gear", "admin_manage_master_food", "admin_delete_master_responsibility",
-  "submit_deposit", "verify_deposit",
+  "submit_deposit", "verify_deposit", "admin_sync_trip_commitments",
 ]);
 
 export async function invokeTripApi<T>(action: string, input?: unknown, idempotencyKey?: string): Promise<T> {

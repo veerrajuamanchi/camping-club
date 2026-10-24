@@ -53,8 +53,8 @@ test("confirmed RSVP changes, tasks, deactivation and logout persist", async ({ 
     await page.goto(`/trips/${tripId}?tab=tasks`);
     await expect(page.getByRole("heading", { name: "Your Trip Responsibility Progress" })).toBeVisible();
     await page.getByRole("tab", { name: "Tasks & Meals", exact: true }).click();
-    await page.getByText("Dinner (vegetarian) - prep").scrollIntoViewIfNeeded({ timeout: 20_000 });
-    await expect(page.getByText("Dinner (vegetarian) - prep")).toBeVisible();
+    await page.getByText("Dinner (vegetarian) - prep").first().scrollIntoViewIfNeeded({ timeout: 20_000 });
+    await expect(page.getByText("Dinner (vegetarian) - prep").first()).toBeVisible();
     await expect(page.getByText("Failed to load meal and chore tasks.")).toHaveCount(0);
     await page.goto(`/trips/${tripId}`);
     await page.getByRole("button", { name: "Not Going", exact: true }).click();
@@ -81,8 +81,8 @@ test("confirmed RSVP changes, tasks, deactivation and logout persist", async ({ 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.goto(`/trips/${tripId}?tab=tasks`);
     await page.getByRole("tab", { name: "Tasks & Meals", exact: true }).click();
-    await page.getByText("Dinner (vegetarian) - prep").scrollIntoViewIfNeeded({ timeout: 20_000 });
-    await expect(page.getByText("Dinner (vegetarian) - prep")).toBeVisible();
+    await page.getByText("Dinner (vegetarian) - prep").first().scrollIntoViewIfNeeded({ timeout: 20_000 });
+    await expect(page.getByText("Dinner (vegetarian) - prep").first()).toBeVisible();
     await page.goto("/admin/members");
     await page.locator("article.member-row", { hasText: member.displayName }).getByLabel("Access").selectOption("inactive");
     await expect.poll(response).toBe("not_coming");

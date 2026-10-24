@@ -509,4 +509,132 @@ describe("Task 5: Frontend 'My Trip Hub' Dashboard Refactor", () => {
     expect(screen.queryByRole("button", { name: /Edit Trip/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/Admin: Manage Attendee Roster/i)).not.toBeInTheDocument();
   });
+
+  it("displays 'Required From You (3 of 4 Completed)' when RSVP Going, Deposit Confirmed, and Meals set, but Chores needed", async () => {
+    const data3of4 = {
+      ...mockTripHubData,
+      depositStatus: "confirmed" as const,
+      myMealPreferences: {
+        id: "mp-1",
+        tripId: "trip-hub-1",
+        memberId: "m-user",
+        defaultDiet: "non_vegetarian",
+        saturdayBeverage: "coffee",
+        sundayBeverage: "coffee",
+        alcoholBeverages: [],
+      },
+      myDailyWorkload: {
+        target: 2.0,
+        satisfied: false,
+        tripVersion: 1,
+        days: [{ date: "2026-12-05", status: "action_needed", selectedWeight: 1.0, eligibleRemainingWeight: 2.0, unmetReason: "below_target" }],
+      },
+    };
+
+    renderTripHub(data3of4);
+
+    expect(await screen.findByRole("heading", { name: /Required From You \(3 of 4 Completed\)/i })).toBeInTheDocument();
+    expect(screen.getByText("Action Needed")).toBeInTheDocument();
+  });
+
+  it("displays 'Required From You (4 of 4 Completed)' and 'All Done ✓' when all four requirements are satisfied", async () => {
+    const data4of4 = {
+      ...mockTripHubData,
+      depositStatus: "confirmed" as const,
+      myMealPreferences: {
+        id: "mp-1",
+        tripId: "trip-hub-1",
+        memberId: "m-user",
+        defaultDiet: "non_vegetarian",
+        saturdayBeverage: "coffee",
+        sundayBeverage: "coffee",
+        alcoholBeverages: [],
+      },
+      myDailyWorkload: {
+        target: 2.0,
+        satisfied: true,
+        tripVersion: 1,
+        days: [{ date: "2026-12-05", status: "satisfied", selectedWeight: 2.0, eligibleRemainingWeight: 0.0, unmetReason: "met" }],
+      },
+      myDutyCount: 2,
+    };
+
+    renderTripHub(data4of4);
+
+    expect(await screen.findByRole("heading", { name: /Required From You \(4 of 4 Completed\)/i })).toBeInTheDocument();
+    expect(screen.getByText("All Done ✓")).toBeInTheDocument();
+  });
+
+  it("allows camper to check off packing list items, persists to localStorage, and updates live count", async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+
+    renderTripHub();
+
+    // Open packing modal
+    const viewListBtn = await screen.findByRole("button", { name: /View List/i });
+    await user.click(viewListBtn);
+
+    // Modal appears with 2 items
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Sleeping Bag (30°F)")).toBeInTheDocument();
+    expect(screen.getByText("Packed 0 of 2 items")).toBeInTheDocument();
+
+    // Check off the first item
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[0]);
+
+    // Progress updates to 1 of 2
+    expect(screen.getByText("Packed 1 of 2 items")).toBeInTheDocument();
+
+    // Close modal
+    const closeBtn = screen.getByRole("button", { name: /Close/i });
+    await user.click(closeBtn);
+
+    // Section 2 checklist banner reflects 1 of 2 packed
+    expect(screen.getByText(/\(1 of 2 packed\)/i)).toBeInTheDocument();
+  });
+
+  it("allows admin to sync packing items from master catalog and add custom packing items", async () => {
+    const user = userEvent.setup();
+    const apiMock = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_details") return Promise.resolve(mockTripHubData);
+      if (action === "admin_sync_trip_commitments") return Promise.resolve({ success: true, gear_seeded: 5 });
+      if (action === "manage_trip_commitment") return Promise.resolve({ success: true });
+      if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+      return Promise.resolve({});
+    });
+
+    renderTripHub(mockTripHubData, true, "m-admin", apiMock);
+
+    // Check that admin sees 'Sync Catalog 🔄' in the personal packing section
+    const syncBtn = await screen.findByRole("button", { name: /Sync Catalog 🔄/i });
+    expect(syncBtn).toBeInTheDocument();
+    await user.click(syncBtn);
+
+    expect(apiMock).toHaveBeenCalledWith("admin_sync_trip_commitments", {
+      tripId: "trip-hub-1",
+    });
+
+    // Open modal and add a custom packing item
+    const viewListBtn = screen.getByRole("button", { name: /View List/i });
+    await user.click(viewListBtn);
+
+    const addBtn = screen.getByRole("button", { name: /\+ Add Packing Item/i });
+    await user.click(addBtn);
+
+    const nameInput = screen.getByPlaceholderText(/Item name/i);
+    await user.type(nameInput, "Rain Jacket");
+    const submitAddBtn = screen.getByRole("button", { name: /\+ Add Item to Checklist/i });
+    await user.click(submitAddBtn);
+
+    expect(apiMock).toHaveBeenCalledWith("manage_trip_commitment", {
+      tripId: "trip-hub-1",
+      action: "admin_create",
+      itemName: "Rain Jacket",
+      quantityDescription: null,
+      category: "gear",
+      commitmentType: "individual_pack",
+    });
+  });
 });

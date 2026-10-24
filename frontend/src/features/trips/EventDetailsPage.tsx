@@ -335,6 +335,76 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
     await refresh();
   }
 
+  const [packedItemIds, setPackedItemIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!tripId) return;
+    try {
+      const saved = localStorage.getItem(`packing_checked_${tripId}_${authProfileMemberId || "me"}`);
+      setPackedItemIds(saved ? new Set(JSON.parse(saved)) : new Set());
+    } catch {
+      setPackedItemIds(new Set());
+    }
+  }, [tripId, authProfileMemberId]);
+
+  function handleTogglePacked(idOrName: string) {
+    if (!tripId) return;
+    setPackedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(idOrName)) {
+        next.delete(idOrName);
+      } else {
+        next.add(idOrName);
+      }
+      try {
+        localStorage.setItem(
+          `packing_checked_${tripId}_${authProfileMemberId || "me"}`,
+          JSON.stringify([...next])
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  async function handleSyncTripCommitments() {
+    if (!details) return;
+    setLoading(true);
+    try {
+      await api("admin_sync_trip_commitments", { tripId: details.tripId });
+      await refresh();
+    } catch (err) {
+      console.error("Failed to sync trip commitments:", err);
+      setError("Failed to sync commitments from Master Catalog.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAddPackingItem(itemName: string, quantityDescription?: string, category: string = "gear") {
+    if (!details) return;
+    await api("manage_trip_commitment", {
+      tripId: details.tripId,
+      action: "admin_create",
+      itemName,
+      quantityDescription: quantityDescription || null,
+      category,
+      commitmentType: "individual_pack",
+    });
+    await refresh();
+  }
+
+  async function handleDeletePackingItem(commitmentId: string) {
+    if (!details) return;
+    await api("manage_trip_commitment", {
+      tripId: details.tripId,
+      action: "admin_delete",
+      commitmentId,
+    });
+    await refresh();
+  }
+
   useEffect(() => {
     void refresh();
   }, [tripId]);
@@ -511,11 +581,6 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       : (details.myDutyCount ?? 0) >= (details.taskQuotaTarget ?? 2)
   );
 
-  let requiredCompletedCount = 0;
-  if (isComing) requiredCompletedCount++;
-  if (isDepositDone) requiredCompletedCount++;
-  if (isChoresDone) requiredCompletedCount++;
-
   const mealSlots: MealSlotItem[] = (details.mealHeadcounts?.meals ?? []).map((m) => ({
     id: m.slotId,
     label: m.slotLabel,
@@ -523,6 +588,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   }));
 
   const prefs = details.myMealPreferences;
+  const isMealsDone = isComing;
+
+  let requiredCompletedCount = 0;
+  if (isComing) requiredCompletedCount++;
+  if (isDepositDone) requiredCompletedCount++;
+  if (isChoresDone) requiredCompletedCount++;
+  if (isMealsDone) requiredCompletedCount++;
   const satBev = prefs?.saturdayBeverage === "tea" ? "Tea" : prefs?.saturdayBeverage === "none" ? "None" : "Coffee";
   const sunBev = prefs?.sundayBeverage === "coffee" ? "Coffee" : prefs?.sundayBeverage === "none" ? "None" : "Tea";
 
@@ -582,6 +654,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const individualPackItems = details.commitments?.individualPack
     ?? details.commitmentsList?.filter((c) => c.commitmentType === "individual_pack" && c.isActive)
     ?? [];
+  const packedCount = individualPackItems.filter((i) => packedItemIds.has(i.id || i.itemName)).length;
   const sharedVolunteerItems = details.commitments?.sharedVolunteer
     ?? details.commitmentsList?.filter((c) => c.commitmentType === "shared_volunteer" && c.isActive)
     ?? [];
@@ -900,19 +973,19 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 style={{
                   margin: 0,
                   fontWeight: 700,
-                  color: details.myRsvp?.response === "not_coming" ? "#475569" : requiredCompletedCount === 3 ? "#166534" : "#92400e",
+                  color: details.myRsvp?.response === "not_coming" ? "#475569" : requiredCompletedCount === 4 ? "#166534" : "#92400e",
                   fontSize: "1.05rem",
                   letterSpacing: "0.3px",
                 }}
               >
                 {details.myRsvp?.response === "not_coming"
                   ? "⚡ Required From You"
-                  : `⚡ Required From You (${requiredCompletedCount} of 3 Completed)`}
+                  : `⚡ Required From You (${requiredCompletedCount} of 4 Completed)`}
               </h2>
               <span
                 style={{
-                  background: details.myRsvp?.response === "not_coming" ? "#f1f5f9" : requiredCompletedCount === 3 ? "#dcfce7" : "#fef3c7",
-                  color: details.myRsvp?.response === "not_coming" ? "#64748b" : requiredCompletedCount === 3 ? "#15803d" : "#b45309",
+                  background: details.myRsvp?.response === "not_coming" ? "#f1f5f9" : requiredCompletedCount === 4 ? "#dcfce7" : "#fef3c7",
+                  color: details.myRsvp?.response === "not_coming" ? "#64748b" : requiredCompletedCount === 4 ? "#15803d" : "#b45309",
                   fontSize: "0.75rem",
                   fontWeight: 700,
                   padding: "3px 8px",
@@ -921,7 +994,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               >
                 {details.myRsvp?.response === "not_coming"
                   ? "Not Attending"
-                  : requiredCompletedCount === 3
+                  : requiredCompletedCount === 4
                   ? "All Done ✓"
                   : "Action Needed"}
               </span>
@@ -1354,24 +1427,50 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 <div>
                   <span style={{ marginRight: "0.4rem" }}>🎒</span>
                   <strong>Your Packing Checklist</strong>:{" "}
-                  <span>{individualPackItems.length} {individualPackItems.length === 1 ? "item" : "items"} to bring</span>
+                  <span>
+                    {individualPackItems.length} {individualPackItems.length === 1 ? "item" : "items"} to bring
+                    {individualPackItems.length > 0 && (
+                      <span
+                        style={{
+                          marginLeft: "0.4rem",
+                          color: packedCount === individualPackItems.length ? "#16a34a" : "#2563eb",
+                          fontWeight: 600,
+                        }}
+                      >
+                        ({packedCount} of {individualPackItems.length} packed{packedCount === individualPackItems.length ? " ✓" : ""})
+                      </span>
+                    )}
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPackingModal(true)}
-                  style={{
-                    padding: "0.3rem 0.7rem",
-                    fontSize: "0.8rem",
-                    borderRadius: "4px",
-                    border: "1px solid #cbd5e1",
-                    background: "#f8fafc",
-                    color: "#334155",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  View List 👁️
-                </button>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+                      onClick={() => void handleSyncTripCommitments()}
+                      title="Sync items from Master Catalog"
+                    >
+                      Sync Catalog 🔄
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowPackingModal(true)}
+                    style={{
+                      padding: "0.3rem 0.7rem",
+                      fontSize: "0.8rem",
+                      borderRadius: "4px",
+                      border: "1px solid #cbd5e1",
+                      background: "#f8fafc",
+                      color: "#334155",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    View List 👁️
+                  </button>
+                </div>
               </div>
 
               {/* Shared Expenses */}
@@ -1949,7 +2048,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       {showPackingModal && (
         <PersonalPackingListModal
           items={individualPackItems}
+          packedItemIds={packedItemIds}
+          onTogglePacked={handleTogglePacked}
           onClose={() => setShowPackingModal(false)}
+          isAdmin={isAdmin}
+          onSyncMaster={isAdmin ? handleSyncTripCommitments : undefined}
+          onAddItem={isAdmin ? handleAddPackingItem : undefined}
+          onDeleteItem={isAdmin ? handleDeletePackingItem : undefined}
         />
       )}
 
@@ -2267,11 +2372,30 @@ function EditLogisticsModal({
 
 function PersonalPackingListModal({
   items,
+  packedItemIds,
+  onTogglePacked,
   onClose,
+  isAdmin,
+  onSyncMaster,
+  onAddItem,
+  onDeleteItem,
 }: {
-  items: Array<{ itemName: string; category?: string; quantityDescription?: string | null }>;
+  items: Array<{ id?: string; itemName: string; category?: string; quantityDescription?: string | null }>;
+  packedItemIds: Set<string>;
+  onTogglePacked: (idOrName: string) => void;
   onClose: () => void;
+  isAdmin?: boolean;
+  onSyncMaster?: () => Promise<void>;
+  onAddItem?: (name: string, qty?: string, cat?: string) => Promise<void>;
+  onDeleteItem?: (id: string) => Promise<void>;
 }) {
+  const [newItemName, setNewItemName] = useState("");
+  const [newItemQty, setNewItemQty] = useState("");
+  const [newItemCat, setNewItemCat] = useState("gear");
+  const [busy, setBusy] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -2281,6 +2405,37 @@ function PersonalPackingListModal({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
+
+  const packedCount = items.filter((i) => packedItemIds.has(i.id || i.itemName)).length;
+  const progressPercent = items.length > 0 ? Math.round((packedCount / items.length) * 100) : 0;
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newItemName.trim() || !onAddItem) return;
+    setBusy(true);
+    try {
+      await onAddItem(newItemName.trim(), newItemQty.trim() || undefined, newItemCat);
+      setNewItemName("");
+      setNewItemQty("");
+      setShowAddForm(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSync() {
+    if (!onSyncMaster) return;
+    setSyncBusy(true);
+    try {
+      await onSyncMaster();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSyncBusy(false);
+    }
+  }
 
   return (
     <div
@@ -2304,19 +2459,27 @@ function PersonalPackingListModal({
       <div
         className="card"
         style={{
-          maxWidth: "500px",
+          maxWidth: "560px",
           width: "100%",
           maxHeight: "85vh",
           overflowY: "auto",
           background: "#ffffff",
           borderRadius: "12px",
           padding: "1.5rem",
+          display: "flex",
+          flexDirection: "column",
+          gap: "1rem",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <h3 id="packing-modal-title" style={{ margin: 0, fontSize: "1.2rem", color: "#0f172a" }}>
-            🎒 Personal Packing Checklist
-          </h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h3 id="packing-modal-title" style={{ margin: 0, fontSize: "1.2rem", color: "#0f172a" }}>
+              🎒 Personal Packing Checklist
+            </h3>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.825rem", color: "#64748b" }}>
+              Check off items as you pack them into your car or backpack.
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -2334,55 +2497,237 @@ function PersonalPackingListModal({
           </button>
         </div>
 
-        <p style={{ margin: "0 0 1rem 0", fontSize: "0.875rem", color: "#64748b" }}>
-          Selected by organizer for this trip. Every camper should pack these individual items:
-        </p>
-
-        {items.length === 0 ? (
-          <p style={{ color: "#94a3b8", fontStyle: "italic", fontSize: "0.9rem" }}>
-            No personal packing items listed for this trip yet.
-          </p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {items.map((item, idx) => (
+        {/* Progress Bar */}
+        {items.length > 0 && (
+          <div style={{ background: "#f8fafc", padding: "0.75rem 1rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.4rem" }}>
+              <span style={{ color: progressPercent === 100 ? "#16a34a" : "#1e293b" }}>
+                {progressPercent === 100 ? "🎉 All Packed & Ready!" : `Packed ${packedCount} of ${items.length} items`}
+              </span>
+              <span style={{ color: "#64748b" }}>{progressPercent}%</span>
+            </div>
+            <div style={{ height: "8px", width: "100%", background: "#e2e8f0", borderRadius: "4px", overflow: "hidden" }}>
               <div
-                key={idx}
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "0.6rem 0.85rem",
-                  background: "#f8fafc",
-                  borderRadius: "6px",
-                  border: "1px solid #e2e8f0",
+                  height: "100%",
+                  width: `${progressPercent}%`,
+                  background: progressPercent === 100 ? "#22c55e" : "#3b82f6",
+                  transition: "width 0.3s ease",
                 }}
-              >
-                <div>
-                  <strong style={{ color: "#1e293b", fontSize: "0.9rem" }}>{item.itemName}</strong>
-                  {item.quantityDescription && (
-                    <span style={{ fontSize: "0.8rem", color: "#64748b", marginLeft: "0.4rem" }}>
-                      ({item.quantityDescription})
-                    </span>
-                  )}
-                </div>
-                <span
-                  style={{
-                    fontSize: "0.75rem",
-                    padding: "0.2rem 0.5rem",
-                    background: "#e2e8f0",
-                    color: "#475569",
-                    borderRadius: "4px",
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {item.category ?? "gear"}
-                </span>
-              </div>
-            ))}
+              />
+            </div>
           </div>
         )}
 
-        <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
+        {/* Admin Quick Actions */}
+        {isAdmin && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", padding: "0.5rem 0" }}>
+            <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 600 }}>Organizer Controls:</span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {onSyncMaster && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={syncBusy}
+                  onClick={() => void handleSync()}
+                  style={{ fontSize: "0.78rem", padding: "0.25rem 0.6rem" }}
+                >
+                  {syncBusy ? "Syncing…" : "🔄 Sync from Catalog"}
+                </button>
+              )}
+              {onAddItem && (
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => setShowAddForm(!showAddForm)}
+                  style={{ fontSize: "0.78rem", padding: "0.25rem 0.6rem" }}
+                >
+                  {showAddForm ? "Cancel Add" : "+ Add Packing Item"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Add Item Form (Admin) */}
+        {showAddForm && isAdmin && onAddItem && (
+          <form
+            onSubmit={(e) => void handleAdd(e)}
+            style={{
+              padding: "0.85rem",
+              background: "#f0fdf4",
+              borderRadius: "8px",
+              border: "1px solid #86efac",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.5rem",
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "#166534" }}>Add Personal Item for This Trip</div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <input
+                type="text"
+                placeholder="Item name (e.g., Rain Jacket)"
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                required
+                style={{ flex: "2 1 180px", padding: "0.4rem 0.6rem", fontSize: "0.85rem", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+              />
+              <input
+                type="text"
+                placeholder="Qty (e.g., 1)"
+                value={newItemQty}
+                onChange={(e) => setNewItemQty(e.target.value)}
+                style={{ flex: "1 1 80px", padding: "0.4rem 0.6rem", fontSize: "0.85rem", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+              />
+              <select
+                value={newItemCat}
+                onChange={(e) => setNewItemCat(e.target.value)}
+                style={{ flex: "1 1 100px", padding: "0.4rem 0.6rem", fontSize: "0.85rem", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+              >
+                <option value="gear">Gear</option>
+                <option value="sleep">Sleep</option>
+                <option value="clothing">Clothing</option>
+                <option value="shelter">Shelter</option>
+                <option value="safety">Safety</option>
+                <option value="tools">Tools</option>
+                <option value="kitchen">Kitchen</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={busy || !newItemName.trim()}
+              className="primary-button"
+              style={{ alignSelf: "flex-end", fontSize: "0.8rem", padding: "0.3rem 0.8rem" }}
+            >
+              {busy ? "Adding…" : "+ Add Item to Checklist"}
+            </button>
+          </form>
+        )}
+
+        {/* Items List */}
+        {items.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "1.5rem 1rem", background: "#f8fafc", borderRadius: "8px", border: "1px dashed #cbd5e1" }}>
+            <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🎒</div>
+            <p style={{ margin: "0 0 0.5rem 0", color: "#475569", fontWeight: 600 }}>
+              No personal packing items listed for this trip yet.
+            </p>
+            <p style={{ margin: "0 0 1rem 0", fontSize: "0.825rem", color: "#64748b" }}>
+              {isAdmin
+                ? "As an organizer, sync items from the Master Catalog or add custom trip items above."
+                : "The trip organizer hasn't published packing recommendations yet."}
+            </p>
+            {isAdmin && onSyncMaster && (
+              <button
+                type="button"
+                className="primary-button"
+                disabled={syncBusy}
+                onClick={() => void handleSync()}
+                style={{ fontSize: "0.85rem", padding: "0.4rem 0.9rem" }}
+              >
+                {syncBusy ? "Syncing…" : "🔄 Sync from Master Catalog"}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "40vh", overflowY: "auto" }}>
+            {items.map((item, idx) => {
+              const key = item.id || item.itemName || String(idx);
+              const isPacked = packedItemIds.has(key) || (item.id && packedItemIds.has(item.id)) || packedItemIds.has(item.itemName);
+              return (
+                <div
+                  key={key}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "0.55rem 0.85rem",
+                    background: isPacked ? "#f0fdf4" : "#ffffff",
+                    borderRadius: "6px",
+                    border: `1px solid ${isPacked ? "#86efac" : "#e2e8f0"}`,
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      cursor: "pointer",
+                      flex: 1,
+                      margin: 0,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(isPacked)}
+                      onChange={() => onTogglePacked(item.id || item.itemName)}
+                      style={{ width: "17px", height: "17px", cursor: "pointer", accentColor: "#16a34a" }}
+                    />
+                    <div>
+                      <span
+                        style={{
+                          color: isPacked ? "#15803d" : "#1e293b",
+                          fontSize: "0.875rem",
+                          fontWeight: 500,
+                          textDecoration: isPacked ? "line-through" : "none",
+                        }}
+                      >
+                        {item.itemName}
+                      </span>
+                      {item.quantityDescription && (
+                        <span style={{ fontSize: "0.78rem", color: "#64748b", marginLeft: "0.35rem" }}>
+                          ({item.quantityDescription})
+                        </span>
+                      )}
+                    </div>
+                  </label>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <span
+                      style={{
+                        fontSize: "0.72rem",
+                        padding: "0.15rem 0.45rem",
+                        background: isPacked ? "#dcfce7" : "#f1f5f9",
+                        color: isPacked ? "#166534" : "#475569",
+                        borderRadius: "4px",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {item.category ?? "gear"}
+                    </span>
+                    {isAdmin && item.id && onDeleteItem && (
+                      <button
+                        type="button"
+                        onClick={() => void onDeleteItem(item.id!)}
+                        title="Delete item from this trip"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#94a3b8",
+                          padding: "0.15rem 0.35rem",
+                          fontSize: "0.85rem",
+                          borderRadius: "4px",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "#dc2626")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#94a3b8")}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.5rem" }}>
+          <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+            💡 Checklist progress is saved locally on your device.
+          </span>
           <button
             type="button"
             className="secondary-button"

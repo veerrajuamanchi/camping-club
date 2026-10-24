@@ -413,6 +413,20 @@ describe("TripTasksAndMealsTab", () => {
   it("greys out remaining open duties for the day once the member selects a chore for that day", async () => {
     const dataWithMyClaimOnDate = {
       ...mockTaskMatrixData,
+      myDailyWorkload: {
+        target: 1.5,
+        tripVersion: 1,
+        satisfied: true,
+        days: [
+          {
+            date: "2026-11-13",
+            dayName: "Friday",
+            selectedWeight: 1.5,
+            targetWeight: 1.5,
+            status: "target_met" as const,
+          },
+        ],
+      },
       activeAssignments: [
         {
           id: "assign-my-claim",
