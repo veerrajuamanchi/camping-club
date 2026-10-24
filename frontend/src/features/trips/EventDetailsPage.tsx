@@ -159,6 +159,7 @@ export type TripActivityItem = {
   address?: string | null;
   directions_url?: string | null;
   booking_url?: string | null;
+  booking_notes?: string | null;
   activity_date?: string | null;
   start_time?: string | null;
   end_time?: string | null;
@@ -1711,16 +1712,25 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     >
                       View Activity &amp; Pairings &rarr;
                     </button>
-                    {primaryActivity.booking_url && (
-                      <a
-                        href={primaryActivity.booking_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-sm-accent"
-                      >
-                        🎟️ Buy on Groupon / Booking Link &rarr;
-                      </a>
-                    )}
+                    {(() => {
+                      const effectiveBookingUrl =
+                        primaryActivity.booking_url ||
+                        (primaryActivity.booking_notes &&
+                        /^https?:\/\//i.test(primaryActivity.booking_notes.trim())
+                          ? primaryActivity.booking_notes.trim()
+                          : null);
+                      if (!effectiveBookingUrl) return null;
+                      return (
+                        <a
+                          href={effectiveBookingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-sm-accent"
+                        >
+                          🎟️ Buy on Groupon / Booking Link &rarr;
+                        </a>
+                      );
+                    })()}
                     {primaryActivity.directions_url && (
                       <a
                         href={primaryActivity.directions_url}

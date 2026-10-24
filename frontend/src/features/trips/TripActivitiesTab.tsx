@@ -96,8 +96,8 @@ export const ACTIVITY_CATEGORIES: Record<string, { label: string; icon: string }
   other: { label: "Other / Leisure", icon: "🎯" },
 };
 
-export function getBookingButtonLabel(act: TripActivityItem): string {
-  const url = (act.booking_url || act.voucher_url || "").toLowerCase();
+export function getBookingButtonLabel(act: TripActivityItem, bookingUrl?: string | null): string {
+  const url = (bookingUrl || act.booking_url || act.voucher_url || act.booking_notes || "").toLowerCase();
   const tip = act.deal_strategy_tip || "";
   const priceMatch = tip.match(/\$[\d,]+(\.\d{2})?/);
   const priceSuffix = priceMatch ? ` (${priceMatch[0]})` : "";
@@ -182,6 +182,7 @@ export function TripActivitiesTab({
     group: TripActivityGroup;
   } | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<TripActivityItem | null>(null);
 
   async function loadActivities() {
     setError(null);
@@ -206,6 +207,33 @@ export function TripActivitiesTab({
     await loadActivities();
     if (onRefresh) {
       await onRefresh();
+    }
+  }
+
+  async function handleDeleteActivity(activityId: string, activityTitle: string) {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete "${activityTitle}"? All vehicle pairings for this activity will be removed.`
+      )
+    ) {
+      return;
+    }
+    setActionBusy(true);
+    setActionMsg(null);
+    setError(null);
+    try {
+      await api("admin_manage_trip_activity", {
+        action: "delete",
+        tripId,
+        activityId,
+      });
+      await refreshAll();
+      setActionMsg(`Activity "${activityTitle}" deleted.`);
+    } catch (err: any) {
+      console.error("Delete activity failed:", err);
+      setError(err?.message || "Failed to delete activity.");
+    } finally {
+      setActionBusy(false);
     }
   }
 
@@ -670,33 +698,73 @@ export function TripActivitiesTab({
                     </div>
                   </div>
 
-                  {act.booking_url && (
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <a
-                        href={act.booking_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="primary-button"
+                  {(() => {
+                    const effectiveBookingUrl =
+                      act.booking_url ||
+                      (act.booking_notes && /^https?:\/\//i.test(act.booking_notes.trim())
+                        ? act.booking_notes.trim()
+                        : null);
+
+                    return (
+                      <div
                         style={{
-                          display: "inline-flex",
+                          display: "flex",
                           alignItems: "center",
-                          gap: "6px",
-                          background: "#d97706",
-                          borderColor: "#b45309",
-                          color: "#ffffff",
-                          fontWeight: 700,
-                          fontSize: "0.9rem",
-                          padding: "8px 16px",
-                          borderRadius: "6px",
-                          textDecoration: "none",
-                          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
-                          whiteSpace: "nowrap",
+                          gap: "8px",
+                          flexWrap: "wrap",
                         }}
                       >
-                        {getBookingButtonLabel(act)}
-                      </a>
-                    </div>
-                  )}
+                        {effectiveBookingUrl && (
+                          <a
+                            href={effectiveBookingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="primary-button"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              background: "#d97706",
+                              borderColor: "#b45309",
+                              color: "#ffffff",
+                              fontWeight: 700,
+                              fontSize: "0.9rem",
+                              padding: "8px 16px",
+                              borderRadius: "6px",
+                              textDecoration: "none",
+                              boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {getBookingButtonLabel(act, effectiveBookingUrl)}
+                          </a>
+                        )}
+
+                        {isAdmin && (
+                          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              style={{ fontSize: "0.85rem", padding: "8px 12px", whiteSpace: "nowrap" }}
+                              onClick={() => setEditingActivity(act)}
+                            >
+                              ✏️ Edit Activity
+                            </button>
+                            <button
+                              type="button"
+                              className="danger-button"
+                              style={{ fontSize: "0.85rem", padding: "8px 10px", color: "#dc2626" }}
+                              title="Delete Activity"
+                              aria-label={`Delete ${act.title}`}
+                              onClick={() => handleDeleteActivity(act.id, act.title)}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Deal Strategy Tip Banner */}
@@ -729,6 +797,42 @@ export function TripActivitiesTab({
                     )}
                   </div>
                 )}
+
+                {/* Booking Notes Banner */}
+                {act.booking_notes &&
+                  act.booking_notes.trim() !==
+                    (act.booking_url ||
+                      (act.booking_notes && /^https?:\/\//i.test(act.booking_notes.trim())
+                        ? act.booking_notes.trim()
+                        : null)) && (
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        borderLeft: "4px solid #0284c7",
+                        padding: "10px 14px",
+                        borderRadius: "6px",
+                        marginTop: "12px",
+                        color: "#334155",
+                        fontSize: "0.88rem",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <strong>📝 Booking Notes:</strong>{" "}
+                      {/^https?:\/\//i.test(act.booking_notes.trim()) ? (
+                        <a
+                          href={act.booking_notes.trim()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: "#0284c7", fontWeight: 600, textDecoration: "underline" }}
+                        >
+                          {act.booking_notes.trim()}
+                        </a>
+                      ) : (
+                        act.booking_notes
+                      )}
+                    </div>
+                  )}
 
                 {/* Personalized Rider Badge */}
                 {isOptedOut ? (
@@ -1351,6 +1455,20 @@ export function TripActivitiesTab({
           onClose={() => setAddModalOpen(false)}
           onSuccess={async () => {
             setAddModalOpen(false);
+            await refreshAll();
+          }}
+        />
+      )}
+
+      {/* EDIT ACTIVITY MODAL (ADMIN) */}
+      {editingActivity && (
+        <EditActivityModal
+          tripId={tripId}
+          activity={editingActivity}
+          api={api}
+          onClose={() => setEditingActivity(null)}
+          onSuccess={async () => {
+            setEditingActivity(null);
             await refreshAll();
           }}
         />
@@ -2403,6 +2521,274 @@ function AddActivityModal({
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// EDIT ACTIVITY MODAL (ADMIN)
+// -------------------------------------------------------------
+function EditActivityModal({
+  tripId,
+  activity,
+  api,
+  onClose,
+  onSuccess,
+}: {
+  tripId: string;
+  activity: TripActivityItem;
+  api: TripApiType;
+  onClose: () => void;
+  onSuccess: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [title, setTitle] = useState(activity.title || "");
+  const [category, setCategory] = useState(activity.category || "tour");
+  const [activityDate, setActivityDate] = useState(activity.activity_date || "");
+  const [startTime, setStartTime] = useState(
+    activity.start_time ? activity.start_time.slice(0, 5) : "10:00"
+  );
+  const [endTime, setEndTime] = useState(
+    activity.end_time ? activity.end_time.slice(0, 5) : "17:00"
+  );
+  const [unitLabel, setUnitLabel] = useState(activity.unit_label || "Vehicle");
+  const [unitCapacity, setUnitCapacity] = useState(String(activity.unit_capacity || 2));
+  const [locationName, setLocationName] = useState(activity.location_name || "");
+  const [address, setAddress] = useState(activity.address || "");
+  const [directionsUrl, setDirectionsUrl] = useState(activity.directions_url || "");
+  const [bookingUrl, setBookingUrl] = useState(
+    activity.booking_url ||
+      (activity.booking_notes && /^https?:\/\//i.test(activity.booking_notes.trim())
+        ? activity.booking_notes.trim()
+        : "")
+  );
+  const [bookingNotes, setBookingNotes] = useState(activity.booking_notes || "");
+  const [imageUrl, setImageUrl] = useState(activity.image_url || "");
+  const [dealStrategyTip, setDealStrategyTip] = useState(activity.deal_strategy_tip || "");
+
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim() || !activityDate) {
+      setError("Please provide a title and date.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api("admin_manage_trip_activity", {
+        action: "update",
+        tripId,
+        activityId: activity.id,
+        title: title.trim(),
+        category,
+        activityDate,
+        startTime: startTime ? `${startTime}:00` : undefined,
+        endTime: endTime ? `${endTime}:00` : undefined,
+        unitLabel: unitLabel.trim() || "Vehicle",
+        unitCapacity: parseInt(unitCapacity, 10) || 2,
+        locationName: locationName.trim() || undefined,
+        address: address.trim() || undefined,
+        directionsUrl: directionsUrl.trim() || undefined,
+        bookingUrl: bookingUrl.trim() || undefined,
+        bookingNotes: bookingNotes.trim() || undefined,
+        imageUrl: imageUrl.trim() || undefined,
+        dealStrategyTip: dealStrategyTip.trim() || undefined,
+      });
+      await onSuccess();
+    } catch (err: any) {
+      console.error("Update activity failed:", err);
+      setError(err?.message || "Failed to update activity.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit Trip Activity"
+        style={{ maxWidth: "540px", width: "95%" }}
+      >
+        <h3 style={{ margin: "0 0 12px 0" }}>Edit Trip Activity</h3>
+        {error && (
+          <p role="alert" className="form-error" style={{ marginBottom: "12px" }}>
+            {error}
+          </p>
+        )}
+        <form onSubmit={handleUpdate} className="stack" style={{ gap: "10px" }}>
+          <label>
+            Activity Title *
+            <input
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. GoCar Monterey Tours"
+            />
+          </label>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <label>
+              Category
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                {Object.entries(ACTIVITY_CATEGORIES).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v.icon} {v.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Date *
+              <input
+                type="date"
+                required
+                value={activityDate}
+                onChange={(e) => setActivityDate(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <label>
+              Start Time
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+              />
+            </label>
+            <label>
+              End Time
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "8px" }}>
+            <label>
+              Unit Label
+              <input
+                type="text"
+                value={unitLabel}
+                onChange={(e) => setUnitLabel(e.target.value)}
+                placeholder="e.g. GoCar, Kayak, Boat"
+              />
+            </label>
+            <label>
+              Capacity / Unit
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={unitCapacity}
+                onChange={(e) => setUnitCapacity(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <label>
+            Location / Departure Point Name
+            <input
+              type="text"
+              value={locationName}
+              onChange={(e) => setLocationName(e.target.value)}
+              placeholder="e.g. GoCar Monterey Departures"
+            />
+          </label>
+
+          <label>
+            Physical Address
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. 791 Foam St, Monterey, CA 93940"
+            />
+          </label>
+
+          <label>
+            Google Maps / Directions URL
+            <input
+              type="url"
+              value={directionsUrl}
+              onChange={(e) => setDirectionsUrl(e.target.value)}
+              placeholder="https://maps.google.com/?q=..."
+            />
+          </label>
+
+          <label>
+            Booking / Signup URL (e.g. Groupon)
+            <input
+              type="url"
+              value={bookingUrl}
+              onChange={(e) => setBookingUrl(e.target.value)}
+              placeholder="https://www.groupon.com/deals/..."
+            />
+          </label>
+
+          <label>
+            Booking Notes &amp; Instructions
+            <textarea
+              value={bookingNotes}
+              onChange={(e) => setBookingNotes(e.target.value)}
+              placeholder="Waiver requirements, Groupon instructions, promo codes, driver's license details..."
+              rows={2}
+            />
+          </label>
+
+          <label>
+            Photo Image URL
+            <input
+              type="url"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://..."
+            />
+          </label>
+
+          <label>
+            Deal Strategy Tip
+            <textarea
+              value={dealStrategyTip}
+              onChange={(e) => setDealStrategyTip(e.target.value)}
+              placeholder="Tip for attendees on getting coupons or Groupons..."
+              rows={2}
+            />
+          </label>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: "8px",
+              marginTop: "12px",
+              paddingTop: "12px",
+              borderTop: "1px solid #e2e8f0",
+            }}
+          >
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="primary-button" disabled={busy}>
+              {busy ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

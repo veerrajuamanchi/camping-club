@@ -28,6 +28,7 @@ const mockDraftFinancials: TripFinancialsData = {
       driverName: "Sarah M.",
       vehicleDescription: "Silver Subaru",
       milesDriven: 100,
+      rateCentsPerMile: 76,
       amountCents: 7600,
       occupantCount: 3,
       occupantNames: ["Sarah M.", "Dave K.", "Alice Admin"],

@@ -254,4 +254,37 @@ describe("Phase 4: Trip Logistics, Commitments & Carpools", () => {
       );
     });
   });
+
+  it("displays $0.50/mi mileage reimbursement text and small-carpool collaboration disclaimer", async () => {
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_logistics") {
+        return Promise.resolve({
+          commitments: mockCommitments,
+          carpools: [],
+          memberReadiness: mockMemberReadiness,
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripLogisticsTab
+        tripId="trip-1"
+        isConfirmedAttendee={true}
+        isAdmin={false}
+        currentMemberId="member-1"
+        api={mockApi}
+      />
+    );
+
+    expect(
+      await screen.findByText(/post-trip reimbursement \(\$0\.50\/mi for 3\+ passengers\)/i)
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByText(
+        /disclaimer: for carpools with fewer than 3 passengers, riders can collaborate to share the vehicle expenses directly between themselves/i
+      )
+    ).toBeInTheDocument();
+  });
 });

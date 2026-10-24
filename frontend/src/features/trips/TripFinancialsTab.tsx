@@ -33,6 +33,7 @@ export type CarpoolReimbursement = {
   driverName: string;
   vehicleDescription: string;
   milesDriven: number;
+  rateCentsPerMile?: number;
   amountCents: number;
   occupantCount: number;
   occupantNames: string[];
@@ -744,7 +745,9 @@ export function TripFinancialsTab({
           {/* Carpool Mileage Reimbursements */}
           {data?.carpoolReimbursements && data.carpoolReimbursements.length > 0 && (
             <div style={{ display: "grid", gap: "0.5rem" }}>
-              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>🚗 Carpool Mileage Reimbursements ($0.76/mile)</h4>
+              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
+                🚗 Carpool Mileage Reimbursements ({`$${((data.carpoolReimbursements[0]?.rateCentsPerMile ?? 50) / 100).toFixed(2)}/mile`})
+              </h4>
               {data.carpoolReimbursements.map((cpr) => (
                 <div
                   key={cpr.carpoolId}

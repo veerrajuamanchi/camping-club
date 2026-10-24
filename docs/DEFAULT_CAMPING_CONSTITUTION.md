@@ -4,7 +4,7 @@ This is the general-rule copy seeded by Phase 2 and shown in the administrator C
 
 ## Transportation
 
-- **Driver mileage:** A driver is reimbursed $0.76 per mile when the carpool carries at least three people, including the driver.
+- **Driver mileage:** A driver is reimbursed $0.50 per mile when the carpool carries at least three people, including the driver.
 - **Car-wash contribution:** Each participant contributes $5 toward the car wash.
 - **Van arrangements:** For a group of four, use one van. For five, use one van when feasible; an exception may be used when one van is not feasible. For groups up to eight, aim to use two vans; a third van is an exception.
 - **Travel budget target:** Target no more than $50 per person for travel expenses. The $5 per-person car-wash contribution is included in this target.

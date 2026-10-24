@@ -458,7 +458,10 @@ export function TripLogisticsTab({
           <div>
             <h2 style={{ margin: 0 }}>🚗 Logistics, Carpools &amp; Transportation</h2>
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.88rem", color: "#6b7280" }}>
-              {carpools.length} vehicle(s) configured · Drivers record odometer mileage for post-trip reimbursement ($0.76/mi for 3+ passengers).
+              {carpools.length} vehicle(s) configured · Drivers record odometer mileage for post-trip reimbursement ($0.50/mi for 3+ passengers).
+            </p>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.82rem", color: "#64748b", fontStyle: "italic" }}>
+              ⚠️ Disclaimer: For carpools with fewer than 3 passengers, riders can collaborate to share the vehicle expenses directly between themselves.
             </p>
           </div>
           {isAdmin && (

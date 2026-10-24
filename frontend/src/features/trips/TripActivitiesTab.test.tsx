@@ -879,4 +879,90 @@ describe("TripActivitiesTab", () => {
       })
     );
   });
+
+  it("falls back to booking_notes as booking URL when booking_url is null and booking_notes is a URL", async () => {
+    const activityWithNotesUrl: TripActivityItem = {
+      ...mockTripActivities[0],
+      booking_url: null,
+      booking_notes: "https://www.groupon.com/checkout/cart?deal=monterey-gocar",
+    } as unknown as TripActivityItem;
+
+    const api = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_activities") {
+        return Promise.resolve({ activities: [activityWithNotesUrl] });
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    const bookingLink = screen.getByRole("link", {
+      name: /Buy Voucher on Groupon/i,
+    });
+    expect(bookingLink).toBeInTheDocument();
+    expect(bookingLink).toHaveAttribute(
+      "href",
+      "https://www.groupon.com/checkout/cart?deal=monterey-gocar"
+    );
+  });
+
+  it("allows admin to open Edit Activity modal and update activity booking_url", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_activities") {
+        return Promise.resolve({ activities: mockTripActivities });
+      }
+      if (action === "admin_manage_trip_activity") {
+        return Promise.resolve({ success: true });
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("San Francisco GoCar Tour")).toBeInTheDocument();
+
+    const editBtn = screen.getByRole("button", { name: /✏️ Edit Activity/i });
+    await user.click(editBtn);
+
+    const dialog = screen.getByRole("dialog", { name: /Edit Trip Activity/i });
+    expect(dialog).toBeInTheDocument();
+
+    const bookingUrlInput = within(dialog).getByLabelText(
+      /Booking \/ Signup URL \(e\.g\. Groupon\)/i
+    );
+    await user.clear(bookingUrlInput);
+    await user.type(bookingUrlInput, "https://www.groupon.com/deals/updated-gocar-tour");
+
+    const saveBtn = within(dialog).getByRole("button", { name: /Save Changes/i });
+    await user.click(saveBtn);
+
+    expect(api).toHaveBeenCalledWith(
+      "admin_manage_trip_activity",
+      expect.objectContaining({
+        action: "update",
+        tripId: "trip-100",
+        activityId: "act-1",
+        bookingUrl: "https://www.groupon.com/deals/updated-gocar-tour",
+      })
+    );
+  });
 });

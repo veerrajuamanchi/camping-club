@@ -1513,7 +1513,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     };
   });
 
-  const ratePerMile = trip.trip_mileage_rate_cents ?? 76;
+  const ratePerMile = trip.trip_mileage_rate_cents ?? 50;
   const carpoolReimbursements = rawCarpools
     .filter((cp: any) => {
       const occupantCount = ((cp as any).riders ?? []).length + 1;

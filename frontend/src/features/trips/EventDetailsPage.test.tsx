@@ -1024,6 +1024,30 @@ describe("EventDetailsPage", () => {
       expect(within(overviewCard).getByLabelText("Activity category icon")).toBeInTheDocument();
       expect(within(overviewCard).queryByRole("img")).not.toBeInTheDocument();
     });
+
+    it("renders booking link from booking_notes when booking_url is null and booking_notes is a URL", async () => {
+      const notesUrlActivity = {
+        ...scheduledActivity,
+        booking_url: null,
+        booking_notes: "https://www.groupon.com/deals/gocar-tours-from-notes",
+      };
+
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [notesUrlActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const overviewCard = screen.getByTestId("hub-activity-overview-card");
+      const bookingLink = within(overviewCard).getByRole("link", { name: /Buy on Groupon \/ Booking Link/i });
+      expect(bookingLink).toHaveAttribute("href", "https://www.groupon.com/deals/gocar-tours-from-notes");
+    });
   });
 });
 
