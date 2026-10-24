@@ -716,3 +716,78 @@ label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color
     min-height: 44px;
   }
 }
+
+/* Hub activity scorecard link */
+.hub-activity-row-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  transition: color 0.15s ease;
+  min-height: auto;
+}
+
+.hub-activity-row-btn:hover {
+  color: #0284c7;
+}
+
+.hub-activity-row-btn:hover strong {
+  color: #0369a1;
+  text-decoration: underline;
+}
+
+/* Activity overview action buttons */
+.btn-sm-primary,
+.btn-sm-accent,
+.btn-sm-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  font-size: 0.825rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  line-height: 1.25;
+  min-height: 36px;
+}
+
+.btn-sm-primary {
+  background: #1c2d24;
+  color: #ffffff;
+  border: 1px solid #1c2d24;
+}
+.btn-sm-primary:hover {
+  background: #2b4336;
+  color: #ffffff;
+}
+
+.btn-sm-accent {
+  background: #d97706;
+  color: #ffffff;
+  border: 1px solid #b45309;
+}
+.btn-sm-accent:hover {
+  background: #b45309;
+  color: #ffffff;
+}
+
+.btn-sm-secondary {
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #cbd5e1;
+}
+.btn-sm-secondary:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+

@@ -867,6 +867,163 @@ describe("EventDetailsPage", () => {
       const lockedActivityRow = screen.getByTestId("hub-activity-row");
       expect(within(lockedActivityRow).queryByRole("button", { name: "Change" })).not.toBeInTheDocument();
     });
+
+    it("Item #5 in scorecard has a clickable activity link that switches tab to activities", async () => {
+      const user = userEvent.setup();
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [scheduledActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const activityRow = screen.getByTestId("hub-activity-row");
+      const activityBtn = within(activityRow).getByRole("button", { name: /signature activity/i });
+      expect(activityBtn).toBeInTheDocument();
+      expect(activityBtn).toHaveClass("hub-activity-row-btn");
+
+      await user.click(activityBtn);
+
+      expect(screen.getByRole("tab", { name: /activities/i })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("renders Compact Activity Card on overview tab with thumbnail, title, schedule, address, and booking link", async () => {
+      const detailedActivity = {
+        id: "act-1",
+        trip_id: "trip-1",
+        title: "Monterey GoCar Tour",
+        category: "tour",
+        image_url: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957",
+        location_name: "GoCar Monterey Tours",
+        address: "700 Cannery Row, Monterey, CA 93940",
+        directions_url: "https://maps.google.com/?q=700+Cannery+Row+Monterey",
+        booking_url: "https://www.groupon.com/deals/gocar-tours-monterey",
+        activity_date: "2026-09-12",
+        start_time: "10:00",
+        end_time: "17:00",
+        unit_label: "GoCar",
+        unit_capacity: 2,
+        participants: [],
+        groups: [],
+        swap_requests: [],
+      };
+
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [detailedActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const overviewCard = screen.getByTestId("hub-activity-overview-card");
+      expect(overviewCard).toBeInTheDocument();
+
+      // Thumbnail image
+      const thumbnailImg = within(overviewCard).getByRole("img", { name: "Monterey GoCar Tour" });
+      expect(thumbnailImg).toHaveAttribute("src", "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957");
+
+      // Title button
+      expect(within(overviewCard).getByRole("button", { name: "Monterey GoCar Tour" })).toBeInTheDocument();
+
+      // Category badge
+      expect(within(overviewCard).getByText(/🎯 Tour \(2 per GoCar\)/i)).toBeInTheDocument();
+
+      // Schedule
+      expect(within(overviewCard).getByText(/📅 Saturday, Sep 12 • 10:00 AM – 5:00 PM/i)).toBeInTheDocument();
+
+      // Location
+      expect(within(overviewCard).getByText(/📍 GoCar Monterey Tours • 700 Cannery Row, Monterey, CA 93940/i)).toBeInTheDocument();
+
+      // Booking link
+      const bookingLink = within(overviewCard).getByRole("link", { name: /Buy on Groupon \/ Booking Link/i });
+      expect(bookingLink).toHaveAttribute("href", "https://www.groupon.com/deals/gocar-tours-monterey");
+      expect(bookingLink).toHaveAttribute("target", "_blank");
+      expect(bookingLink).toHaveClass("btn-sm-accent");
+
+      // Directions link
+      const directionsLink = within(overviewCard).getByRole("link", { name: /Directions/i });
+      expect(directionsLink).toHaveAttribute("href", "https://maps.google.com/?q=700+Cannery+Row+Monterey");
+      expect(directionsLink).toHaveAttribute("target", "_blank");
+      expect(directionsLink).toHaveClass("btn-sm-secondary");
+    });
+
+    it("clicking View Activity & Pairings → on the compact card switches tab to activities", async () => {
+      const user = userEvent.setup();
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [scheduledActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const overviewCard = screen.getByTestId("hub-activity-overview-card");
+      const viewPairingsBtn = within(overviewCard).getByRole("button", { name: /View Activity & Pairings →/i });
+      expect(viewPairingsBtn).toBeInTheDocument();
+      expect(viewPairingsBtn).toHaveClass("btn-sm-primary");
+
+      await user.click(viewPairingsBtn);
+
+      expect(screen.getByRole("tab", { name: /activities/i })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("clicking the activity title on the compact card switches tab to activities", async () => {
+      const user = userEvent.setup();
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [scheduledActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const overviewCard = screen.getByTestId("hub-activity-overview-card");
+      const titleBtn = within(overviewCard).getByRole("button", { name: "Monterey GoCar Tour" });
+      await user.click(titleBtn);
+
+      expect(screen.getByRole("tab", { name: /activities/i })).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("renders fallback placeholder on compact card when image fails or is missing", async () => {
+      const noImageActivity = {
+        ...scheduledActivity,
+        image_url: null,
+      };
+
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [noImageActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const overviewCard = screen.getByTestId("hub-activity-overview-card");
+      expect(within(overviewCard).getByLabelText("Activity category icon")).toBeInTheDocument();
+      expect(within(overviewCard).queryByRole("img")).not.toBeInTheDocument();
+    });
   });
 });
 

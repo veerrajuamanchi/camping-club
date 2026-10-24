@@ -11,7 +11,7 @@ import { dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress"
 import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
-import { TripActivitiesTab } from "./TripActivitiesTab";
+import { TripActivitiesTab, ACTIVITY_CATEGORIES } from "./TripActivitiesTab";
 
 type TripDetails = {
   tripId: string;
@@ -153,8 +153,15 @@ export type TripActivityItem = {
   id: string;
   trip_id: string;
   title: string;
+  category?: string | null;
+  image_url?: string | null;
+  location_name?: string | null;
+  address?: string | null;
+  directions_url?: string | null;
+  booking_url?: string | null;
   activity_date?: string | null;
   start_time?: string | null;
+  end_time?: string | null;
   unit_label?: string | null;
   unit_capacity?: number | null;
   opt_out_policy?: "locked_on_voucher" | "flexible" | null;
@@ -163,6 +170,49 @@ export type TripActivityItem = {
   groups?: any[];
   swap_requests?: any[];
 };
+
+export function formatCompactActivitySchedule(
+  dateStr?: string | null,
+  startTime?: string | null,
+  endTime?: string | null
+): string {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-").map(Number);
+  let formattedDate = "";
+  if (parts.length === 3) {
+    formattedDate = new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(parts[0], parts[1] - 1, parts[2])));
+  } else {
+    formattedDate = dateStr;
+  }
+
+  const formatT = (t?: string | null) => {
+    if (!t) return "";
+    const [hStr, mStr] = t.split(":");
+    let h = parseInt(hStr, 10);
+    const m = mStr ? mStr.slice(0, 2) : "00";
+    if (isNaN(h)) return t;
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}:${m} ${ampm}`;
+  };
+
+  const formattedStart = formatT(startTime);
+  const formattedEnd = formatT(endTime);
+
+  if (formattedStart && formattedEnd) {
+    return `${formattedDate} • ${formattedStart} – ${formattedEnd}`;
+  }
+  if (formattedStart) {
+    return `${formattedDate} • ${formattedStart}`;
+  }
+  return formattedDate;
+}
 
 const constitutionGroups: Array<{ label: string; categories: string[] }> = [
   { label: "Travel & Cabin", categories: ["transport", "cabin"] },
@@ -279,6 +329,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const [activityBusy, setActivityBusy] = useState(false);
   const [activityMsg, setActivityMsg] = useState<string | null>(null);
   const [isEditingActivityChoice, setIsEditingActivityChoice] = useState(false);
+  const [activityImageError, setActivityImageError] = useState(false);
 
   async function refresh() {
     if (!tripId) return;
@@ -492,6 +543,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   useEffect(() => {
     void refresh();
   }, [tripId]);
+
+  useEffect(() => {
+    setActivityImageError(false);
+  }, [tripActivities[0]?.id, tripActivities[0]?.image_url]);
 
   async function submitRsvpWithChoice(choice: "coming" | "not_coming") {
     if (!details) return;
@@ -1375,7 +1430,11 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     flexWrap: "wrap",
                   }}
                 >
-                  <div>
+                  <button
+                    type="button"
+                    onClick={() => setTab("activities")}
+                    className="hub-activity-row-btn"
+                  >
                     <span
                       style={{
                         color: isActivityDone && !isEditingActivityChoice ? "#16a34a" : "#d97706",
@@ -1399,7 +1458,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                         Action Needed
                       </span>
                     )}
-                  </div>
+                  </button>
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                     {isActivityDone && !isEditingActivityChoice ? (
                       <>
@@ -1490,6 +1549,193 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </p>
             )}
           </div>
+
+          {/* Compact Activity Card */}
+          {hasActivities && primaryActivity && (() => {
+            const overviewCatKey = (primaryActivity.category || "other").toLowerCase();
+            const overviewCatIcon =
+              overviewCatKey === "tour"
+                ? "🎯"
+                : ACTIVITY_CATEGORIES[overviewCatKey]?.icon || "🎯";
+            const overviewCategoryLabel = primaryActivity.category
+              ? primaryActivity.category.charAt(0).toUpperCase() + primaryActivity.category.slice(1)
+              : "Tour";
+            const overviewUnitInfo =
+              primaryActivity.unit_capacity && primaryActivity.unit_label
+                ? ` (${primaryActivity.unit_capacity} per ${primaryActivity.unit_label})`
+                : primaryActivity.unit_capacity
+                ? ` (${primaryActivity.unit_capacity} per vehicle)`
+                : "";
+            const overviewCategoryBadge = `${overviewCatIcon} ${overviewCategoryLabel}${overviewUnitInfo}`;
+            const overviewScheduleText = formatCompactActivitySchedule(
+              primaryActivity.activity_date,
+              primaryActivity.start_time,
+              primaryActivity.end_time
+            );
+            const overviewLocationText =
+              primaryActivity.location_name && primaryActivity.address
+                ? primaryActivity.location_name === primaryActivity.address
+                  ? primaryActivity.address
+                  : `${primaryActivity.location_name} • ${primaryActivity.address}`
+                : primaryActivity.address || primaryActivity.location_name || null;
+
+            return (
+              <div
+                className="card"
+                data-testid="hub-activity-overview-card"
+                style={{
+                  display: "flex",
+                  gap: "1rem",
+                  alignItems: "center",
+                  padding: "1rem 1.25rem",
+                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  background: "#ffffff",
+                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ flexShrink: 0 }}>
+                  {primaryActivity.image_url && !activityImageError ? (
+                    <img
+                      src={primaryActivity.image_url}
+                      alt={primaryActivity.title}
+                      onError={() => setActivityImageError(true)}
+                      style={{
+                        width: "100px",
+                        height: "85px",
+                        borderRadius: "8px",
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100px",
+                        height: "85px",
+                        borderRadius: "8px",
+                        background: "#f1f5f9",
+                        border: "1px solid #e2e8f0",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "2rem",
+                      }}
+                      aria-label="Activity category icon"
+                    >
+                      {overviewCatIcon}
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.35rem",
+                    flex: 1,
+                    minWidth: "220px",
+                  }}
+                >
+                  {/* Line 1: Activity title + category badge */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setTab("activities")}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        font: "inherit",
+                        fontSize: "1.05rem",
+                        fontWeight: 700,
+                        color: "#0f172a",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        textDecoration: "underline",
+                        textUnderlineOffset: "3px",
+                      }}
+                    >
+                      {primaryActivity.title}
+                    </button>
+                    <span
+                      style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        background: "#f1f5f9",
+                        color: "#475569",
+                        padding: "2px 8px",
+                        borderRadius: "9999px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      {overviewCategoryBadge}
+                    </span>
+                  </div>
+
+                  {/* Line 2: Schedule */}
+                  {overviewScheduleText && (
+                    <div style={{ color: "#334155", fontSize: "0.85rem", fontWeight: 500 }}>
+                      📅 {overviewScheduleText}
+                    </div>
+                  )}
+
+                  {/* Line 3: Location */}
+                  {overviewLocationText && (
+                    <div style={{ color: "#475569", fontSize: "0.85rem" }}>
+                      📍 {overviewLocationText}
+                    </div>
+                  )}
+
+                  {/* Line 4: Action buttons */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.5rem",
+                      flexWrap: "wrap",
+                      marginTop: "0.35rem",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn-sm-primary"
+                      onClick={() => setTab("activities")}
+                    >
+                      View Activity &amp; Pairings &rarr;
+                    </button>
+                    {primaryActivity.booking_url && (
+                      <a
+                        href={primaryActivity.booking_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-sm-accent"
+                      >
+                        🎟️ Buy on Groupon / Booking Link &rarr;
+                      </a>
+                    )}
+                    {primaryActivity.directions_url && (
+                      <a
+                        href={primaryActivity.directions_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-sm-secondary"
+                      >
+                        🧭 Directions
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Section 2: 📋 TRIP TO-DO & CONTRIBUTIONS (VOLUNTARY) */}
           <div
