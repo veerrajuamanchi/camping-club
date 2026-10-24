@@ -248,7 +248,7 @@ select has_function('public', 'phase6_manage_trip_activity', ARRAY['text', 'uuid
 select has_function('public', 'phase6_set_activity_participation', ARRAY['uuid', 'uuid', 'text', 'uuid'], 'phase6_set_activity_participation exists');
 select has_function('public', 'phase6_manage_activity_pairings', ARRAY['uuid', 'text', 'jsonb', 'uuid'], 'phase6_manage_activity_pairings exists');
 select has_function('public', 'phase6_submit_voucher', ARRAY['uuid', 'uuid', 'date', 'integer', 'text', 'text', 'text', 'uuid'], 'phase6_submit_voucher exists');
-select has_function('public', 'phase6_request_partner_swap', ARRAY['uuid', 'uuid', 'uuid'], 'phase6_request_partner_swap exists');
+select has_function('public', 'phase6_request_partner_swap', ARRAY['uuid', 'uuid', 'uuid', 'uuid'], 'phase6_request_partner_swap exists');
 select has_function('public', 'phase6_respond_partner_swap', ARRAY['uuid', 'text', 'uuid'], 'phase6_respond_partner_swap exists');
 
 -- 18. Master Activity RPC (4 checks)
@@ -441,7 +441,7 @@ select is(
 -- 24. Partner Swap Requests & Atomic Swaps (4 checks)
 -- Test 151: Cannot request swap if a vehicle has purchased voucher
 select throws_ok(
-  $$ select public.phase6_request_partner_swap('96000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000002', '94000000-0000-0000-0000-000000000005') $$,
+  $$ select public.phase6_request_partner_swap('96000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000002', '94000000-0000-0000-0000-000000000005', '94000000-0000-0000-0000-000000000002') $$,
   '22023',
   null,
   'cannot request swap on purchased vehicle'
@@ -467,7 +467,7 @@ end $$;
 
 -- Test 152: Request swap between pending cars
 select is(
-  (public.phase6_request_partner_swap('96000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000005', '94000000-0000-0000-0000-000000000006')->>'status'),
+  (public.phase6_request_partner_swap('96000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000005', '94000000-0000-0000-0000-000000000006', '94000000-0000-0000-0000-000000000005')->>'status'),
   'pending',
   'partner swap request created as pending'
 );

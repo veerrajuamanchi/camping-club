@@ -806,6 +806,12 @@ BEGIN
         DELETE FROM public.trip_activity_group_members
         WHERE member_id = p_member_id
           AND group_id IN (SELECT id FROM public.trip_activity_groups WHERE activity_id = p_activity_id);
+
+        UPDATE public.trip_activity_swap_requests
+        SET status = 'cancelled', resolved_at = now()
+        WHERE activity_id = p_activity_id
+          AND status = 'pending'
+          AND (requester_member_id = p_member_id OR target_member_id = p_member_id);
     END IF;
 
     INSERT INTO public.trip_activity_participants (activity_id, member_id, status, updated_at)
@@ -1093,7 +1099,8 @@ GRANT EXECUTE ON FUNCTION public.phase6_submit_voucher TO authenticated, service
 CREATE OR REPLACE FUNCTION public.phase6_request_partner_swap(
     p_activity_id UUID,
     p_requester_id UUID,
-    p_target_id UUID
+    p_target_id UUID,
+    p_actor_id UUID DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -1101,6 +1108,8 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
+    v_actor public.member_profiles%ROWTYPE;
+    v_is_admin BOOLEAN := FALSE;
     v_activity public.trip_activities%ROWTYPE;
     v_req_group_id UUID;
     v_req_voucher_status TEXT;
@@ -1110,6 +1119,20 @@ DECLARE
 BEGIN
     IF p_requester_id = p_target_id THEN
         RAISE EXCEPTION 'Cannot swap with yourself.' USING ERRCODE = '22023';
+    END IF;
+
+    SELECT * INTO v_actor
+    FROM public.member_profiles
+    WHERE (member_id = p_actor_id OR auth_user_id = p_actor_id)
+      AND account_status = 'active';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Active member profile not found for actor.' USING ERRCODE = '42501';
+    END IF;
+
+    v_is_admin := (v_actor.member_role IN ('admin', 'administrator'));
+    IF v_actor.member_id <> p_requester_id AND NOT v_is_admin THEN
+        RAISE EXCEPTION 'Cannot request partner swap for another member.' USING ERRCODE = '42501';
     END IF;
 
     SELECT * INTO v_activity FROM public.trip_activities WHERE id = p_activity_id;
@@ -1214,6 +1237,10 @@ BEGIN
     IF p_action = 'accept' THEN
         IF v_actor.member_id <> v_swap.target_member_id AND NOT v_is_admin THEN
             RAISE EXCEPTION 'Only the target member or an administrator can accept this swap request.' USING ERRCODE = '42501';
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM public.trip_activities WHERE id = v_swap.activity_id AND is_pairings_locked = true) AND NOT v_is_admin THEN
+            RAISE EXCEPTION 'Pairings are locked for this activity.' USING ERRCODE = '22023';
         END IF;
 
         SELECT g.id, g.voucher_status INTO v_req_group_id, v_req_voucher_status
