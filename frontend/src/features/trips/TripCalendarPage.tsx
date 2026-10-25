@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router";
 import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { formatZonedDateTimeLocal } from "../../domain/calendar";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
+import { resolveActionsForCalendarTrip, getTopPriorityAction } from "../../domain/actionResolution";
 
 type Rule = { stable_key: string; text: string; structured_values: Record<string, unknown> };
 type Bundle = { id: string; version: number; contentHash: string; rules: Rule[]; createdAt: string };
@@ -412,6 +413,18 @@ function EventCard({
     ? trip.campingType.charAt(0).toUpperCase() + trip.campingType.slice(1)
     : "Cabin";
 
+  const isDefaultDeadline = Boolean(
+    trip.startsOn &&
+    trip.pollDeadlineAt &&
+    calendar?.clubConfiguration &&
+    trip.pollDeadlineAt.slice(0, 10) === datePlusDays(trip.startsOn, -(calendar.clubConfiguration.defaultPollLeadDays ?? 35))
+  );
+  const isDeadlineOverridden = trip.pollDeadlineAt ? !isDefaultDeadline : false;
+
+  const tripActions = resolveActionsForCalendarTrip(trip);
+  const topAction = getTopPriorityAction(tripActions);
+  const remainingCount = tripActions.length > 1 ? tripActions.length - 1 : 0;
+
   return (
     <article className="event-card-container" aria-label={`Trip ${dateLabel}`}>
       <div className="event-card-header">
@@ -476,12 +489,50 @@ function EventCard({
       <div className="event-card-date-row">
         <span>📅</span>
         <span>{dateLabel} {trip.startsOn ? "(Pacific Time)" : ""}</span>
-        {formattedDeadlinePST && (
-          <span style={{ fontSize: "0.82rem", color: "#6b7280", marginLeft: "0.5rem" }}>
-            · Deadline: {formattedDeadlinePST}
-          </span>
-        )}
       </div>
+
+      {formattedDeadlinePST && (
+        <div
+          className="event-card-deadline-row"
+          data-testid="event-card-deadline-row"
+          style={{
+            background: "#f8fafc",
+            padding: "8px 10px",
+            borderRadius: "6px",
+            margin: "0.5rem 0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: "0.78rem",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <span style={{ color: "#475569" }}>
+            ⏱️ Registration Cutoff: <strong>{formattedDeadlinePST}</strong>
+            {isDeadlineOverridden && (
+              <span
+                className="admin-override-badge"
+                style={{
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  padding: "1px 6px",
+                  borderRadius: "4px",
+                  fontWeight: 700,
+                  fontSize: "0.7rem",
+                  marginLeft: "6px",
+                }}
+              >
+                Admin Override
+              </span>
+            )}
+          </span>
+          <span style={{ color: trip.comingCount >= (trip.minimumParticipants ?? 4) ? "#166534" : "#b45309", fontWeight: 600 }}>
+            {trip.comingCount >= (trip.minimumParticipants ?? 4)
+              ? `Minimum ${trip.minimumParticipants ?? 4} met ✓`
+              : `${trip.comingCount} of ${trip.minimumParticipants ?? 4} minimum`}
+          </span>
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: "0.5rem", margin: "0.75rem 0", background: "#f9fafb", padding: "0.75rem", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
         <div>
@@ -544,71 +595,94 @@ function EventCard({
       )}
 
       {isComing && (
-        <div
-          className="trip-readiness-scorecard"
-          style={{
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
-            borderRadius: "8px",
-            padding: "0.75rem 1rem",
-            margin: "0.75rem 0",
-            fontSize: "0.84rem",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <span style={{ fontWeight: 600, color: "#1e293b" }}>🎯 Trip Readiness Scorecard</span>
-            <span style={{ fontSize: "0.78rem", color: "#64748b" }}>5 Core Logistics Checkpoints</span>
+        topAction ? (
+          <div
+            className="trip-action-callout"
+            data-testid="trip-action-callout"
+            style={{
+              background: topAction.priority === "critical" ? "#fef2f2" : "#fffbeb",
+              border: `1px solid ${topAction.priority === "critical" ? "#fecaca" : "#fde68a"}`,
+              borderRadius: "8px",
+              padding: "10px 12px",
+              margin: "10px 0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "8px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: "200px" }}>
+              <span style={{ fontSize: "1.1rem" }}>
+                {topAction.priority === "critical" ? "🚨" : "⚡"}
+              </span>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  <strong style={{ color: topAction.priority === "critical" ? "#991b1b" : "#92400e", fontSize: "0.84rem" }}>
+                    {topAction.priority === "critical" || topAction.informationLevel === "action_required" ? "Action Required:" : "Recommended:"} {topAction.title}
+                  </strong>
+                  {remainingCount > 0 && (
+                    <Link
+                      to="/actions"
+                      style={{
+                        fontSize: "0.74rem",
+                        color: "#6b7280",
+                        textDecoration: "underline",
+                        fontWeight: 500,
+                      }}
+                    >
+                      (+{remainingCount} more)
+                    </Link>
+                  )}
+                </div>
+                <div style={{ color: topAction.priority === "critical" ? "#7f1d1d" : "#78350f", fontSize: "0.8rem", marginTop: "2px" }}>
+                  {topAction.explanationDetails || topAction.reason}
+                </div>
+              </div>
+            </div>
+            <Link
+              to={topAction.actionUrl}
+              className="action-resolve-btn"
+              style={{
+                padding: "6px 12px",
+                background: topAction.priority === "critical" ? "#dc2626" : "#b45309",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                fontWeight: 600,
+                fontSize: "0.78rem",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                minHeight: "36px",
+                flexShrink: 0,
+              }}
+            >
+              Resolve →
+            </Link>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "0.4rem" }}>
-            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-              <span style={{ color: "#166534", fontWeight: 600 }}>✓ Going</span>
-              <div style={{ fontSize: "0.74rem", color: "#64748b" }}>RSVP Confirmed</div>
-            </div>
-            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-              {trip.depositStatus === "exempt" ? (
-                <>
-                  <span style={{ color: "#166534", fontWeight: 600 }}>✓ Cabin Payer</span>
-                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Deposit Exempt</div>
-                </>
-              ) : trip.depositStatus === "confirmed" || trip.depositStatus === "confirmed_by_admin" ? (
-                <>
-                  <span style={{ color: "#166534", fontWeight: 600 }}>✓ $50 Deposit</span>
-                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Paid &amp; Confirmed</div>
-                </>
-              ) : trip.depositStatus === "submitted_by_member" ? (
-                <>
-                  <span style={{ color: "#166534", fontWeight: 600 }}>✓ $50 Deposit</span>
-                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Submitted (Pending)</div>
-                </>
-              ) : (
-                <Link to={`/trips/${trip.tripId}`} style={{ textDecoration: "none", color: "inherit" }}>
-                  <span style={{ color: "#b45309", fontWeight: 600 }}>⚠️ $50 Deposit</span>
-                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Cabin Contribution Due</div>
-                </Link>
-              )}
-            </div>
-            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-              <Link to={`/trips/${trip.tripId}?tab=tasks`} style={{ textDecoration: "none", color: "inherit" }}>
-                <span style={{ color: (trip.myDutyCount ?? 0) >= (trip.taskQuotaTarget ?? 2) ? "#166534" : "#b45309", fontWeight: 600 }}>
-                  {(trip.myDutyCount ?? 0) >= (trip.taskQuotaTarget ?? 2) ? "✓ Duties Set" : "⚠️ Duties Pending"}
-                </span>
-                <div style={{ fontSize: "0.74rem", color: "#64748b" }}>{trip.myDutyCount ?? 0} of {trip.taskQuotaTarget ?? 2} chosen</div>
-              </Link>
-            </div>
-            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-              <Link to={`/trips/${trip.tripId}?tab=logistics`} style={{ textDecoration: "none", color: "inherit" }}>
-                <span style={{ color: "#0f766e", fontWeight: 600 }}>🚗 Carpool</span>
-                <div style={{ fontSize: "0.74rem", color: "#64748b" }}>View Driver &amp; Pool</div>
-              </Link>
-            </div>
-            <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-              <Link to={`/trips/${trip.tripId}?tab=logistics`} style={{ textDecoration: "none", color: "inherit" }}>
-                <span style={{ color: "#7c3aed", fontWeight: 600 }}>🎒 Gear &amp; Food</span>
-                <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Claim Items</div>
-              </Link>
-            </div>
+        ) : (
+          <div
+            className="trip-action-callout trip-action-complete"
+            data-testid="trip-action-callout-complete"
+            style={{
+              background: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              borderRadius: "8px",
+              padding: "10px 12px",
+              margin: "10px 0",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              fontSize: "0.84rem",
+              color: "#166534",
+              fontWeight: 600,
+            }}
+          >
+            <span>✓</span>
+            <span>All Set! You're ready for this trip</span>
           </div>
-        </div>
+        )
       )}
 
       <div className="event-card-footer">

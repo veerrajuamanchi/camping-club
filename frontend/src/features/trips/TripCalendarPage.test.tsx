@@ -462,50 +462,70 @@ describe("TripCalendarPage", () => {
     expect(await screen.findByText("✓ Duties: 2/2")).toBeInTheDocument();
   });
 
-  it("displays dynamic deposit status tick marks on the Calendar readiness scorecard", async () => {
-    // 1. Confirmed deposit
-    const confirmedCalendar = makeCalendar();
-    confirmedCalendar.trips[0].myRsvp = {
+  it("displays 2.0 Action Callout pill and resolves deposit or readiness status", async () => {
+    // 1. Unsubmitted deposit -> Action Required: Submit $50 Cabin Deposit
+    const unsubmittedCalendar = makeCalendar();
+    unsubmittedCalendar.trips[0].eventStatus = "confirmed";
+    unsubmittedCalendar.trips[0].currentRuleBundle = {
+      id: "bundle-1",
+      version: 1,
+      contentHash: "hash-1",
+      rules: [],
+      createdAt: "2026-10-01T00:00:00Z",
+    };
+    unsubmittedCalendar.trips[0].myRsvp = {
       response: "coming",
       acknowledgmentId: "ack-1",
       version: 1,
       updatedAt: "2026-10-14T00:00:00Z",
+      acceptedRuleBundle: unsubmittedCalendar.trips[0].currentRuleBundle,
     };
-    confirmedCalendar.trips[0].depositStatus = "confirmed";
+    unsubmittedCalendar.trips[0].myDutyCount = 2;
+    unsubmittedCalendar.trips[0].taskQuotaTarget = 2;
+    unsubmittedCalendar.trips[0].depositStatus = null;
 
-    const { unmount } = render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => confirmedCalendar) as unknown as TripApi} />);
-    expect(await screen.findByText("✓ $50 Deposit")).toBeInTheDocument();
-    expect(screen.getByText("Paid & Confirmed")).toBeInTheDocument();
+    const { unmount } = render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => unsubmittedCalendar) as unknown as TripApi} />);
+    expect(await screen.findByText(/Submit \$50 Cabin Deposit/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Resolve →" })).toHaveAttribute("href", "/trips/trip-1?tab=financials");
     unmount();
 
-    // 2. Submitted deposit
-    const submittedCalendar = makeCalendar();
-    submittedCalendar.trips[0].myRsvp = {
+    // 2. Confirmed deposit & fulfilled duties -> All Set pill
+    const allSetCalendar = makeCalendar();
+    allSetCalendar.trips[0].eventStatus = "confirmed";
+    allSetCalendar.trips[0].currentRuleBundle = {
+      id: "bundle-1",
+      version: 1,
+      contentHash: "hash-1",
+      rules: [],
+      createdAt: "2026-10-01T00:00:00Z",
+    };
+    allSetCalendar.trips[0].myRsvp = {
       response: "coming",
       acknowledgmentId: "ack-1",
       version: 1,
       updatedAt: "2026-10-14T00:00:00Z",
+      acceptedRuleBundle: allSetCalendar.trips[0].currentRuleBundle,
     };
-    submittedCalendar.trips[0].depositStatus = "submitted_by_member";
+    allSetCalendar.trips[0].myDutyCount = 2;
+    allSetCalendar.trips[0].taskQuotaTarget = 2;
+    allSetCalendar.trips[0].depositStatus = "confirmed";
 
-    const { unmount: unmount2 } = render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => submittedCalendar) as unknown as TripApi} />);
-    expect(await screen.findByText("✓ $50 Deposit")).toBeInTheDocument();
-    expect(screen.getByText("Submitted (Pending)")).toBeInTheDocument();
+    const { unmount: unmount2 } = render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => allSetCalendar) as unknown as TripApi} />);
+    expect(await screen.findByText(/All Set! You're ready for this trip/i)).toBeInTheDocument();
     unmount2();
+  });
 
-    // 3. Cabin Payer exempt
-    const exemptCalendar = makeCalendar();
-    exemptCalendar.trips[0].myRsvp = {
-      response: "coming",
-      acknowledgmentId: "ack-1",
-      version: 1,
-      updatedAt: "2026-10-14T00:00:00Z",
-    };
-    exemptCalendar.trips[0].depositStatus = "exempt";
+  it("displays dedicated registration deadline row with Admin Override tag when deadline is modified", async () => {
+    const overrideCalendar = makeCalendar();
+    overrideCalendar.trips[0].startsOn = "2027-01-15";
+    overrideCalendar.trips[0].endsOn = "2027-01-17";
+    // Default deadline for Jan 15 with 35 lead days would be Dec 11. We set Jan 10 (an override)
+    overrideCalendar.trips[0].pollDeadlineAt = "2027-01-10T18:00:00-08:00";
 
-    render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => exemptCalendar) as unknown as TripApi} />);
-    expect(await screen.findByText("✓ Cabin Payer")).toBeInTheDocument();
-    expect(screen.getByText("Deposit Exempt")).toBeInTheDocument();
+    render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => overrideCalendar) as unknown as TripApi} />);
+    expect(await screen.findByTestId("event-card-deadline-row")).toBeInTheDocument();
+    expect(screen.getByText("Admin Override")).toBeInTheDocument();
+    expect(screen.getByText(/Registration Cutoff:/i)).toBeInTheDocument();
   });
 });
 

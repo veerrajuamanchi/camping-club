@@ -12,6 +12,7 @@ import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
 import { TripActivitiesTab, ACTIVITY_CATEGORIES } from "./TripActivitiesTab";
+import { resolveActionsForCalendarTrip } from "../../domain/actionResolution";
 
 type TripDetails = {
   tripId: string;
@@ -267,6 +268,105 @@ type Props = {
   userRole?: "member" | "admin" | "accountant";
 };
 const defaultApi: TripApiType = (action, input) => invokeTripApi(action, input);
+
+function TripNextStepsBanner({
+  trip,
+  onNavigateTab,
+}: {
+  trip: Parameters<typeof resolveActionsForCalendarTrip>[0];
+  onNavigateTab: (tab: Tab) => void;
+}) {
+  const actions = resolveActionsForCalendarTrip(trip);
+
+  if (actions.length === 0) {
+    return (
+      <div
+        data-testid="trip-next-steps-complete"
+        style={{
+          background: "#f0fdf4",
+          border: "1.5px solid #86efac",
+          borderRadius: "10px",
+          padding: "0.85rem 1.25rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.6rem",
+          color: "#166534",
+          fontWeight: 600,
+          fontSize: "0.9rem",
+        }}
+      >
+        <span style={{ fontSize: "1.2rem" }}>✓</span>
+        <span>All Set! Your preparations for this trip are complete.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="trip-next-steps-banner"
+      style={{
+        background: "#fffbeb",
+        border: "1.5px solid #fde68a",
+        borderRadius: "10px",
+        padding: "1rem 1.25rem",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        <span style={{ fontSize: "1.2rem" }}>🚨</span>
+        <h3 style={{ margin: 0, fontSize: "0.98rem", color: "#92400e", fontWeight: 700 }}>
+          Attention Required ({actions.length} pending task{actions.length > 1 ? "s" : ""})
+        </h3>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        {actions.map((act) => {
+          const tabMatch = act.actionUrl.match(/tab=([a-z]+)/);
+          const targetTab = (tabMatch ? tabMatch[1] : "overview") as Tab;
+
+          return (
+            <div
+              key={act.id}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #fef3c7",
+                borderRadius: "8px",
+                padding: "0.6rem 0.85rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.5rem",
+              }}
+            >
+              <div>
+                <strong style={{ color: "#1e293b", fontSize: "0.88rem" }}>{act.title}</strong>
+                <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: "0.8rem" }}>
+                  {act.explanationDetails || act.reason}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigateTab(targetTab)}
+                style={{
+                  padding: "0.35rem 0.85rem",
+                  background: act.priority === "critical" ? "#dc2626" : "#b45309",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "0.78rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  minHeight: "36px",
+                }}
+              >
+                Resolve →
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, userRole }: Props) {
   const { tripId } = useParams<{ tripId: string }>();
@@ -1111,6 +1211,29 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
 
       {tab === "overview" && (
         <div className="stack">
+          {/* Camping Club 2.0 Contextual Next Steps Banner */}
+          {details.myRsvp?.response === "coming" && (
+            <TripNextStepsBanner
+              trip={{
+                tripId: details.tripId,
+                title: details.title,
+                monthKey: details.monthKey,
+                eventStatus: details.eventStatus === "cancelled" ? "cancelled" : details.eventStatus === "confirmed" ? "confirmed" : "tentative",
+                startsOn: details.startsOn,
+                endsOn: details.endsOn,
+                pollDeadlineAt: details.pollDeadlineAt ?? null,
+                depositStatus: details.depositStatus,
+                myDailyWorkload: details.myDailyWorkload,
+                myDutyCount: details.myDutyCount,
+                taskQuotaTarget: details.taskQuotaTarget,
+                myRsvp: details.myRsvp,
+                currentRuleBundle: details.currentRuleBundle,
+                additionalInformation: details.additionalInformation,
+              }}
+              onNavigateTab={(targetTab) => setTab(targetTab)}
+            />
+          )}
+
           {/* Section 1: ⚡ REQUIRED FROM YOU */}
           <div
             className="card"

@@ -13,6 +13,8 @@ import { MasterCatalogPage } from "../features/admin/MasterCatalogPage";
 import { MemberProfileForm, type MemberProfileInput } from "../features/members/MemberProfileForm";
 import { TripCalendarPage } from "../features/trips/TripCalendarPage";
 import { EventDetailsPage } from "../features/trips/EventDetailsPage";
+import { MyActionsPage } from "../features/actions/MyActionsPage";
+import { AdminOperationsPage } from "../features/admin/AdminOperationsPage";
 import { configurationError, invokeAuthApi, invokeMemberApi, supabase } from "../lib/supabase";
 
 function LogoutRoute() {
@@ -127,74 +129,118 @@ export function AppRoutes() {
         </Link>
 
         {membership.status === "active" && (
-          <div className="user-menu-wrapper">
-            <button
-              type="button"
-              className="user-avatar-btn"
-              aria-label="User menu"
-              onClick={() => setUserMenuOpen((open: boolean) => !open)}
-              style={{ position: "relative" }}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <Link
+              to="/actions"
+              className="nav-actions-link"
+              style={{
+                textDecoration: "none",
+                color: "#166534",
+                fontWeight: 600,
+                fontSize: "0.82rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                padding: "0.3rem 0.65rem",
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                borderRadius: "6px",
+              }}
             >
-              {profile?.displayName?.charAt(0).toUpperCase() || "👤"}
-              {pendingRequestsCount > 0 && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: "-4px",
-                    right: "-4px",
-                    background: "#ef4444",
-                    color: "#ffffff",
-                    fontSize: "0.65rem",
-                    fontWeight: 700,
-                    borderRadius: "9999px",
-                    minWidth: "16px",
-                    height: "16px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: "0 4px",
-                    border: "2px solid #ffffff",
-                  }}
-                  title={`${pendingRequestsCount} pending access request(s)`}
-                >
-                  {pendingRequestsCount}
-                </span>
-              )}
-            </button>
-
-            {userMenuOpen && (
-              <div className="user-dropdown" onClick={() => setUserMenuOpen(false)}>
-                <Link to="/profile">👤 My Profile</Link>
-                {membership.role === "admin" && (
-                  <>
-                    <hr />
-                    <Link to="/admin/campsites">🏕️ Campsite Directory</Link>
-                    <Link to="/admin/members" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>👥 Members & Access</span>
-                      {pendingRequestsCount > 0 && (
-                        <span style={{ background: "#ef4444", color: "#ffffff", fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.45rem", borderRadius: "9999px" }}>
-                          {pendingRequestsCount} new
-                        </span>
-                      )}
-                    </Link>
-                    <Link to="/admin/schedule-defaults">⚙️ Club Schedule Defaults</Link>
-                    <Link to="/admin/constitution">📜 Camping Constitution</Link>
-                    <Link to="/admin/responsibilities">🛠️ Master Responsibilities</Link>
-                    <Link to="/admin/catalogs">📦 Master Catalogs</Link>
-                  </>
-                )}
-                <hr />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUserMenuOpen(false);
-                    setShowSignOutModal(true);
-                  }}
-                >
-                  🚪 Sign out
-                </button>
-              </div>
+              ⚡ My Actions
+            </Link>
+            {membership.role === "admin" && (
+              <Link
+                to="/admin/operations"
+                className="nav-ops-link"
+                style={{
+                  textDecoration: "none",
+                  color: "#991b1b",
+                  fontWeight: 600,
+                  fontSize: "0.82rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "0.3rem 0.65rem",
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  borderRadius: "6px",
+                }}
+              >
+                ⚙️ Operations
+              </Link>
             )}
+            <div className="user-menu-wrapper">
+              <button
+                type="button"
+                className="user-avatar-btn"
+                aria-label="User menu"
+                onClick={() => setUserMenuOpen((open: boolean) => !open)}
+                style={{ position: "relative" }}
+              >
+                {profile?.displayName?.charAt(0).toUpperCase() || "👤"}
+                {pendingRequestsCount > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "-4px",
+                      right: "-4px",
+                      background: "#ef4444",
+                      color: "#ffffff",
+                      fontSize: "0.65rem",
+                      fontWeight: 700,
+                      borderRadius: "9999px",
+                      minWidth: "16px",
+                      height: "16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "0 4px",
+                      border: "2px solid #ffffff",
+                    }}
+                    title={`${pendingRequestsCount} pending access request(s)`}
+                  >
+                    {pendingRequestsCount}
+                  </span>
+                )}
+              </button>
+
+              {userMenuOpen && (
+                <div className="user-dropdown" onClick={() => setUserMenuOpen(false)}>
+                  <Link to="/profile">👤 My Profile</Link>
+                  <Link to="/actions">⚡ My Actions</Link>
+                  {membership.role === "admin" && (
+                    <>
+                      <hr />
+                      <Link to="/admin/operations">⚙️ Operations Dashboard</Link>
+                      <Link to="/admin/campsites">🏕️ Campsite Directory</Link>
+                      <Link to="/admin/members" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>👥 Members & Access</span>
+                        {pendingRequestsCount > 0 && (
+                          <span style={{ background: "#ef4444", color: "#ffffff", fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.45rem", borderRadius: "9999px" }}>
+                            {pendingRequestsCount} new
+                          </span>
+                        )}
+                      </Link>
+                      <Link to="/admin/schedule-defaults">⚙️ Club Schedule Defaults</Link>
+                      <Link to="/admin/constitution">📜 Camping Constitution</Link>
+                      <Link to="/admin/responsibilities">🛠️ Master Responsibilities</Link>
+                      <Link to="/admin/catalogs">📦 Master Catalogs</Link>
+                    </>
+                  )}
+                  <hr />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      setShowSignOutModal(true);
+                    }}
+                  >
+                    🚪 Sign out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
         {membership.status === "inactive" && (
@@ -422,6 +468,18 @@ export function AppRoutes() {
             }
           />
           <Route
+            path="/admin/operations"
+            element={
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
+                  <AdminOperationsPage />
+                </AccessBoundary>
+              )
+            }
+          />
+          <Route
             path="/admin/members"
             element={
               membership.status === "signedOut" ? (
@@ -489,6 +547,20 @@ export function AppRoutes() {
               ) : (
                 <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
                   <MasterCatalogPage />
+                </AccessBoundary>
+              )
+            }
+          />
+          <Route
+            path="/actions"
+            element={
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : membership.status === "profileRequired" ? (
+                <Navigate to="/accept-invitation" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={signOut} requiredRole="member">
+                  <MyActionsPage />
                 </AccessBoundary>
               )
             }

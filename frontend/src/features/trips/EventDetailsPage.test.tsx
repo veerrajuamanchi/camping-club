@@ -1138,5 +1138,73 @@ describe("EventDetailsPage", () => {
       expect(within(signedActivityRow).getByText("Attending ✓")).toBeInTheDocument();
     });
   });
+
+  describe("Camping Club 2.0 TripNextStepsBanner", () => {
+    it("renders Attention Required banner when member has pending tasks with tab navigation", async () => {
+      const pendingData = {
+        ...tripData,
+        myRsvp: {
+          response: "coming" as const,
+          acknowledgmentId: "ack-1",
+          version: 1,
+          updatedAt: "2026-10-14T00:00:00Z",
+          acceptedRuleBundle: tripData.currentRuleBundle,
+        },
+        myDutyCount: 0,
+        taskQuotaTarget: 2,
+        depositStatus: "confirmed" as const,
+      };
+
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(pendingData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(pendingData, false, apiMock, "/trips/trip-1", "member", "m1");
+      expect(await screen.findByTestId("trip-next-steps-banner")).toBeInTheDocument();
+      expect(screen.getByText(/Attention Required/i)).toBeInTheDocument();
+      expect(screen.getByText(/Select Responsibilities/i)).toBeInTheDocument();
+
+      // Click Resolve button on the pending duty
+      const resolveBtn = screen.getAllByRole("button", { name: "Resolve →" })[0];
+      await userEvent.click(resolveBtn);
+      // Switches to Tasks & Meals tab
+      expect(screen.getByRole("tab", { name: "Tasks & Meals" })).toHaveClass("active");
+    });
+
+    it("renders All Set banner when confirmed member has completed all preparations", async () => {
+      const allDoneData = {
+        ...tripData,
+        eventStatus: "confirmed" as const,
+        myRsvp: {
+          response: "coming" as const,
+          acknowledgmentId: "ack-1",
+          version: 1,
+          updatedAt: "2026-10-14T00:00:00Z",
+          acceptedRuleBundle: tripData.currentRuleBundle,
+        },
+        myDutyCount: 2,
+        taskQuotaTarget: 2,
+        depositStatus: "confirmed" as const,
+      };
+
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(allDoneData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(allDoneData, false, apiMock, "/trips/trip-1", "member", "m1");
+      expect(await screen.findByTestId("trip-next-steps-complete")).toBeInTheDocument();
+      expect(screen.getByText(/All Set! Your preparations for this trip are complete\./i)).toBeInTheDocument();
+    });
+  });
 });
 
