@@ -39,5 +39,9 @@ export async function loginViaUiOtp(page: Page, email: string) {
  * Authenticates the user in the browser using the real email authentication flow.
  */
 export async function authenticateSession(page: Page, user: TestUser) {
+  if (process.env.HOSTED_QA === "1") {
+    const { authenticateWorkloadSession } = await import("./qa-session");
+    return authenticateWorkloadSession(page, user);
+  }
   await loginViaUiOtp(page, user.email);
 }

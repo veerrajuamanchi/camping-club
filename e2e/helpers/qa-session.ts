@@ -10,7 +10,13 @@ export async function authenticateWorkloadSession(page: Page, user: TestUser) {
   const client = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await client.auth.signInWithPassword({ email: user.email, password: user.password });
   if (error || !data.session) throw new Error("Could not create the synthetic staging session.");
+  const storageKey = `sb-${url.hostname.split(".")[0]}-auth-token`;
   await page.addInitScript(({ key, session }) => localStorage.setItem(key, JSON.stringify(session)), {
-    key: `sb-${url.hostname.split(".")[0]}-auth-token`, session: data.session,
+    key: storageKey, session: data.session,
   });
+  if (page.url() !== "about:blank") {
+    await page.evaluate(({ key, session }) => localStorage.setItem(key, JSON.stringify(session)), {
+      key: storageKey, session: data.session,
+    });
+  }
 }

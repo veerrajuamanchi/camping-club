@@ -15,6 +15,7 @@
     "test:integration": "node scripts/test-phase1-integration.mjs",
     "test:phase2-integration": "node scripts/test-phase2-integration.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:staging": "node scripts/run-hosted-staging-qa.mjs",
     "security:scan": "node scripts/scan-client-bundle.mjs",
     "deploy:prod": "./scripts/deploy-production.sh",
     "verify": "npm run typecheck && npm test && npm run test:db && npm run test:integration && npm run test:phase2-integration && npm run build && npm run security:scan"
