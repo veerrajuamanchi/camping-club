@@ -12,6 +12,7 @@ export type ApiMember = {
   role: "member" | "admin" | "accountant";
   phoneE164: string;
   paymentMethod: "zelle" | "venmo" | "paypal" | "apple_cash" | null;
+  paymentIdentifier?: string | null;
 };
 
 export class MemberApiError extends Error {

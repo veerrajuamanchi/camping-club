@@ -38,4 +38,36 @@ describe("MemberProfileForm", () => {
       screen.getByText(/payment identifiers are encrypted/i),
     ).toBeInTheDocument();
   });
+
+  it("displays existing payment handle in edit mode and preserves it on save", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemberProfileForm
+        mode="edit"
+        initialDisplayName="Alice Explorer"
+        initialPhone="+14155550199"
+        initialMethod="zelle"
+        initialPaymentIdentifier="alice@example.com"
+        onSave={onSave}
+      />
+    );
+
+    const handleInput = screen.getByLabelText(/payment handle or account email/i);
+    expect(handleInput).toHaveValue("alice@example.com");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      displayName: "Alice Explorer",
+      phoneE164: "+14155550199",
+      paymentMethod: "zelle",
+      paymentIdentifier: "alice@example.com",
+    });
+
+    await waitFor(() => {
+      expect(handleInput).toHaveValue("alice@example.com");
+      expect(screen.getByText(/profile updated successfully/i)).toBeInTheDocument();
+    });
+  });
 });

@@ -36,6 +36,13 @@ export function canonicalJson(value: unknown): string {
   return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
 }
 
+function fromHex(hex: string): Uint8Array {
+  const clean = hex.startsWith("\\x") ? hex.slice(2) : hex;
+  const match = clean.match(/.{1,2}/g);
+  if (!match) return new Uint8Array();
+  return new Uint8Array(match.map((byte) => parseInt(byte, 16)));
+}
+
 export async function protectPaymentIdentifier(identifier: string) {
   const keyVersion = requiredEnv("PAYMENT_ENCRYPTION_KEY_VERSION");
   const encryptionKey = await crypto.subtle.importKey("raw", decodeBase64(requiredEnv("PAYMENT_ENCRYPTION_KEY")), "AES-GCM", false, ["encrypt"]);
@@ -48,6 +55,14 @@ export async function protectPaymentIdentifier(identifier: string) {
     keyVersion,
     fingerprint: `\\x${toHex(fingerprint.buffer)}`,
   };
+}
+
+export async function unprotectPaymentIdentifier(ciphertextHex: string, nonceHex: string): Promise<string> {
+  const encryptionKey = await crypto.subtle.importKey("raw", decodeBase64(requiredEnv("PAYMENT_ENCRYPTION_KEY")), "AES-GCM", false, ["decrypt"]);
+  const nonce = fromHex(nonceHex);
+  const ciphertext = fromHex(ciphertextHex);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: nonce }, encryptionKey, ciphertext);
+  return new TextDecoder().decode(decrypted);
 }
 
 export function requiredEnv(name: string): string {

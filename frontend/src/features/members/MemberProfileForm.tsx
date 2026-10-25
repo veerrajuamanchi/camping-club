@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
 export type PaymentMethod = "zelle" | "venmo" | "paypal" | "apple_cash";
@@ -15,6 +15,7 @@ export function MemberProfileForm({
   initialDisplayName = "",
   initialPhone = "",
   initialMethod = "venmo",
+  initialPaymentIdentifier = "",
   busy = false,
   isAdmin = false,
 }: {
@@ -23,21 +24,44 @@ export function MemberProfileForm({
   initialDisplayName?: string;
   initialPhone?: string;
   initialMethod?: PaymentMethod;
+  initialPaymentIdentifier?: string;
   busy?: boolean;
   isAdmin?: boolean;
 }) {
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [phoneE164, setPhoneE164] = useState(initialPhone);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initialMethod);
-  const [paymentIdentifier, setPaymentIdentifier] = useState("");
+  const [paymentIdentifier, setPaymentIdentifier] = useState(initialPaymentIdentifier);
   const [error, setError] = useState<string | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDisplayName(initialDisplayName);
+  }, [initialDisplayName]);
+
+  useEffect(() => {
+    setPhoneE164(initialPhone);
+  }, [initialPhone]);
+
+  useEffect(() => {
+    setPaymentMethod(initialMethod);
+  }, [initialMethod]);
+
+  useEffect(() => {
+    setPaymentIdentifier(initialPaymentIdentifier);
+  }, [initialPaymentIdentifier]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setSavedMessage(null);
     try {
       await onSave({ displayName: displayName.trim(), phoneE164: phoneE164.trim(), paymentMethod, paymentIdentifier: paymentIdentifier.trim() });
-      setPaymentIdentifier("");
+      if (mode === "complete") {
+        setPaymentIdentifier("");
+      } else {
+        setSavedMessage("Profile updated successfully!");
+      }
     } catch {
       setError("We could not save your profile. Please try again.");
     }
@@ -54,6 +78,7 @@ export function MemberProfileForm({
         </select></label>
         <label>Payment handle or account email<input required maxLength={254} autoComplete="off" value={paymentIdentifier} onChange={(event) => setPaymentIdentifier(event.target.value)} /></label>
         <p>Payment identifiers are encrypted. The app never sends money.</p>
+        {savedMessage && <p role="status" style={{ color: "#166534", backgroundColor: "#f0fdf4", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid #bbf7d0", fontSize: "0.9rem" }}>{savedMessage}</p>}
         {error && <p role="alert">{error}</p>}
         <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
       </form>

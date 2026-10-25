@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { resolveServiceApiKey } from "../_shared/service-key.mjs";
-import { canonicalJson, emailDigest, keyedDigest, protectPaymentIdentifier, requestDigest, requiredEnv } from "../_shared/crypto.ts";
+import { canonicalJson, emailDigest, keyedDigest, protectPaymentIdentifier, unprotectPaymentIdentifier, requestDigest, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, emailSchema, isOriginAllowed, json, profileSchema, readBody } from "../_shared/http.ts";
 
 const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
@@ -82,9 +82,35 @@ Deno.serve(async (request) => {
     if (member.account_status !== "active") return json(request, 403, { error: "membership_inactive", requestId });
     const [{ data: contact }, { data: method }] = await Promise.all([
       service.from("member_private_contacts").select("phone_e164").eq("member_id", member.member_id).maybeSingle(),
-      service.from("member_payment_methods").select("method").eq("member_id", member.member_id).eq("preferred", true).eq("active", true).maybeSingle(),
+      service.from("member_payment_methods").select("id, method").eq("member_id", member.member_id).eq("preferred", true).eq("active", true).maybeSingle(),
     ]);
-    return json(request, 200, { member: { memberId: member.member_id, displayName: member.display_name, role: member.member_role, phoneE164: contact?.phone_e164 ?? "", paymentMethod: method?.method ?? null }, requestId });
+
+    let paymentIdentifier: string | null = null;
+    try {
+      const { data: identRows, error: identErr } = await service.rpc("member_api_get_own_payment_identifier", {
+        p_auth_user_id: authUser.id,
+      });
+      if (!identErr && identRows && identRows.length > 0) {
+        const row = identRows[0] as { identifier_ciphertext_hex: string; nonce_hex: string; key_version: string };
+        if (row.identifier_ciphertext_hex && row.nonce_hex) {
+          paymentIdentifier = await unprotectPaymentIdentifier(row.identifier_ciphertext_hex, row.nonce_hex);
+        }
+      }
+    } catch (identCatch) {
+      console.warn("Could not decrypt member own payment identifier:", identCatch);
+    }
+
+    return json(request, 200, {
+      member: {
+        memberId: member.member_id,
+        displayName: member.display_name,
+        role: member.member_role,
+        phoneE164: contact?.phone_e164 ?? "",
+        paymentMethod: method?.method ?? null,
+        paymentIdentifier,
+      },
+      requestId,
+    });
   }
   if (action === "list_members") {
     if (!member || member.member_role !== "admin" || member.account_status !== "active") return json(request, 403, { error: "administrator_required", requestId });

@@ -277,6 +277,7 @@ export function AppRoutes() {
                       initialDisplayName={profile.displayName}
                       initialPhone={profile.phoneE164}
                       initialMethod={profile.paymentMethod ?? "venmo"}
+                      initialPaymentIdentifier={profile.paymentIdentifier ?? ""}
                       isAdmin={membership.status === "active" && membership.role === "admin"}
                       onSave={saveProfile}
                     />
