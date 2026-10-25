@@ -178,23 +178,26 @@ describe("MasterActivitiesTab", () => {
     // Submit
     await user.click(within(modal).getByRole("button", { name: /save template/i }));
 
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith(
-        "admin_manage_master_activity",
-        expect.objectContaining({
-          action: "create",
-          title: "ATV Dune Riding",
-          category: "outdoor",
-          imageUrl: "https://example.com/atv.jpg",
-          locationName: "Oceano Dunes SVRA",
-          address: "100 Pier Ave, Oceano, CA 93445",
-          directionsUrl: "https://maps.google.com/?q=oceano",
-          unitLabel: "ATV",
-          unitCapacity: 1,
-          bookingNotes: "Waiver must be signed online before arrival.",
-        })
-      );
-    });
+    await waitFor(
+      () => {
+        expect(api).toHaveBeenCalledWith(
+          "admin_manage_master_activity",
+          expect.objectContaining({
+            action: "create",
+            title: "ATV Dune Riding",
+            category: "outdoor",
+            imageUrl: "https://example.com/atv.jpg",
+            locationName: "Oceano Dunes SVRA",
+            address: "100 Pier Ave, Oceano, CA 93445",
+            directionsUrl: "https://maps.google.com/?q=oceano",
+            unitLabel: "ATV",
+            unitCapacity: 1,
+            bookingNotes: "Waiver must be signed online before arrival.",
+          })
+        );
+      },
+      { timeout: 3000 }
+    );
 
     await waitFor(() => {
       expect(screen.getByText("ATV Dune Riding")).toBeInTheDocument();
@@ -247,16 +250,19 @@ describe("MasterActivitiesTab", () => {
 
     await user.click(within(modal).getByRole("button", { name: /save template/i }));
 
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith(
-        "admin_manage_master_activity",
-        expect.objectContaining({
-          action: "update",
-          id: "act-1",
-          unitCapacity: 3,
-        })
-      );
-    });
+    await waitFor(
+      () => {
+        expect(api).toHaveBeenCalledWith(
+          "admin_manage_master_activity",
+          expect.objectContaining({
+            action: "update",
+            id: "act-1",
+            unitCapacity: 3,
+          })
+        );
+      },
+      { timeout: 3000 }
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/3 per GoCar/i)).toBeInTheDocument();

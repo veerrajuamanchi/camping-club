@@ -1041,6 +1041,15 @@ describe("TripActivitiesTab", () => {
     expect(await screen.findByText(/🏎️ Your Vehicles \(2\)/i)).toBeInTheDocument();
     expect(screen.getByText("GoCar #1")).toBeInTheDocument();
     expect(screen.getByText("GoCar #2")).toBeInTheDocument();
+
+    // Verify purchaser is in the vehicle card heading for BOTH vehicles
+    const purchaserHeadings = screen.getAllByText(/👑 Purchaser:/i);
+    expect(purchaserHeadings).toHaveLength(2);
+    expect(purchaserHeadings[0]).toHaveTextContent("👑 Purchaser: Veerraju Amanchi (You)");
+    expect(purchaserHeadings[1]).toHaveTextContent("👑 Purchaser: You");
+
+    // Verify individual rider rows do NOT have standalone "👑 Purchaser" badge
+    expect(screen.queryByText(/^👑 Purchaser$/)).not.toBeInTheDocument();
   });
 
   it("allows selecting who paid for the voucher and passes purchaserMemberId to submit_activity_voucher API", async () => {

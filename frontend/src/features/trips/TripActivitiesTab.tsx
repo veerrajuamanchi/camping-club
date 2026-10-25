@@ -1022,12 +1022,20 @@ export function TripActivitiesTab({
                     const maxCap = grp.capacity || act.unit_capacity || 2;
                     const memberCount = grp.members?.length || 0;
                     const cardTitle = grp.group_name || `${unitLabel} #${grp.group_number}`;
+                    const purchaserDisplayName =
+                      grp.purchaser_display_name ||
+                      attendeesList.find((a) => a.memberId === grp.purchaser_member_id)?.displayName ||
+                      (isPurchaser ? "You" : null);
 
                     return (
                       <div
                         key={grp.id}
                         style={{
-                          border: isUserInGroup ? "2px solid #3b82f6" : "1px solid #e2e8f0",
+                          border: isUserInGroup
+                            ? "2px solid #3b82f6"
+                            : isPurchaser
+                            ? "1.5px solid #f59e0b"
+                            : "1px solid #e2e8f0",
                           borderRadius: "8px",
                           background: isUserInGroup ? "#f8fafc" : "#ffffff",
                           padding: "14px",
@@ -1041,12 +1049,33 @@ export function TripActivitiesTab({
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
-                            alignItems: "center",
+                            alignItems: "flex-start",
+                            gap: "0.5rem",
                           }}
                         >
-                          <h4 style={{ margin: 0, fontSize: "0.98rem", fontWeight: 700 }}>
-                            {cardTitle}
-                          </h4>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: "0.98rem", fontWeight: 700 }}>
+                              {cardTitle}
+                            </h4>
+                            {grp.purchaser_member_id && (
+                              <div
+                                style={{
+                                  fontSize: "0.8rem",
+                                  color: "#b45309",
+                                  fontWeight: 600,
+                                  marginTop: "3px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                }}
+                              >
+                                <span>
+                                  👑 Purchaser: {purchaserDisplayName || "Assigned"}
+                                  {isPurchaser && purchaserDisplayName !== "You" ? " (You)" : ""}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                           {grp.voucher_status === "purchased" || grp.voucher_status === "verified" ? (
                             <span
                               style={{
@@ -1056,6 +1085,7 @@ export function TripActivitiesTab({
                                 borderRadius: "9999px",
                                 background: "#dcfce7",
                                 color: "#166534",
+                                whiteSpace: "nowrap",
                               }}
                             >
                               ✓ READY
@@ -1069,6 +1099,7 @@ export function TripActivitiesTab({
                                 borderRadius: "9999px",
                                 background: "#f1f5f9",
                                 color: "#475569",
+                                whiteSpace: "nowrap",
                               }}
                             >
                               Exempt
@@ -1082,6 +1113,7 @@ export function TripActivitiesTab({
                                 borderRadius: "9999px",
                                 background: "#fef3c7",
                                 color: "#92400e",
+                                whiteSpace: "nowrap",
                               }}
                             >
                               ⚠️ VOUCHER NEEDED
@@ -1116,17 +1148,6 @@ export function TripActivitiesTab({
                                   {m.display_name || "Unknown"}
                                   {isMe ? " (You)" : isPartner ? " (Partner)" : ""}
                                 </span>
-                                {m.member_id === grp.purchaser_member_id && (
-                                  <span
-                                    style={{
-                                      fontSize: "0.72rem",
-                                      color: "#b45309",
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    👑 Purchaser
-                                  </span>
-                                )}
                               </div>
                             );
                           })}
@@ -1433,6 +1454,7 @@ export function TripActivitiesTab({
       {callSheetActivity && (
         <CallSheetModal
           activity={callSheetActivity}
+          attendeesList={attendeesList}
           copied={callSheetCopied}
           onCopy={() => setCallSheetCopied(true)}
           onClose={() => setCallSheetActivity(null)}
@@ -1704,11 +1726,13 @@ function VoucherModal({
 // -------------------------------------------------------------
 function CallSheetModal({
   activity,
+  attendeesList = [],
   copied,
   onCopy,
   onClose,
 }: {
   activity: TripActivityItem;
+  attendeesList?: Array<{ memberId: string; displayName: string }>;
   copied: boolean;
   onCopy: () => void;
   onClose: () => void;
@@ -1731,7 +1755,10 @@ function CallSheetModal({
     for (const g of activity.groups || []) {
       const vLabel = g.group_name || `${activity.unit_label || "Vehicle"} #${g.group_number}`;
       const riders = (g.members || []).map((m) => m.display_name).join(", ") || "None";
-      const purchaser = g.purchaser_display_name || "-";
+      const purchaser =
+        g.purchaser_display_name ||
+        attendeesList.find((a) => a.memberId === g.purchaser_member_id)?.displayName ||
+        "-";
       const order = g.order_number || g.order_reference_number || "-";
       const code = g.voucher_code || (g.voucher_status === "purchased" ? "Masked" : "-");
       const pin = g.security_pin || "-";
@@ -1810,7 +1837,11 @@ function CallSheetModal({
                   <tr key={g.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td style={{ padding: "8px 10px", fontWeight: 600 }}>{vLabel}</td>
                     <td style={{ padding: "8px 10px" }}>{riders}</td>
-                    <td style={{ padding: "8px 10px" }}>{g.purchaser_display_name || "-"}</td>
+                    <td style={{ padding: "8px 10px" }}>
+                      {g.purchaser_display_name ||
+                        attendeesList.find((a) => a.memberId === g.purchaser_member_id)?.displayName ||
+                        "-"}
+                    </td>
                     <td style={{ padding: "8px 10px" }}>
                       {g.order_number || g.order_reference_number || "-"}
                     </td>

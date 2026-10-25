@@ -1435,6 +1435,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     type="button"
                     onClick={() => setTab("activities")}
                     className="hub-activity-row-btn"
+                    style={{
+                      color: "#1f2937",
+                    }}
                   >
                     <span
                       style={{
@@ -1445,7 +1448,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     >
                       {isActivityDone && !isEditingActivityChoice ? "✓" : "⚠️"}
                     </span>
-                    <strong>Signature Activity</strong>:{" "}
+                    <strong style={{ color: "#0f172a" }}>Signature Activity</strong>:{" "}
                     {myActivityParticipant?.status === "attending" && !isEditingActivityChoice ? (
                       <span style={{ color: "#16a34a", fontWeight: 600 }}>
                         Participating in {primaryActivity.title}

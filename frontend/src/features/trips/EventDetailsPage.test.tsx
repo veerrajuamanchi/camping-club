@@ -886,6 +886,7 @@ describe("EventDetailsPage", () => {
       const activityBtn = within(activityRow).getByRole("button", { name: /signature activity/i });
       expect(activityBtn).toBeInTheDocument();
       expect(activityBtn).toHaveClass("hub-activity-row-btn");
+      expect(activityBtn).toHaveStyle({ color: "#1f2937" });
 
       await user.click(activityBtn);
 

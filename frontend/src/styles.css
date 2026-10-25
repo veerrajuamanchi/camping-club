@@ -722,6 +722,7 @@ label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color
   background: none;
   border: none;
   padding: 0;
+  color: #1f2937;
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -731,6 +732,10 @@ label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color
   flex-wrap: wrap;
   transition: color 0.15s ease;
   min-height: auto;
+}
+
+.hub-activity-row-btn strong {
+  color: #0f172a;
 }
 
 .hub-activity-row-btn:hover {
