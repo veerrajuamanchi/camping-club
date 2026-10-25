@@ -97,6 +97,9 @@ export function AppRoutes() {
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [globalSignOut, setGlobalSignOut] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (membership.status === "active" && membership.role === "admin") {
@@ -185,7 +188,7 @@ export function AppRoutes() {
                   type="button"
                   onClick={() => {
                     setUserMenuOpen(false);
-                    void signOut().then(() => navigate("/signin", { replace: true }));
+                    setShowSignOutModal(true);
                   }}
                 >
                   🚪 Sign out
@@ -200,13 +203,145 @@ export function AppRoutes() {
             className="secondary-button"
             style={{ padding: "0.35rem 0.75rem", fontSize: "0.85rem", cursor: "pointer" }}
             onClick={() => {
-              void signOut().then(() => navigate("/signin", { replace: true }));
+              setShowSignOutModal(true);
             }}
           >
             🚪 Sign out
           </button>
         )}
       </header>
+      {showSignOutModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sign-out-modal-title"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: "1rem",
+            backdropFilter: "blur(2px)",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !signingOut) setShowSignOutModal(false);
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "12px",
+              maxWidth: "420px",
+              width: "100%",
+              padding: "1.5rem",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1.25rem",
+            }}
+          >
+            <div>
+              <h2
+                id="sign-out-modal-title"
+                style={{
+                  margin: "0 0 0.5rem",
+                  fontSize: "1.25rem",
+                  color: "#0f172a",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+              >
+                <span>🚪</span> Confirm Sign Out
+              </h2>
+              <p style={{ margin: 0, color: "#475569", fontSize: "0.92rem", lineHeight: 1.5 }}>
+                Are you sure you want to sign out of <strong>Private Camping Club</strong>?
+              </p>
+            </div>
+
+            <div
+              style={{
+                background: "#f8fafc",
+                padding: "0.85rem",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "0.6rem",
+                  cursor: "pointer",
+                  fontSize: "0.85rem",
+                  color: "#334155",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={globalSignOut}
+                  onChange={(e) => setGlobalSignOut(e.target.checked)}
+                  style={{ marginTop: "0.15rem", width: "16px", height: "16px", cursor: "pointer" }}
+                />
+                <span>
+                  <strong>Sign out of all devices & domains</strong>
+                  <br />
+                  <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                    Revokes active sessions across all devices (recommended for shared computers or switching domains).
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.25rem" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={signingOut}
+                onClick={() => setShowSignOutModal(false)}
+                style={{ minHeight: "44px", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={signingOut}
+                onClick={async () => {
+                  setSigningOut(true);
+                  try {
+                    await signOut({ scope: globalSignOut ? "global" : "local" });
+                    setShowSignOutModal(false);
+                    navigate("/signin", { replace: true });
+                  } finally {
+                    setSigningOut(false);
+                  }
+                }}
+                style={{
+                  minHeight: "44px",
+                  padding: "0.5rem 1.25rem",
+                  borderRadius: "6px",
+                  backgroundColor: "#dc2626",
+                  color: "#ffffff",
+                  border: "none",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem",
+                }}
+              >
+                {signingOut ? "Signing out…" : "Confirm Sign Out"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {membership.status === "active" && membership.role === "admin" && pendingRequestsCount > 0 && (
         <div
           style={{

@@ -63,8 +63,8 @@ test("confirmed RSVP changes, tasks, deactivation and logout persist", async ({ 
     await expect.poll(response).toBe("not_coming");
     await page.reload();
     await expect(page.locator(".status-badge-not-going")).toBeVisible();
-    const released = await supabaseAdmin.from("trip_duty_assignments").select("status").eq("id", assignmentId).single();
-    await checked(released); expect(released.data!.status).toBe("dropped");
+    const released = await supabaseAdmin.from("trip_duty_assignments").select("status").eq("id", assignmentId).maybeSingle();
+    expect(released.data).toBeNull();
     await page.getByRole("button", { name: "Going", exact: true }).click();
     await page.getByLabel("I have read and agree to the Camping Constitution.").check();
     await page.getByRole("button", { name: "Confirm Going" }).click();
@@ -72,6 +72,7 @@ test("confirmed RSVP changes, tasks, deactivation and logout persist", async ({ 
     await expect.poll(response).toBe("coming");
     await page.getByRole("button", { name: "User menu" }).click();
     await page.getByRole("button", { name: /Sign out/ }).click();
+    await page.getByRole("button", { name: "Confirm Sign Out" }).click();
     await expect(page).toHaveURL(/\/signin$/);
     await page.reload();
     await expect(page.getByRole("heading", { name: "Sign in to the Camping Club" })).toBeVisible();

@@ -3,12 +3,16 @@ import type { Session } from "@supabase/supabase-js";
 import { invokeMemberApi, MemberApiError, supabase, type ApiMember } from "../lib/supabase";
 import type { MembershipState } from "../features/auth/AccessBoundary";
 
+export type SignOutOptions = {
+  scope?: "global" | "local" | "others";
+};
+
 type AuthValue = {
   session: Session | null;
   membership: MembershipState;
   profile: ApiMember | null;
   refresh: () => Promise<MembershipState>;
-  signOut: () => Promise<void>;
+  signOut: (options?: SignOutOptions) => Promise<void>;
 };
 const AuthContext = createContext<AuthValue | null>(null);
 
@@ -51,7 +55,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthValue>(() => ({
     session, membership, profile, refresh,
-    signOut: async () => { if (supabase) await supabase.auth.signOut(); setProfile(null); setMembership({ status: "signedOut" }); },
+    signOut: async (options?: SignOutOptions) => {
+      if (supabase) {
+        try {
+          await supabase.auth.signOut(options);
+        } catch {
+          // Ensure local state clears even if backend network call fails
+        }
+      }
+      setProfile(null);
+      setMembership({ status: "signedOut" });
+    },
   }), [session, membership, profile, refresh]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

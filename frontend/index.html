@@ -9,6 +9,13 @@
       name="description"
       content="Private Camping Club member coordination"
     />
+    <script>
+      (function () {
+        if (typeof window !== "undefined" && window.location.hostname === "camping-club.onrender.com") {
+          window.location.replace("https://private-camping-club.com" + window.location.pathname + window.location.search + window.location.hash);
+        }
+      })();
+    </script>
     <title>Private Camping Club</title>
   </head>
   <body>
