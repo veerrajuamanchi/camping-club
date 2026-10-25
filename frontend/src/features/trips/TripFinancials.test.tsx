@@ -738,4 +738,47 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
       );
     });
   });
+
+  it("renders website maintenance expense with distinct website maintenance badge", async () => {
+    const dataWithWebsiteFee: TripFinancialsData = {
+      ...mockDraftFinancials,
+      expenses: [
+        {
+          id: "exp-wm-1",
+          expenseType: "website_maintenance",
+          payerMemberId: "member-admin",
+          payerName: "Veerraju Amanchi",
+          amountCents: 500,
+          description: "Website Build & Maintenance Fee ($5.00 - First Event)",
+          incurredDate: "2026-10-24",
+          receiptUrl: null,
+          splitMode: "custom",
+          isLocked: false,
+          allocations: [
+            { memberId: "member-1", memberName: "Dave K.", allocatedCents: 500, isMe: true },
+          ],
+        },
+      ],
+    };
+
+    const mockApi = vi.fn().mockResolvedValue(dataWithWebsiteFee);
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Veerraju Amanchi" },
+          { memberId: "member-1", displayName: "Dave K." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    expect(await screen.findByText(/Website Build & Maintenance Fee/i)).toBeInTheDocument();
+    expect(screen.getByText(/🌐 Website Maintenance/i)).toBeInTheDocument();
+    expect(screen.getByText("$5.00")).toBeInTheDocument();
+  });
 });

@@ -81,6 +81,7 @@ export type TripActivityItem = {
 export type TripActivitiesTabProps = {
   tripId: string;
   isAdmin: boolean;
+  isAccountant?: boolean;
   isConfirmedAttendee: boolean;
   currentMemberId?: string;
   tripAttendees?: Array<{ memberId: string; displayName: string }>;
@@ -154,6 +155,7 @@ export function formatActivitySchedule(
 export function TripActivitiesTab({
   tripId,
   isAdmin,
+  isAccountant = false,
   isConfirmedAttendee,
   currentMemberId,
   tripAttendees,
@@ -996,7 +998,10 @@ export function TripActivitiesTab({
                     const isUserInGroup = (grp.members || []).some(
                       (m) => m.member_id === currentMemberId
                     );
-                    const canEnterVoucher = isUserInGroup || isAdmin;
+                    const isPurchaser = Boolean(
+                      currentMemberId && grp.purchaser_member_id === currentMemberId
+                    );
+                    const canEnterVoucher = isUserInGroup || isPurchaser || isAdmin || isAccountant;
                     const canDeleteGroup =
                       isAdmin &&
                       grp.voucher_status !== "purchased" &&
@@ -1252,7 +1257,7 @@ export function TripActivitiesTab({
                     );
                   };
 
-                  if (isAdmin) {
+                  if (isAdmin || isAccountant) {
                     return (
                       <div style={{ marginTop: "16px" }}>
                         <div
@@ -1304,10 +1309,14 @@ export function TripActivitiesTab({
                     );
                   }
 
-                  // Non-admin camper view
-                  const myGroup = assignedGroup;
+                  // Non-admin camper view: show vehicles they are riding in OR designated purchaser for
+                  const myGroups = (act.groups || []).filter(
+                    (g) =>
+                      (g.members || []).some((m) => m.member_id === currentMemberId) ||
+                      (Boolean(currentMemberId) && g.purchaser_member_id === currentMemberId)
+                  );
 
-                  if (myGroup) {
+                  if (myGroups.length > 0) {
                     return (
                       <div style={{ marginTop: "16px" }}>
                         <h4
@@ -1318,7 +1327,7 @@ export function TripActivitiesTab({
                             color: "#0f172a",
                           }}
                         >
-                          🏎️ Your Assigned Vehicle
+                          🏎️ {myGroups.length === 1 ? "Your Assigned Vehicle" : `Your Vehicles (${myGroups.length})`}
                         </h4>
                         <div
                           style={{
@@ -1328,7 +1337,7 @@ export function TripActivitiesTab({
                             gap: "14px",
                           }}
                         >
-                          {renderGroupCard(myGroup)}
+                          {myGroups.map((grp) => renderGroupCard(grp))}
                         </div>
                       </div>
                     );

@@ -2486,6 +2486,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         <TripActivitiesTab
           tripId={details.tripId}
           isAdmin={isAdmin}
+          isAccountant={isAccountant}
           isConfirmedAttendee={isComing}
           currentMemberId={authProfileMemberId}
           tripAttendees={confirmedAttendees}

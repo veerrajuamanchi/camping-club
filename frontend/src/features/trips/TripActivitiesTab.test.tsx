@@ -965,4 +965,81 @@ describe("TripActivitiesTab", () => {
       })
     );
   });
+
+  it("allows accountant to view all vehicle pairings and enter vouchers without admin mutative controls", async () => {
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isAccountant={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-accountant"
+        api={api}
+      />
+    );
+
+    // Verify all vehicle pairings are rendered
+    expect(await screen.findByText(/🏎️ Vehicle Pairings \(2\)/i)).toBeInTheDocument();
+    expect(screen.getByText("GoCar #1")).toBeInTheDocument();
+    expect(screen.getByText("GoCar #2")).toBeInTheDocument();
+
+    // Verify enter voucher details buttons exist on vehicle cards
+    const voucherButtons = screen.getAllByRole("button", { name: /\+ Enter Voucher Details/i });
+    expect(voucherButtons.length).toBeGreaterThanOrEqual(1);
+
+    // Verify admin management buttons are NOT rendered for accountant
+    expect(screen.queryByRole("button", { name: /\+ Add Vehicle/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /🎲 Auto-Shuffle/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /🔒 Lock Pairings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /✏️ Edit Activity/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Assign Campers/i })).not.toBeInTheDocument();
+  });
+
+  it("allows non-admin purchaser to see all vehicles they purchased vouchers for", async () => {
+    const multiVoucherActivities = [
+      {
+        ...mockTripActivities[0],
+        groups: [
+          {
+            ...mockTripActivities[0].groups[0],
+            purchaser_member_id: "mem-buyer",
+          },
+          {
+            ...mockTripActivities[0].groups[1],
+            purchaser_member_id: "mem-buyer",
+          },
+        ],
+      },
+    ] as unknown as TripActivityItem[];
+
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: multiVoucherActivities };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isAccountant={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-buyer"
+        api={api}
+      />
+    );
+
+    // Should see both vehicles under Your Vehicles (2)
+    expect(await screen.findByText(/🏎️ Your Vehicles \(2\)/i)).toBeInTheDocument();
+    expect(screen.getByText("GoCar #1")).toBeInTheDocument();
+    expect(screen.getByText("GoCar #2")).toBeInTheDocument();
+  });
 });

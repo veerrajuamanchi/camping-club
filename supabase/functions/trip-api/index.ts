@@ -1468,7 +1468,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   const expenses = rawExpenses.map((exp: any) => {
     let expAllocs: Array<{ id?: string; memberId: string; memberName: string; allocatedCents: number; isMe: boolean }>;
-    const isDynamic = !isFinalized && (
+    const isDynamic = !isFinalized && exp.expense_type !== "website_maintenance" && (
       exp.split_mode === "all_attendees" ||
       (!exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
     );
@@ -1791,6 +1791,7 @@ async function getTripActivities(member: Member, tripId: string): Promise<Record
   }
 
   const isAdmin = member.member_role === "admin" || member.member_role === "administrator";
+  const isAccountant = member.member_role === "accountant";
 
   const sanitizedActivities = rawActivities.map((act: any) => {
     const participants = (act.participants ?? []).map((p: any) => ({
@@ -1810,8 +1811,8 @@ async function getTripActivities(member: Member, tripId: string): Promise<Record
         ...g,
         purchaser_display_name: g.purchaser_member_id ? (memberProfileMap.get(g.purchaser_member_id) ?? null) : null,
         members: groupMembers,
-        voucher_code: (isAdmin || isAssigned) ? g.voucher_code : null,
-        security_pin: (isAdmin || isAssigned) ? g.security_pin : null,
+        voucher_code: (isAdmin || isAccountant || isAssigned) ? g.voucher_code : null,
+        security_pin: (isAdmin || isAccountant || isAssigned) ? g.security_pin : null,
       };
     });
 

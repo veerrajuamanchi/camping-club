@@ -12,7 +12,7 @@ export type ExpenseAllocation = {
 
 export type TripExpense = {
   id: string;
-  expenseType: "cabin_deposit" | "carpool_mileage" | "shared_receipt" | "other";
+  expenseType: "cabin_deposit" | "carpool_mileage" | "shared_receipt" | "website_maintenance" | "other";
   splitMode?: "all_attendees" | "custom";
   payerMemberId: string;
   payerName: string;
@@ -802,7 +802,21 @@ export function TripFinancialsTab({
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                       <strong style={{ fontSize: "0.9rem" }}>{exp.description}</strong>
-                      {exp.splitMode === "all_attendees" ? (
+                      {exp.expenseType === "website_maintenance" ? (
+                        <span
+                          style={{
+                            background: "#e0e7ff",
+                            color: "#3730a3",
+                            border: "1px solid #c7d2fe",
+                            fontSize: "0.75rem",
+                            padding: "0.15rem 0.5rem",
+                            borderRadius: "9999px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          🌐 Website Maintenance
+                        </span>
+                      ) : exp.splitMode === "all_attendees" ? (
                         <span
                           style={{
                             background: "#dcfce7",
