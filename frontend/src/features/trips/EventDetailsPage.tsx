@@ -13,6 +13,8 @@ import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
 import { TripActivitiesTab, ACTIVITY_CATEGORIES } from "./TripActivitiesTab";
 import { resolveActionsForCalendarTrip } from "../../domain/actionResolution";
+import { evaluateTripHealth } from "../../domain/tripHealth";
+import { getTripLifecyclePhase } from "../../domain/lifecyclePhase";
 
 type TripDetails = {
   tripId: string;
@@ -422,6 +424,21 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    if (details && !searchParams.get("tab")) {
+      const currentLifecycle = getTripLifecyclePhase({
+        startsOn: details.startsOn,
+        endsOn: details.endsOn,
+        eventStatus: details.eventStatus,
+        tripStatus: details.tripStatus,
+        pollDeadlineAt: details.pollDeadlineAt,
+      });
+      if (currentLifecycle.defaultTab !== tab) {
+        setTabState(currentLifecycle.defaultTab);
+      }
+    }
+  }, [details]);
+
   const setTab = (newTab: Tab) => {
     setTabState(newTab);
     if (newTab === "constitution") {
@@ -445,6 +462,34 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   };
 
   const currentDestination = getDestinationForTab(tab);
+
+  const lifecycle = details
+    ? getTripLifecyclePhase({
+        startsOn: details.startsOn,
+        endsOn: details.endsOn,
+        eventStatus: details.eventStatus,
+        tripStatus: details.tripStatus,
+        pollDeadlineAt: details.pollDeadlineAt,
+      })
+    : null;
+
+  const tripHealth = details
+    ? evaluateTripHealth({
+        tripId: details.tripId,
+        title: details.title,
+        startsOn: details.startsOn,
+        endsOn: details.endsOn,
+        pollDeadlineAt: details.pollDeadlineAt,
+        contractualDeadlineAt: details.pollDeadlineAt,
+        effectiveStatus: details.eventStatus,
+        minParticipants: details.minimumParticipants,
+        confirmedAttendeeCount: details.comingCount ?? 0,
+        cabinBookingStatus: details.cabinBookingStatus,
+        unverifiedDepositCount: details.depositStatus === "submitted_by_member" ? 1 : 0,
+        vacantDutyCount: Math.max(0, (details.taskQuotaTarget ?? 2) - (details.myDutyCount ?? 0)),
+        criticalDutyVacant: false,
+      })
+    : null;
 
   const [rsvpChoice, setRsvpChoice] = useState<"coming" | "not_coming" | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -1034,6 +1079,25 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             <span className={`event-status-pill status-${effectiveStatus === "confirmed" ? "confirmed" : effectiveStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : details.pollStatus}`}>
               Event Status: {eventStatusLabel}
             </span>
+            {tripHealth && (
+              <span
+                data-testid="trip-health-hero-badge"
+                className={`badge ${tripHealth.badgeClass}`}
+                style={{ fontSize: "0.82rem", fontWeight: 700 }}
+                title={tripHealth.summary}
+              >
+                {tripHealth.status === "on_track" ? "✓" : tripHealth.status === "at_risk" ? "🚨" : "⚠️"} {tripHealth.label}
+              </span>
+            )}
+            {lifecycle?.badgeText && (
+              <span
+                data-testid="trip-lifecycle-hero-badge"
+                className="badge"
+                style={{ background: "#e0e7ff", color: "#3730a3", fontSize: "0.82rem", fontWeight: 600 }}
+              >
+                {lifecycle.badgeText}
+              </span>
+            )}
             <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
               RSVP: {rsvpStatusLabel}
             </span>
@@ -1296,6 +1360,157 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
 
       {currentDestination === "overview" && (
         <div className="stack">
+          {/* Camping Club 2.0 Deterministic Trip Health */}
+          {tripHealth && (
+            <details
+              className="trip-health-accordion card"
+              data-testid="trip-health-card"
+              style={{
+                padding: "0.85rem 1.15rem",
+                borderRadius: "8px",
+                background: tripHealth.status === "on_track" ? "#f0fdf4" : tripHealth.status === "at_risk" ? "#fef2f2" : "#fffbeb",
+                border: `1.5px solid ${tripHealth.status === "on_track" ? "#bbf7d0" : tripHealth.status === "at_risk" ? "#fecaca" : "#fed7aa"}`,
+              }}
+            >
+              <summary
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                  listStyle: "none",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span
+                    className={`badge ${tripHealth.badgeClass}`}
+                    style={{ fontSize: "0.82rem", fontWeight: 700 }}
+                    data-testid="trip-health-status-badge"
+                  >
+                    {tripHealth.status === "on_track" ? "✓" : tripHealth.status === "at_risk" ? "🚨" : "⚠️"} {tripHealth.label}
+                  </span>
+                  <span style={{ fontSize: "0.85rem", color: "#1e293b", fontWeight: 500 }}>
+                    {tripHealth.summary}
+                  </span>
+                </div>
+                {tripHealth.reasons.length > 0 && (
+                  <span style={{ fontSize: "0.8rem", color: "#2563eb", fontWeight: 600 }}>
+                    Review {tripHealth.reasons.length} Exception{tripHealth.reasons.length > 1 ? "s" : ""} ▾
+                  </span>
+                )}
+              </summary>
+              {tripHealth.reasons.length > 0 && (
+                <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {tripHealth.reasons.map((r) => (
+                    <div
+                      key={r.conditionId}
+                      data-testid={`health-exception-${r.conditionId}`}
+                      style={{
+                        background: "#ffffff",
+                        padding: "0.5rem 0.75rem",
+                        borderRadius: "6px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <p style={{ margin: 0, fontWeight: 600, fontSize: "0.85rem", color: "#0f172a" }}>
+                          {r.message}
+                        </p>
+                        <span style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+                          {r.category}
+                        </span>
+                      </div>
+                      <p style={{ margin: "0.2rem 0 0", fontSize: "0.8rem", color: "#b45309" }}>
+                        ⚡ <strong>Action:</strong> {r.actionRequired}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </details>
+          )}
+
+          {/* Active Camping On-Site Quick Access Banner */}
+          {lifecycle?.phase === "active_camping" && (
+            <div
+              className="card active-camping-banner"
+              data-testid="active-camping-banner"
+              style={{
+                background: "#ecfdf5",
+                border: "1.5px solid #6ee7b7",
+                borderRadius: "8px",
+                padding: "0.85rem 1.25rem",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                <span style={{ fontSize: "1.3rem" }}>🏕️</span>
+                <strong style={{ fontSize: "1rem", color: "#065f46" }}>Currently Camping · On-Site Quick Access</strong>
+              </div>
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", color: "#047857" }}>
+                {lifecycle.focusCallout}
+              </p>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", fontSize: "0.82rem" }}>
+                {details.campsite?.directions && (
+                  <span style={{ background: "#ffffff", padding: "0.3rem 0.6rem", borderRadius: "4px", border: "1px solid #a7f3d0" }}>
+                    📍 <strong>Directions:</strong> {details.campsite.directions}
+                  </span>
+                )}
+                {details.campsite?.campHostName && (
+                  <span style={{ background: "#ffffff", padding: "0.3rem 0.6rem", borderRadius: "4px", border: "1px solid #a7f3d0" }}>
+                    📞 <strong>Camp Host:</strong> {details.campsite.campHostName} {details.campsite.campHostPhone ? `(${details.campsite.campHostPhone})` : ""}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Post-Trip Reconciliation Banner */}
+          {lifecycle?.phase === "post_trip" && (
+            <div
+              className="card post-trip-banner"
+              data-testid="post-trip-banner"
+              style={{
+                background: "#eff6ff",
+                border: "1.5px solid #93c5fd",
+                borderRadius: "8px",
+                padding: "0.85rem 1.25rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.75rem",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                  <span style={{ fontSize: "1.2rem" }}>⚖️</span>
+                  <strong style={{ fontSize: "0.98rem", color: "#1e40af" }}>Post-Trip Reconciliation Active</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#1d4ed8" }}>
+                  {lifecycle.focusCallout}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTab("financials")}
+                style={{
+                  padding: "0.4rem 0.85rem",
+                  background: "#2563eb",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontWeight: 600,
+                  fontSize: "0.82rem",
+                  cursor: "pointer",
+                }}
+              >
+                View Settlements &amp; Transfers →
+              </button>
+            </div>
+          )}
+
           {/* Camping Club 2.0 Contextual Next Steps Banner */}
           {details.myRsvp?.response === "coming" && (
             <TripNextStepsBanner
@@ -2430,7 +2645,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </p>
             )}
 
-            {details.participantEntries.length > 0 && (
+            {(details.participantEntries ?? []).length > 0 && (
               <div style={{ marginTop: "1.25rem" }}>
                 <h3>Who's going ({details.comingCount})</h3>
                 {depositMsg && (
@@ -2439,7 +2654,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                   </p>
                 )}
                 <div className="attendees-chips-grid">
-                  {details.participantEntries.map((e) => (
+                  {(details.participantEntries ?? []).map((e) => (
                     <div
                       key={e.memberId}
                       className="attendee-chip"
@@ -2607,11 +2822,11 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </div>
             )}
 
-            {isAdmin && details.waitlistEntries.length > 0 && (
+            {isAdmin && (details.waitlistEntries ?? []).length > 0 && (
               <details style={{ marginTop: "1rem" }}>
-                <summary>Waitlist ({details.waitlistEntries.length})</summary>
+                <summary>Waitlist ({(details.waitlistEntries ?? []).length})</summary>
                 <ol>
-                  {details.waitlistEntries.map((w) => (
+                  {(details.waitlistEntries ?? []).map((w) => (
                     <li key={w.memberId}>
                       #{w.position} {w.displayName}
                       <button type="button" disabled={rsvpBusy} onClick={() => void promoteFromWaitlist(w.memberId)}>
@@ -2723,7 +2938,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           >
             <summary className="prepare-accordion-summary">
               <span style={{ fontSize: "1.1rem" }}>🚗 Transportation &amp; Carpools</span>
-              <span className="badge" style={{ marginLeft: "auto", fontSize: "0.8rem" }}>Carpools &amp; mileage ($0.50/mi)</span>
+              <span className="badge" style={{ marginLeft: "auto", fontSize: "0.8rem" }}>
+                Carpools &amp; mileage (${((details.tripMileageRateCents ?? 76) / 100).toFixed(2)}/mi)
+              </span>
             </summary>
             <div style={{ marginTop: "1rem" }}>
               <TripLogisticsTab
@@ -2737,6 +2954,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 drivingDirections={details.campsite?.directions}
                 api={api}
                 section="transportation"
+                tripMileageRateCents={details.tripMileageRateCents}
                 onEditLogistics={() => setShowEditLogistics(true)}
                 onOpenPackingChecklist={() => setShowPackingModal(true)}
               />
@@ -3015,13 +3233,13 @@ function EditTripDetailsModal({
             Cabin Reservation Payer
             <select value={cabinPayerMemberId} onChange={(e) => setCabinPayerMemberId(e.target.value)}>
               <option value="">-- No Cabin Payer Assigned --</option>
-              {details.participantEntries.map((p) => (
+              {(details.participantEntries ?? []).map((p) => (
                 <option key={p.memberId} value={p.memberId}>
                   {p.displayName} (Confirmed Attendee)
                 </option>
               ))}
               {details.allMemberEntries
-                ?.filter((m) => !details.participantEntries.some((p) => p.memberId === m.memberId))
+                ?.filter((m) => !(details.participantEntries ?? []).some((p) => p.memberId === m.memberId))
                 .map((m) => (
                   <option key={m.memberId} value={m.memberId}>
                     {m.displayName}

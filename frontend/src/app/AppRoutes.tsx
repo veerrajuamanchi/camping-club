@@ -16,6 +16,7 @@ import { EventDetailsPage } from "../features/trips/EventDetailsPage";
 import { MyActionsPage } from "../features/actions/MyActionsPage";
 import { AdminOperationsPage } from "../features/admin/AdminOperationsPage";
 import { AdminConfigurationPage } from "../features/admin/AdminConfigurationPage";
+import { NotificationBell } from "../features/notifications/NotificationBell";
 import { configurationError, invokeAuthApi, invokeMemberApi, supabase } from "../lib/supabase";
 
 function LogoutRoute() {
@@ -171,6 +172,10 @@ export function AppRoutes() {
                 ⚙️ Operations
               </Link>
             )}
+            <NotificationBell
+              memberId={profile?.memberId}
+              role={membership.role}
+            />
             <div className="user-menu-wrapper">
               <button
                 type="button"

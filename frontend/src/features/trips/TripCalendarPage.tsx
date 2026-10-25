@@ -5,6 +5,8 @@ import { invokeTripApi, TripApiError } from "../../lib/supabase";
 import { formatZonedDateTimeLocal } from "../../domain/calendar";
 import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 import { resolveActionsForCalendarTrip, getTopPriorityAction } from "../../domain/actionResolution";
+import { evaluateTripHealth } from "../../domain/tripHealth";
+import { getTripLifecyclePhase } from "../../domain/lifecyclePhase";
 
 type Rule = { stable_key: string; text: string; structured_values: Record<string, unknown> };
 type Bundle = { id: string; version: number; contentHash: string; rules: Rule[]; createdAt: string };
@@ -425,6 +427,28 @@ function EventCard({
   const topAction = getTopPriorityAction(tripActions);
   const remainingCount = tripActions.length > 1 ? tripActions.length - 1 : 0;
 
+  const tripHealth = evaluateTripHealth({
+    tripId: trip.tripId,
+    title: trip.title,
+    startsOn: trip.startsOn,
+    endsOn: trip.endsOn,
+    pollDeadlineAt: trip.pollDeadlineAt,
+    contractualDeadlineAt: trip.pollDeadlineAt,
+    effectiveStatus: trip.eventStatus,
+    minParticipants: trip.minimumParticipants,
+    confirmedAttendeeCount: trip.comingCount ?? 0,
+    cabinBookingStatus: trip.cabinBookingStatus,
+    unverifiedDepositCount: trip.depositStatus === "submitted_by_member" ? 1 : 0,
+    vacantDutyCount: Math.max(0, (trip.taskQuotaTarget ?? 2) - (trip.myDutyCount ?? 0)),
+  });
+
+  const tripLifecycle = getTripLifecyclePhase({
+    startsOn: trip.startsOn,
+    endsOn: trip.endsOn,
+    eventStatus: trip.eventStatus,
+    pollDeadlineAt: trip.pollDeadlineAt,
+  });
+
   return (
     <article className="event-card-container" aria-label={`Trip ${dateLabel}`}>
       <div className="event-card-header">
@@ -483,6 +507,23 @@ function EventCard({
           <span className={`event-status-pill status-${trip.eventStatus === "confirmed" ? "confirmed" : trip.eventStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : trip.pollStatus}`}>
             Event Status: {eventStatusLabel}
           </span>
+          <span
+            data-testid="trip-health-badge"
+            className={`badge ${tripHealth.badgeClass}`}
+            style={{ fontSize: "0.78rem" }}
+            title={tripHealth.summary}
+          >
+            {tripHealth.status === "on_track" ? "✓" : tripHealth.status === "at_risk" ? "🚨" : "⚠️"} {tripHealth.label}
+          </span>
+          {tripLifecycle.badgeText && (
+            <span
+              data-testid="trip-lifecycle-badge"
+              className="badge"
+              style={{ background: "#e0e7ff", color: "#3730a3", fontSize: "0.78rem" }}
+            >
+              {tripLifecycle.badgeText}
+            </span>
+          )}
         </div>
       </div>
 

@@ -1170,7 +1170,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     cabinBookingStatus: trip.cabin_booking_status,
     selectedCampsiteId: trip.selected_campsite_id,
     additionalInformation: trip.additional_information,
-    tripMileageRateCents: trip.trip_mileage_rate_cents ?? 50,
+    tripMileageRateCents: trip.trip_mileage_rate_cents ?? 76,
     depositAmountCents: trip.deposit_amount_cents ?? 5000,
     cabinPayerMemberId: trip.cabin_payer_member_id ?? null,
     depositStatus: trip.cabin_payer_member_id === member.member_id ? "exempt" : (ownRsvp?.deposit_status ?? "unpaid"),
@@ -1528,7 +1528,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     };
   });
 
-  const ratePerMile = trip.trip_mileage_rate_cents ?? 50;
+  const ratePerMile = trip.trip_mileage_rate_cents ?? 76;
   const carpoolReimbursements = rawCarpools
     .filter((cp: any) => {
       const occupantCount = ((cp as any).riders ?? []).length + 1;

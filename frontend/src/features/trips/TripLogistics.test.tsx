@@ -255,7 +255,7 @@ describe("Phase 4: Trip Logistics, Commitments & Carpools", () => {
     });
   });
 
-  it("displays $0.50/mi mileage reimbursement text and small-carpool collaboration disclaimer", async () => {
+  it("displays constitutional $0.76/mi default and dynamic custom mileage reimbursement text", async () => {
     const mockApi = vi.fn().mockImplementation((action: string) => {
       if (action === "get_trip_logistics") {
         return Promise.resolve({
@@ -267,7 +267,8 @@ describe("Phase 4: Trip Logistics, Commitments & Carpools", () => {
       return Promise.resolve({});
     });
 
-    render(
+    // 1. Default without prop -> $0.76/mi (Constitution rate)
+    const { unmount } = render(
       <TripLogisticsTab
         tripId="trip-1"
         isConfirmedAttendee={true}
@@ -278,13 +279,31 @@ describe("Phase 4: Trip Logistics, Commitments & Carpools", () => {
     );
 
     expect(
-      await screen.findByText(/post-trip reimbursement \(\$0\.50\/mi for 3\+ passengers\)/i)
+      await screen.findByText(/post-trip reimbursement \(\$0\.76\/mi for 3\+ passengers\)/i)
     ).toBeInTheDocument();
 
     expect(
       screen.getByText(
         /disclaimer: for carpools with fewer than 3 passengers, riders can collaborate to share the vehicle expenses directly between themselves/i
       )
+    ).toBeInTheDocument();
+
+    unmount();
+
+    // 2. Custom rate passed (e.g. 50 cents) -> $0.50/mi
+    render(
+      <TripLogisticsTab
+        tripId="trip-1"
+        isConfirmedAttendee={true}
+        isAdmin={false}
+        currentMemberId="member-1"
+        api={mockApi}
+        tripMileageRateCents={50}
+      />
+    );
+
+    expect(
+      await screen.findByText(/post-trip reimbursement \(\$0\.50\/mi for 3\+ passengers\)/i)
     ).toBeInTheDocument();
   });
 

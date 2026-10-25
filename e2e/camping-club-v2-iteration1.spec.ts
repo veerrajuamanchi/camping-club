@@ -140,7 +140,7 @@ test.describe("Camping Club 2.0 Iteration 1 Acceptance Suite", () => {
       // Reload check on trip details
       await page.reload();
       await page.waitForLoadState("networkidle");
-      await expect(page.getByRole("tab", { name: /Overview & attendees/i })).toBeVisible();
+      await expect(page.getByRole("tab", { name: /Overview/i })).toBeVisible();
     }
 
     // =========================================================================
