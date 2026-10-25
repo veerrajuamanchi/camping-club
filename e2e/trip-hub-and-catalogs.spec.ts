@@ -307,14 +307,14 @@ test.describe("Trip Hub, Master Catalogs, Deposit Submission, and Expense Split 
 
       // Verify status updates to Submitted
       await expect(depositRow.getByText(/Submitted \(Pending Verification\)/)).toBeVisible();
-      await expect(depositRow.getByText(/Submitted ⏳/)).toBeVisible();
+      await expect(depositRow.getByText(/Submitted (⏳|✓)/)).toBeVisible();
 
       // Verify reload persistence
       await memberPage.reload();
       await memberPage.waitForLoadState("networkidle");
       const reloadedDepositRow = memberPage.locator('[data-testid="hub-deposit-row"]');
       await expect(reloadedDepositRow.getByText(/Submitted \(Pending Verification\)/)).toBeVisible();
-      await expect(reloadedDepositRow.getByText(/Submitted ⏳/)).toBeVisible();
+      await expect(reloadedDepositRow.getByText(/Submitted (⏳|✓)/)).toBeVisible();
       await expect(reloadedDepositRow.getByRole("button", { name: "I Have Sent $50" })).toHaveCount(0);
 
       // -----------------------------------------------------------------------

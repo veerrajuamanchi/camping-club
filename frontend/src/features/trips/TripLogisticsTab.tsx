@@ -79,6 +79,7 @@ type Props = {
   drivingDirections?: string | null;
   api: TripApiType;
   onEditLogistics?: () => void;
+  onOpenPackingChecklist?: () => void;
 };
 
 const CATEGORY_META: Record<CommitmentCategory, { label: string; icon: string }> = {
@@ -112,6 +113,7 @@ export function TripLogisticsTab({
   drivingDirections,
   api,
   onEditLogistics,
+  onOpenPackingChecklist,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [commitments, setCommitments] = useState<TripCommitment[]>([]);
@@ -248,6 +250,7 @@ export function TripLogisticsTab({
         quantityDescription: newItemQuantity.trim() || null,
         isCritical: newItemIsCritical,
         assignedMemberId: newItemAssignee || null,
+        commitmentType: "shared_volunteer",
       });
       setShowAddCommitmentModal(false);
       setNewItemName("");
@@ -376,9 +379,17 @@ export function TripLogisticsTab({
     return <p style={{ padding: "1rem" }}>Loading trip logistics and commitments…</p>;
   }
 
-  const criticalMissing = commitments.filter((c) => c.isCritical && !c.assignedMemberId);
+  // Individual packing items belong exclusively in Personal Packing Checklist.
+  // Trip Commitments are strictly for shared volunteer items.
+  const sharedCommitments = commitments.filter(
+    (c) => c.commitmentType !== "individual_pack" && c.isActive !== false
+  );
+  const individualItemsCount = commitments.filter(
+    (c) => c.commitmentType === "individual_pack" && c.isActive !== false
+  ).length;
+  const criticalMissing = sharedCommitments.filter((c) => c.isCritical && !c.assignedMemberId);
   const filteredCommitments =
-    selectedCategory === "all" ? commitments : commitments.filter((c) => c.category === selectedCategory);
+    selectedCategory === "all" ? sharedCommitments : sharedCommitments.filter((c) => c.category === selectedCategory);
 
   return (
     <div className="stack" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -626,31 +637,44 @@ export function TripLogisticsTab({
           <div>
             <h2 style={{ margin: 0 }}>🎒 Trip Commitments (Gear &amp; Supplies)</h2>
             <p style={{ margin: "0.25rem 0 0", fontSize: "0.88rem", color: "#6b7280" }}>
-              Volunteer to bring shared gear, food, shelter, and safety supplies.
+              Volunteer to bring shared gear, food, shelter, and safety supplies. (Personal packing items are in your Personal Packing Checklist).
             </p>
           </div>
-          {isAdmin && (
-            <div style={{ display: "flex", gap: "0.5rem" }}>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {onOpenPackingChecklist && (
               <button
                 type="button"
                 className="secondary-button"
                 style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
-                disabled={actionBusy}
-                onClick={() => void handleSyncFromCatalog()}
-                title="Sync shared and individual gear/groceries from Master Catalog"
+                onClick={onOpenPackingChecklist}
+                title="View your personal packing checklist"
               >
-                🔄 Sync from Catalog
+                🎒 Personal Packing Checklist {individualItemsCount > 0 ? `(${individualItemsCount})` : ""}
               </button>
-              <button
-                type="button"
-                className="primary-button"
-                style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
-                onClick={() => setShowAddCommitmentModal(true)}
-              >
-                + Add Item
-              </button>
-            </div>
-          )}
+            )}
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+                  disabled={actionBusy}
+                  onClick={() => void handleSyncFromCatalog()}
+                  title="Sync shared and individual gear/groceries from Master Catalog"
+                >
+                  🔄 Sync from Catalog
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+                  onClick={() => setShowAddCommitmentModal(true)}
+                >
+                  + Add Item
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Category Filter Pills */}
@@ -661,10 +685,10 @@ export function TripLogisticsTab({
             style={{ padding: "0.3rem 0.75rem", fontSize: "0.82rem" }}
             onClick={() => setSelectedCategory("all")}
           >
-            All Items ({commitments.length})
+            All Items ({sharedCommitments.length})
           </button>
           {(Object.keys(CATEGORY_META) as CommitmentCategory[]).map((cat) => {
-            const count = commitments.filter((c) => c.category === cat).length;
+            const count = sharedCommitments.filter((c) => c.category === cat).length;
             return (
               <button
                 key={cat}

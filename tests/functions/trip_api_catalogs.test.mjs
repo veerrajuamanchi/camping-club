@@ -439,4 +439,47 @@ test("trip-api master catalogs, deposit tracking, and commitments extensions", a
     assert.equal(created.commitmentType, "individual_pack");
     assert.ok(detailsRes.body.commitments.individualPack.some((c) => c.id === created.id));
   });
+
+  await t.test("manage_trip_commitment rejects claiming individual_pack items as shared commitments", async () => {
+    // 1. Create a critical individual packing item
+    const createRes = await callTripApi("manage_trip_commitments", admin.accessToken, {
+      tripId,
+      action: "admin_create",
+      itemName: "Personal Rain Poncho",
+      commitmentType: "individual_pack",
+      category: "clothing",
+      quantityDescription: "1 poncho",
+      isCritical: true,
+    });
+    assert.equal(createRes.status, 200);
+    const ponchoId = createRes.body.commitment_id || createRes.body.id;
+    assert.ok(ponchoId, "Expected commitment id for rain poncho");
+
+    // 2. Attendee attempts to claim it as a shared commitment
+    const claimRes = await callTripApi("manage_trip_commitment", attendee.accessToken, {
+      tripId,
+      action: "claim",
+      commitmentId: ponchoId,
+    });
+    assert.equal(claimRes.status, 400, "Must reject claiming individual packing items");
+    assert.equal(claimRes.body.error.code, "cannot_claim_individual_item");
+
+    // 3. Verify get_trip_logistics memberReadiness excludes this critical individual item from criticalMissingCount
+    const logisticsRes = await callTripApi("get_trip_logistics", attendee.accessToken, { tripId });
+    assert.equal(logisticsRes.status, 200);
+    // criticalMissingCount must not include the individual poncho
+    const ponchoInLogistics = logisticsRes.body.commitments.find((c) => c.id === ponchoId);
+    assert.ok(ponchoInLogistics, "Commitment is returned in commitments list");
+    assert.equal(ponchoInLogistics.commitmentType, "individual_pack");
+
+    // Count how many critical shared items exist
+    const criticalSharedItems = logisticsRes.body.commitments.filter(
+      (c) => c.isCritical && !c.assignedMemberId && c.commitmentType === "shared_volunteer"
+    );
+    assert.equal(
+      logisticsRes.body.memberReadiness.criticalMissingCount,
+      criticalSharedItems.length,
+      "memberReadiness.criticalMissingCount must strictly match unassigned critical shared items"
+    );
+  });
 });

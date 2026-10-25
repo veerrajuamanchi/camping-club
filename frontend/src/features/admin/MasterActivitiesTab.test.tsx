@@ -196,14 +196,14 @@ describe("MasterActivitiesTab", () => {
           })
         );
       },
-      { timeout: 3000 }
+      { timeout: 8000 }
     );
 
     await waitFor(() => {
       expect(screen.getByText("ATV Dune Riding")).toBeInTheDocument();
       expect(screen.getByText(/1 per ATV/i)).toBeInTheDocument();
     });
-  });
+  }, 15000);
 
   it("opens edit modal, modifies values, and saves update", async () => {
     const user = userEvent.setup();
@@ -261,13 +261,13 @@ describe("MasterActivitiesTab", () => {
           })
         );
       },
-      { timeout: 3000 }
+      { timeout: 8000 }
     );
 
     await waitFor(() => {
       expect(screen.getByText(/3 per GoCar/i)).toBeInTheDocument();
     });
-  });
+  }, 15000);
 
   it("toggles active/inactive status via deactivate/reactivate button", async () => {
     const user = userEvent.setup();

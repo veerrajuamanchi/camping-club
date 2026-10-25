@@ -1369,8 +1369,12 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
     carpoolDetails = `Riding with ${myCarpoolRider.driverName} (${myCarpoolRider.vehicleDescription})`;
   }
 
-  const myCommitments = commitments.filter((c: any) => c.assignedMemberId === member.member_id);
-  const criticalMissing = commitments.filter((c: any) => c.isCritical && !c.assignedMemberId);
+  const myCommitments = commitments.filter(
+    (c: any) => c.assignedMemberId === member.member_id && c.commitmentType !== "individual_pack" && (c.isActive ?? true)
+  );
+  const criticalMissing = commitments.filter(
+    (c: any) => c.isCritical && !c.assignedMemberId && c.commitmentType !== "individual_pack" && (c.isActive ?? true)
+  );
 
   return {
     tripId,
@@ -2327,6 +2331,16 @@ Deno.serve(async (request) => {
           p_actor_id: member.member_id,
         };
       } else {
+        if (input.action === "claim" && input.commitmentId) {
+          const { data: commRow } = await service
+            .from("trip_commitments")
+            .select("commitment_type")
+            .eq("id", input.commitmentId)
+            .maybeSingle();
+          if (commRow?.commitment_type === "individual_pack") {
+            return errorResponse(request, 400, "cannot_claim_individual_item", requestId, "Personal packing items cannot be claimed as shared group commitments.");
+          }
+        }
         rpcName = "phase4_manage_commitment";
         rpcArgs = {
           p_trip_id: input.tripId,

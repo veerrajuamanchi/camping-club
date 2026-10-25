@@ -2502,6 +2502,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           drivingDirections={details.campsite?.directions}
           api={api}
           onEditLogistics={() => setShowEditLogistics(true)}
+          onOpenPackingChecklist={() => setShowPackingModal(true)}
         />
       )}
 

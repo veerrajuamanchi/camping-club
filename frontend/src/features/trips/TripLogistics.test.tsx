@@ -287,4 +287,102 @@ describe("Phase 4: Trip Logistics, Commitments & Carpools", () => {
       )
     ).toBeInTheDocument();
   });
+
+  it("excludes individual_pack items from Trip Commitments and critical missing banner", async () => {
+    const commitmentsWithIndividual: TripCommitment[] = [
+      {
+        id: "shared-stove",
+        tripId: "trip-1",
+        category: "gear",
+        itemName: "2-Burner Propane Camp Stove",
+        quantityDescription: "1",
+        assignedMemberId: null,
+        assignedMemberName: null,
+        isCritical: true,
+        isMine: false,
+        commitmentType: "shared_volunteer",
+        isActive: true,
+        createdAt: "2026-10-15T00:00:00Z",
+        updatedAt: "2026-10-15T00:00:00Z",
+      },
+      {
+        id: "indiv-clothing",
+        tripId: "trip-1",
+        category: "clothing",
+        itemName: "Clothing Pairs",
+        quantityDescription: "3",
+        assignedMemberId: null,
+        assignedMemberName: null,
+        isCritical: true,
+        isMine: false,
+        commitmentType: "individual_pack",
+        isActive: true,
+        createdAt: "2026-10-15T00:00:00Z",
+        updatedAt: "2026-10-15T00:00:00Z",
+      },
+      {
+        id: "indiv-boots",
+        tripId: "trip-1",
+        category: "clothing",
+        itemName: "Hiking Boots & Sturdy Socks",
+        quantityDescription: "1 pair",
+        assignedMemberId: null,
+        assignedMemberName: null,
+        isCritical: false,
+        isMine: false,
+        commitmentType: "individual_pack",
+        isActive: true,
+        createdAt: "2026-10-15T00:00:00Z",
+        updatedAt: "2026-10-15T00:00:00Z",
+      },
+    ];
+
+    const onOpenPacking = vi.fn();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_logistics") {
+        return Promise.resolve({
+          commitments: commitmentsWithIndividual,
+          carpools: [],
+          memberReadiness: {
+            carpoolRole: "unassigned",
+            carpoolDetails: null,
+            myCommitmentsCount: 0,
+            criticalMissingCount: 1, // Only shared stove is critical missing
+            totalCarpoolsCount: 0,
+          },
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripLogisticsTab
+        tripId="trip-1"
+        isConfirmedAttendee={true}
+        isAdmin={true}
+        currentMemberId="member-1"
+        api={mockApi}
+        onOpenPackingChecklist={onOpenPacking}
+      />
+    );
+
+    // Only the shared stove should be counted as critical missing (1 item, not 2!)
+    expect(await screen.findByText(/1 Critical Items Missing:/i)).toBeInTheDocument();
+
+    // Shared stove must be visible under Trip Commitments
+    expect(screen.getByText("2-Burner Propane Camp Stove")).toBeInTheDocument();
+
+    // Individual personal items must NOT appear under Trip Commitments (Gears and Supplies)!
+    expect(screen.queryByText("Clothing Pairs")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hiking Boots & Sturdy Socks")).not.toBeInTheDocument();
+
+    // All Items count must only count shared items (1 item, not 3)
+    expect(screen.getByRole("button", { name: /^All Items \(1\)$/i })).toBeInTheDocument();
+
+    // Personal Packing Checklist quick-action button is visible and opens modal on click
+    const packingBtn = screen.getByRole("button", { name: /Personal Packing Checklist/i });
+    expect(packingBtn).toBeInTheDocument();
+    fireEvent.click(packingBtn);
+    expect(onOpenPacking).toHaveBeenCalledTimes(1);
+  });
 });
