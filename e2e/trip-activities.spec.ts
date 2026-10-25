@@ -121,6 +121,7 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     const masterAddress = "700 Cannery Row, Monterey, CA 93940";
     const masterNotes = "Use Groupon promo code Halloween for $174.60 per car";
     const masterBookingUrl = "https://www.groupon.com/deals/gocar-experience-monterey";
+    const masterWaiverUrl = "https://fareharbor.com/waivers?shortname=seacartours&test=1";
 
     await page.getByRole("button", { name: "+ Add Activity Template" }).click();
     const addActivityModal = page.locator(".modal-card", { hasText: "Add Activity Template" });
@@ -134,18 +135,22 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     await addActivityModal.getByLabel("Image URL").fill(masterImageUrl);
     await addActivityModal.getByLabel("Physical Address").fill(masterAddress);
     await addActivityModal.getByLabel("Booking / Signup URL (e.g. Groupon)").fill(masterBookingUrl);
+    await addActivityModal.getByLabel("Activity Waiver URL (Optional)").fill(masterWaiverUrl);
     await addActivityModal.getByLabel("Booking Notes").fill(masterNotes);
 
     await addActivityModal.getByRole("button", { name: "Save Template" }).click();
     await expect(addActivityModal).toBeHidden();
 
-    // Verify card renders with capacity badge 👥 2 per GoCar and booking link
+    // Verify card renders with capacity badge 👥 2 per GoCar, booking link, and waiver link
     const activityCard = page.locator(".event-card", { hasText: masterActivityTitle });
     await expect(activityCard).toBeVisible();
     await expect(activityCard.getByText("👥 2 per GoCar")).toBeVisible();
     const bookingLink = activityCard.getByRole("link", { name: "🎟️ Booking / Deal Link" });
     await expect(bookingLink).toBeVisible();
     await expect(bookingLink).toHaveAttribute("href", masterBookingUrl);
+    const waiverLink = activityCard.getByRole("link", { name: "📝 Waiver Form" });
+    await expect(waiverLink).toBeVisible();
+    await expect(waiverLink).toHaveAttribute("href", masterWaiverUrl);
 
     // Track ID for cleanup
     const masterRow = await supabaseAdmin
@@ -167,6 +172,9 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     const reloadedBookingLink = reloadedCard.getByRole("link", { name: "🎟️ Booking / Deal Link" });
     await expect(reloadedBookingLink).toBeVisible();
     await expect(reloadedBookingLink).toHaveAttribute("href", masterBookingUrl);
+    const reloadedWaiverLink = reloadedCard.getByRole("link", { name: "📝 Waiver Form" });
+    await expect(reloadedWaiverLink).toBeVisible();
+    await expect(reloadedWaiverLink).toHaveAttribute("href", masterWaiverUrl);
     await assertNoHorizontalOverflow(page, "admin-catalogs-activities-reloaded");
 
     // =========================================================================
@@ -246,7 +254,7 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     const adminActivityRow = page.locator('[data-testid="hub-activity-row"]');
     await expect(adminActivityRow).toBeVisible();
     await adminActivityRow.getByRole("button", { name: "✓ Count Me In! 🚗" }).click();
-    await expect(adminActivityRow.getByText("Attending ✓")).toBeVisible();
+    await expect(adminActivityRow.getByText("Waiver Pending ⚠️")).toBeVisible();
 
     // Configure trip task quota to 0 so member's duty progress is satisfied
     await supabaseAdmin
@@ -293,11 +301,46 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     // Member clicks "Count Me In! 🚗"
     await memberActivityRow.getByRole("button", { name: "✓ Count Me In! 🚗" }).click();
 
-    // Scorecard updates to "5 of 5 Completed" ("All Done ✓")
+    // Since activity requires waiver, scorecard displays waiver required pending state
+    await expect(memberActivityRow.getByText(/📝 Waiver Required/i)).toBeVisible();
+    await expect(memberActivityRow.getByText("Waiver Pending ⚠️")).toBeVisible();
+    const signWaiverBtn = memberActivityRow.getByRole("button", { name: "Sign Waiver →" });
+    await expect(signWaiverBtn).toBeVisible();
+
+    // Member clicks "Sign Waiver →" to navigate to Activities tab
+    await signWaiverBtn.click();
+    await expect(memberPage.getByRole("tab", { name: "🎯 Activities" })).toHaveAttribute("aria-selected", "true");
+
+    // Member sees Operator Liability Waiver banner
+    const waiverBanner = memberPage.locator('[data-testid="waiver-status-card"]');
+    await expect(waiverBanner).toBeVisible();
+    await expect(waiverBanner.getByText("Activity Liability Waiver Required")).toBeVisible();
+
+    // "I Have Signed the Waiver" button must be disabled until user clicks Open Waiver Form
+    const confirmSignedBtn = waiverBanner.getByRole("button", { name: /I Have Signed the Waiver/i });
+    await expect(confirmSignedBtn).toBeDisabled();
+
+    // Member clicks "Open Waiver Form ↗" (triggers onClick to record click)
+    const openWaiverLink = waiverBanner.getByRole("link", { name: /Open Waiver Form/i });
+    await expect(openWaiverLink).toHaveAttribute("href", masterWaiverUrl);
+    await openWaiverLink.dispatchEvent("click");
+
+    // Button should now be unlocked/enabled
+    await expect(confirmSignedBtn).toBeEnabled();
+
+    // Member clicks "I Have Signed the Waiver ✓"
+    await confirmSignedBtn.click();
+    await expect(waiverBanner.getByText("Activity Liability Waiver Completed & Signed")).toBeVisible();
+
+    // Return to Overview tab and verify 5-item scorecard shows all completed with waiver signed
+    await memberPage.getByRole("tab", { name: "Overview & attendees" }).click();
+    await memberPage.waitForLoadState("networkidle");
+
     await expect(
       memberPage.getByText(/⚡ Required From You \(5 of 5 Completed\)/i)
     ).toBeVisible();
     await expect(memberPage.getByText("All Done ✓").first()).toBeVisible();
+    await expect(memberActivityRow.getByText(/✓ Waiver Signed/i)).toBeVisible();
     await expect(memberActivityRow.getByText("Attending ✓")).toBeVisible();
     await assertNoHorizontalOverflow(memberPage, "member-scorecard-5-of-5");
 
@@ -443,6 +486,12 @@ test.describe("Trip Activities, Master Catalog, Pairings, Voucher Posting, and C
     await expect(callSheetModal.getByText(orderRef)).toBeVisible();
     await expect(callSheetModal.getByText("7821")).toBeVisible();
     await expect(callSheetModal.getByText("purchased").first()).toBeVisible();
+
+    // Verifies rider waiver badge and Participant Waiver Completion Roster table
+    await expect(callSheetModal.getByTestId(`rider-waiver-status-${memberUser.memberId}`)).toHaveText("✓ Signed");
+    const waiverRoster = callSheetModal.getByTestId("call-sheet-waiver-roster");
+    await expect(waiverRoster).toBeVisible();
+    await expect(waiverRoster.getByText(memberUser.displayName)).toBeVisible();
 
     // Admin clicks "📋 Copy All to Clipboard" and verifies feedback
     await callSheetModal.getByRole("button", { name: "📋 Copy All to Clipboard" }).click();

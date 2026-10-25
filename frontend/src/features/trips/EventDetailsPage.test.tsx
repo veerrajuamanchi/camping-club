@@ -1049,6 +1049,94 @@ describe("EventDetailsPage", () => {
       const bookingLink = within(overviewCard).getByRole("link", { name: /Buy on Groupon \/ Booking Link/i });
       expect(bookingLink).toHaveAttribute("href", "https://www.groupon.com/deals/gocar-tours-from-notes");
     });
+
+    it("displays green checkmark for deposit row when status is submitted_by_member", async () => {
+      const tripWithSubmittedDeposit = {
+        ...readyTripData,
+        depositStatus: "submitted_by_member" as const,
+        cabinPayerMemberId: null,
+      };
+
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(tripWithSubmittedDeposit);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(tripWithSubmittedDeposit, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const depositRow = screen.getByTestId("hub-deposit-row");
+      expect(within(depositRow).getByText("✓")).toBeInTheDocument();
+      expect(within(depositRow).getByText(/Submitted \(Pending Verification\)/i)).toBeInTheDocument();
+      expect(within(depositRow).getByText("Submitted ✓")).toBeInTheDocument();
+    });
+
+    it("displays waiver required warning and sign button when attending with unsigned waiver, and displays checkmark when signed", async () => {
+      const waiverActivity = {
+        ...scheduledActivity,
+        waiver_url: "https://fareharbor.com/waivers?shortname=seacartours",
+        participants: [
+          {
+            id: "p-1",
+            activity_id: "act-1",
+            member_id: "m1",
+            status: "attending" as const,
+            waiver_clicked_at: "2026-10-24T12:00:00Z",
+            waiver_signed_at: null,
+          },
+        ],
+      };
+
+      const apiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [waiverActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      const { unmount } = renderPage(readyTripData, false, apiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const activityRow = screen.getByTestId("hub-activity-row");
+      expect(within(activityRow).getByText(/📝 Waiver Required/i)).toBeInTheDocument();
+      expect(within(activityRow).getByText("Waiver Pending ⚠️")).toBeInTheDocument();
+      expect(within(activityRow).getByRole("button", { name: /Sign Waiver →/i })).toBeInTheDocument();
+
+      unmount();
+
+      // When waiver is signed
+      const signedWaiverActivity = {
+        ...waiverActivity,
+        participants: [
+          {
+            ...waiverActivity.participants[0],
+            waiver_signed_at: "2026-10-24T12:30:00Z",
+          },
+        ],
+      };
+
+      const signedApiMock = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_details") return Promise.resolve(readyTripData);
+        if (action === "get_trip_activities") return Promise.resolve({ tripId: "trip-1", activities: [signedWaiverActivity] });
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        return Promise.resolve({});
+      });
+
+      renderPage(readyTripData, false, signedApiMock, "/trips/trip-1", "member", "m1");
+      await screen.findByText("December Camping");
+
+      const signedActivityRow = screen.getByTestId("hub-activity-row");
+      expect(within(signedActivityRow).getByText(/✓ Waiver Signed/i)).toBeInTheDocument();
+      expect(within(signedActivityRow).getByText("Attending ✓")).toBeInTheDocument();
+    });
   });
 });
 

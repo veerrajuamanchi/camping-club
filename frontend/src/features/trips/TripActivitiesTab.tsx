@@ -56,6 +56,7 @@ export type TripActivityItem = {
   deal_strategy_tip?: string | null;
   voucher_url?: string | null;
   booking_url?: string | null;
+  waiver_url?: string | null;
   activity_date: string;
   start_time?: string | null;
   end_time?: string | null;
@@ -72,6 +73,8 @@ export type TripActivityItem = {
     paired_with_member_id?: string | null;
     display_name?: string | null;
     notes?: string | null;
+    waiver_clicked_at?: string | null;
+    waiver_signed_at?: string | null;
   }>;
   groups?: TripActivityGroup[];
   swap_requests?: TripActivitySwapRequest[];
@@ -185,6 +188,33 @@ export function TripActivitiesTab({
   } | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<TripActivityItem | null>(null);
+  const [clickedWaiverIds, setClickedWaiverIds] = useState<Set<string>>(new Set());
+  const [waiverBusy, setWaiverBusy] = useState(false);
+
+  async function handleWaiverClick(activityId: string) {
+    setClickedWaiverIds((prev) => new Set(prev).add(activityId));
+    try {
+      await api("record_activity_waiver_click", { activityId });
+      await loadActivities();
+    } catch (err) {
+      console.error("Failed to record waiver click:", err);
+    }
+  }
+
+  async function handleConfirmWaiverSigned(activityId: string) {
+    setWaiverBusy(true);
+    setError(null);
+    try {
+      await api("confirm_activity_waiver_signed", { activityId });
+      await loadActivities();
+      if (onRefresh) await onRefresh();
+    } catch (err: any) {
+      console.error("Failed to confirm waiver signed:", err);
+      setError(err?.message || "Failed to confirm waiver signature.");
+    } finally {
+      setWaiverBusy(false);
+    }
+  }
 
   const attendeesList = useMemo(() => {
     if (tripAttendees && tripAttendees.length > 0) return tripAttendees;
@@ -903,6 +933,98 @@ export function TripActivitiesTab({
                     </div>
                   )
                 ) : null}
+
+                {/* Operator Liability Waiver Banner */}
+                {act.waiver_url && isAttending && !isOptedOut && (() => {
+                  const isWaiverSigned = Boolean(participant?.waiver_signed_at);
+                  const isWaiverClicked = Boolean(participant?.waiver_clicked_at || clickedWaiverIds.has(act.id));
+
+                  return (
+                    <div
+                      data-testid="waiver-status-card"
+                      style={{
+                        background: isWaiverSigned ? "#f0fdf4" : "#fefce8",
+                        border: `1.5px solid ${isWaiverSigned ? "#86efac" : "#fde047"}`,
+                        borderLeft: `4px solid ${isWaiverSigned ? "#16a34a" : "#ca8a04"}`,
+                        padding: "12px 14px",
+                        borderRadius: "8px",
+                        marginTop: "12px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: "10px",
+                      }}
+                    >
+                      <div style={{ flex: "1 1 280px" }}>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            color: isWaiverSigned ? "#166534" : "#854d0e",
+                            fontSize: "0.92rem",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <span>{isWaiverSigned ? "✓" : "📝"}</span>
+                          <span>
+                            {isWaiverSigned
+                              ? "Activity Liability Waiver Completed & Signed"
+                              : "Activity Liability Waiver Required"}
+                          </span>
+                        </div>
+                        <p style={{ margin: "4px 0 0 0", fontSize: "0.82rem", color: isWaiverSigned ? "#15803d" : "#713f12" }}>
+                          {isWaiverSigned
+                            ? "Thank you! Your signed waiver is confirmed on the tour operator call sheet."
+                            : "The tour operator requires an electronic waiver signed on their website prior to the tour. Click the button to open and complete the waiver, then confirm completion."}
+                        </p>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <a
+                          href={act.waiver_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => {
+                            void handleWaiverClick(act.id);
+                          }}
+                          className={isWaiverSigned ? "secondary-button" : "primary-button"}
+                          style={{
+                            fontSize: "0.84rem",
+                            padding: "6px 14px",
+                            textDecoration: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            ...(isWaiverSigned ? {} : { background: "#ca8a04", borderColor: "#a16207" }),
+                          }}
+                        >
+                          {isWaiverSigned ? "View Waiver Form ↗" : "Open Waiver Form ↗"}
+                        </a>
+
+                        {!isWaiverSigned && (
+                          <button
+                            type="button"
+                            className="primary-button"
+                            disabled={!isWaiverClicked || waiverBusy}
+                            title={!isWaiverClicked ? "Please click 'Open Waiver Form' first to fill out the form before confirming." : undefined}
+                            onClick={() => void handleConfirmWaiverSigned(act.id)}
+                            style={{
+                              fontSize: "0.84rem",
+                              padding: "6px 14px",
+                              background: isWaiverClicked ? "#16a34a" : "#94a3b8",
+                              borderColor: isWaiverClicked ? "#15803d" : "#64748b",
+                              cursor: isWaiverClicked ? "pointer" : "not-allowed",
+                            }}
+                          >
+                            {waiverBusy ? "Saving…" : "I Have Signed the Waiver ✓"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Pending Partner Swap Request Banner */}
                 {pendingSwap && (
@@ -1748,13 +1870,21 @@ function CallSheetModal({
       `Tour Operator Call Sheet: ${activity.title}`,
       `Schedule: ${schedule}`,
       `Location: ${[activity.location_name, activity.address].filter(Boolean).join(" • ")}`,
+      activity.waiver_url ? `Waiver URL: ${activity.waiver_url}` : "",
       "",
-      "Vehicle\tAssigned Riders\tPurchaser\tOrder #\tVoucher Code\tSecurity PIN\tStatus",
-    ];
+      activity.waiver_url
+        ? "Vehicle\tAssigned Riders (Waiver Status)\tPurchaser\tOrder #\tVoucher Code\tSecurity PIN\tStatus"
+        : "Vehicle\tAssigned Riders\tPurchaser\tOrder #\tVoucher Code\tSecurity PIN\tStatus",
+    ].filter(Boolean);
 
     for (const g of activity.groups || []) {
       const vLabel = g.group_name || `${activity.unit_label || "Vehicle"} #${g.group_number}`;
-      const riders = (g.members || []).map((m) => m.display_name).join(", ") || "None";
+      const riders = (g.members || []).map((m) => {
+        if (!activity.waiver_url) return m.display_name;
+        const p = (activity.participants || []).find((part) => part.member_id === m.member_id);
+        const wStatus = p?.waiver_signed_at ? "✓ Signed" : p?.waiver_clicked_at ? "⏳ Clicked" : "⚠️ Pending";
+        return `${m.display_name} (${wStatus})`;
+      }).join(", ") || "None";
       const purchaser =
         g.purchaser_display_name ||
         attendeesList.find((a) => a.memberId === g.purchaser_member_id)?.displayName ||
@@ -1832,11 +1962,42 @@ function CallSheetModal({
             <tbody>
               {(activity.groups || []).map((g) => {
                 const vLabel = g.group_name || `${activity.unit_label || "Vehicle"} #${g.group_number}`;
-                const riders = (g.members || []).map((m) => m.display_name).join(", ") || "None";
                 return (
                   <tr key={g.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td style={{ padding: "8px 10px", fontWeight: 600 }}>{vLabel}</td>
-                    <td style={{ padding: "8px 10px" }}>{riders}</td>
+                    <td style={{ padding: "8px 10px" }}>
+                      {(g.members || []).length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          {(g.members || []).map((m) => {
+                            const p = (activity.participants || []).find((part) => part.member_id === m.member_id);
+                            const isSigned = Boolean(p?.waiver_signed_at);
+                            const isClicked = Boolean(p?.waiver_clicked_at);
+                            return (
+                              <div key={m.member_id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <span>{m.display_name}</span>
+                                {activity.waiver_url && (
+                                  <span
+                                    data-testid={`rider-waiver-status-${m.member_id}`}
+                                    style={{
+                                      fontSize: "0.72rem",
+                                      fontWeight: 600,
+                                      padding: "1px 5px",
+                                      borderRadius: "4px",
+                                      background: isSigned ? "#dcfce7" : isClicked ? "#fef3c7" : "#fee2e2",
+                                      color: isSigned ? "#166534" : isClicked ? "#92400e" : "#991b1b",
+                                    }}
+                                  >
+                                    {isSigned ? "✓ Signed" : isClicked ? "⏳ Clicked" : "⚠️ Pending"}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        "None"
+                      )}
+                    </td>
                     <td style={{ padding: "8px 10px" }}>
                       {g.purchaser_display_name ||
                         attendeesList.find((a) => a.memberId === g.purchaser_member_id)?.displayName ||
@@ -1877,6 +2038,68 @@ function CallSheetModal({
             </tbody>
           </table>
         </div>
+
+        {/* Participant Waiver Completion Roster */}
+        {activity.waiver_url && (
+          <div style={{ margin: "20px 0 10px 0" }}>
+            <h4 style={{ margin: "0 0 8px 0", fontSize: "0.95rem", color: "#334155" }}>
+              📝 Participant Waiver Completion Roster ({activity.participants?.filter((p) => p.status === "attending" && p.waiver_signed_at).length || 0}/{activity.participants?.filter((p) => p.status === "attending").length || 0} Signed)
+            </h4>
+            <div style={{ overflowX: "auto" }}>
+              <table
+                data-testid="call-sheet-waiver-roster"
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: "0.82rem",
+                  textAlign: "left",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f8fafc", borderBottom: "1.5px solid #e2e8f0" }}>
+                    <th style={{ padding: "6px 8px" }}>Camper</th>
+                    <th style={{ padding: "6px 8px" }}>Waiver Status</th>
+                    <th style={{ padding: "6px 8px" }}>Clicked At</th>
+                    <th style={{ padding: "6px 8px" }}>Signed / Confirmed At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(activity.participants || [])
+                    .filter((p) => p.status === "attending")
+                    .map((p) => {
+                      const isSigned = Boolean(p.waiver_signed_at);
+                      const isClicked = Boolean(p.waiver_clicked_at);
+                      return (
+                        <tr key={p.member_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "6px 8px", fontWeight: 500 }}>{p.display_name}</td>
+                          <td style={{ padding: "6px 8px" }}>
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                background: isSigned ? "#dcfce7" : isClicked ? "#fef3c7" : "#fee2e2",
+                                color: isSigned ? "#166534" : isClicked ? "#92400e" : "#991b1b",
+                              }}
+                            >
+                              {isSigned ? "✓ Signed" : isClicked ? "⏳ Clicked" : "⚠️ Pending"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "6px 8px", color: "#64748b" }}>
+                            {p.waiver_clicked_at ? new Date(p.waiver_clicked_at).toLocaleString() : "-"}
+                          </td>
+                          <td style={{ padding: "6px 8px", color: "#64748b" }}>
+                            {p.waiver_signed_at ? new Date(p.waiver_signed_at).toLocaleString() : "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <div
           style={{
@@ -2241,6 +2464,7 @@ function AddActivityModal({
   const [address, setAddress] = useState("");
   const [directionsUrl, setDirectionsUrl] = useState("");
   const [bookingUrl, setBookingUrl] = useState("");
+  const [waiverUrl, setWaiverUrl] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [dealStrategyTip, setDealStrategyTip] = useState("");
 
@@ -2311,6 +2535,7 @@ function AddActivityModal({
         address: address.trim() || undefined,
         directionsUrl: directionsUrl.trim() || undefined,
         bookingUrl: bookingUrl.trim() || undefined,
+        waiverUrl: waiverUrl.trim() || undefined,
         imageUrl: imageUrl.trim() || undefined,
         dealStrategyTip: dealStrategyTip.trim() || undefined,
       });
@@ -2559,6 +2784,16 @@ function AddActivityModal({
             </label>
 
             <label>
+              Activity Waiver URL (Optional)
+              <input
+                type="url"
+                value={waiverUrl}
+                onChange={(e) => setWaiverUrl(e.target.value)}
+                placeholder="https://fareharbor.com/waivers?..."
+              />
+            </label>
+
+            <label>
               Image URL
               <input
                 type="url"
@@ -2646,6 +2881,7 @@ function EditActivityModal({
         ? activity.booking_notes.trim()
         : "")
   );
+  const [waiverUrl, setWaiverUrl] = useState(activity.waiver_url || "");
   const [bookingNotes, setBookingNotes] = useState(activity.booking_notes || "");
   const [imageUrl, setImageUrl] = useState(activity.image_url || "");
   const [dealStrategyTip, setDealStrategyTip] = useState(activity.deal_strategy_tip || "");
@@ -2674,6 +2910,7 @@ function EditActivityModal({
         address: address.trim() || undefined,
         directionsUrl: directionsUrl.trim() || undefined,
         bookingUrl: bookingUrl.trim() || undefined,
+        waiverUrl: waiverUrl.trim() || undefined,
         bookingNotes: bookingNotes.trim() || undefined,
         imageUrl: imageUrl.trim() || undefined,
         dealStrategyTip: dealStrategyTip.trim() || undefined,
@@ -2814,6 +3051,16 @@ function EditActivityModal({
               value={bookingUrl}
               onChange={(e) => setBookingUrl(e.target.value)}
               placeholder="https://www.groupon.com/deals/..."
+            />
+          </label>
+
+          <label>
+            Activity Waiver URL (Optional)
+            <input
+              type="url"
+              value={waiverUrl}
+              onChange={(e) => setWaiverUrl(e.target.value)}
+              placeholder="https://fareharbor.com/waivers?..."
             />
           </label>
 

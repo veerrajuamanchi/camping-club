@@ -92,6 +92,12 @@ try {
   playwrightExitCode = await new Promise((resolve) => {
     playwrightProcess.on("close", (code) => resolve(code ?? 1));
   });
+  if (playwrightExitCode !== 0) {
+    const safeLogTail = Buffer.concat(logParts).toString("utf8").slice(-4000).replaceAll(serviceKey, "[redacted]");
+    if (safeLogTail) {
+      console.error(`Edge Functions log tail:\n${safeLogTail}`);
+    }
+  }
 } catch (error) {
   console.error("E2E runner failure:", error);
   const safeLogTail = Buffer.concat(logParts).toString("utf8").slice(-4000).replaceAll(serviceKey, "[redacted]");

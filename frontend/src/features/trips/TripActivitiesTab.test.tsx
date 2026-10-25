@@ -360,7 +360,7 @@ describe("TripActivitiesTab", () => {
     // Verify modal is open and table columns exist
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/Tour Operator Call Sheet - San Francisco GoCar Tour/i)).toBeInTheDocument();
-    expect(within(dialog).getByText("Veerraju Amanchi")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("Veerraju Amanchi").length).toBeGreaterThanOrEqual(1);
     expect(within(dialog).getByText("ORD-9988")).toBeInTheDocument();
     expect(within(dialog).getByText("GP-12345")).toBeInTheDocument();
 
@@ -1103,6 +1103,269 @@ describe("TripActivitiesTab", () => {
         groupId: "grp-1",
         purchaserMemberId: "mem-buyer",
         orderNumber: "ORD-554433",
+      })
+    );
+  });
+
+  it("handles waiver form click intelligence and signature confirmation", async () => {
+    const user = userEvent.setup();
+    const mockWaiverActivity: TripActivityItem = {
+      id: "act-waiver",
+      trip_id: "trip-100",
+      title: "GoCar Monterey Tours",
+      category: "tour",
+      activity_date: "2026-11-15",
+      unit_label: "GoCar",
+      unit_capacity: 2,
+      waiver_url: "https://fareharbor.com/waivers?shortname=seacartours",
+      participants: [
+        {
+          id: "part-1",
+          activity_id: "act-waiver",
+          member_id: "mem-current",
+          status: "attending",
+          display_name: "Current User",
+          waiver_clicked_at: null,
+          waiver_signed_at: null,
+        },
+      ],
+      groups: [],
+    };
+
+    let currentActivity = { ...mockWaiverActivity };
+
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: [currentActivity] };
+      }
+      if (action === "record_activity_waiver_click") {
+        currentActivity = {
+          ...currentActivity,
+          participants: [
+            {
+              ...currentActivity.participants![0],
+              waiver_clicked_at: new Date().toISOString(),
+            },
+          ],
+        };
+        return { success: true };
+      }
+      if (action === "confirm_activity_waiver_signed") {
+        currentActivity = {
+          ...currentActivity,
+          participants: [
+            {
+              ...currentActivity.participants![0],
+              waiver_signed_at: new Date().toISOString(),
+            },
+          ],
+        };
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-current"
+        api={api}
+      />
+    );
+
+    expect(await screen.findByText("GoCar Monterey Tours")).toBeInTheDocument();
+
+    // Verify waiver banner is present and warns waiver is required
+    expect(screen.getByText("Activity Liability Waiver Required")).toBeInTheDocument();
+
+    // "I Have Signed the Waiver" button must initially be disabled (intelligence rule)
+    const signBtn = screen.getByRole("button", { name: /I Have Signed the Waiver/i });
+    expect(signBtn).toBeDisabled();
+
+    // Click "Open Waiver Form ↗"
+    const openWaiverLink = screen.getByRole("link", { name: /Open Waiver Form/i });
+    expect(openWaiverLink).toHaveAttribute("href", "https://fareharbor.com/waivers?shortname=seacartours");
+    await user.click(openWaiverLink);
+
+    // Verify record_activity_waiver_click was called
+    expect(api).toHaveBeenCalledWith("record_activity_waiver_click", { activityId: "act-waiver" });
+
+    // Button should now be enabled
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /I Have Signed the Waiver/i })).not.toBeDisabled();
+    });
+
+    // Click "I Have Signed the Waiver"
+    await user.click(screen.getByRole("button", { name: /I Have Signed the Waiver/i }));
+
+    // Verify confirm_activity_waiver_signed was called
+    expect(api).toHaveBeenCalledWith("confirm_activity_waiver_signed", { activityId: "act-waiver" });
+
+    // Verify UI reflects completed signature
+    expect(await screen.findByText("Activity Liability Waiver Completed & Signed")).toBeInTheDocument();
+  });
+
+  it("renders Call Sheet with waiver badges in vehicle table and participant waiver roster", async () => {
+    const user = userEvent.setup();
+    const writeTextSpy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+
+    const mockWaiverActivity: TripActivityItem = {
+      id: "act-callsheet",
+      trip_id: "trip-100",
+      title: "Monterey Sea Car Tours",
+      category: "tour",
+      activity_date: "2026-11-15",
+      unit_label: "Car",
+      unit_capacity: 2,
+      waiver_url: "https://fareharbor.com/waivers?shortname=seacartours",
+      participants: [
+        {
+          id: "p-1",
+          activity_id: "act-callsheet",
+          member_id: "mem-1",
+          status: "attending",
+          display_name: "Alice Walker",
+          waiver_clicked_at: "2026-10-24T10:00:00Z",
+          waiver_signed_at: "2026-10-24T10:05:00Z",
+        },
+        {
+          id: "p-2",
+          activity_id: "act-callsheet",
+          member_id: "mem-2",
+          status: "attending",
+          display_name: "Bob Stone",
+          waiver_clicked_at: "2026-10-24T11:00:00Z",
+          waiver_signed_at: null,
+        },
+        {
+          id: "p-3",
+          activity_id: "act-callsheet",
+          member_id: "mem-3",
+          status: "attending",
+          display_name: "Charlie Brown",
+          waiver_clicked_at: null,
+          waiver_signed_at: null,
+        },
+      ],
+      groups: [
+        {
+          id: "grp-1",
+          activity_id: "act-callsheet",
+          group_number: 1,
+          group_name: "Car #1",
+          voucher_status: "purchased",
+          purchaser_member_id: "mem-1",
+          purchaser_display_name: "Alice Walker",
+          members: [
+            { id: "gm-1", group_id: "grp-1", member_id: "mem-1", display_name: "Alice Walker" },
+            { id: "gm-2", group_id: "grp-1", member_id: "mem-2", display_name: "Bob Stone" },
+          ],
+        },
+      ],
+    };
+
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: [mockWaiverActivity] };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-1"
+        api={api}
+      />
+    );
+
+    const callSheetBtn = await screen.findByRole("button", { name: /📞 Tour Operator Call Sheet/i });
+    await user.click(callSheetBtn);
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/Tour Operator Call Sheet - Monterey Sea Car Tours/i)).toBeInTheDocument();
+
+    // Verify vehicle table rider waiver status badges
+    const aliceBadge = screen.getByTestId("rider-waiver-status-mem-1");
+    expect(aliceBadge).toHaveTextContent("✓ Signed");
+
+    const bobBadge = screen.getByTestId("rider-waiver-status-mem-2");
+    expect(bobBadge).toHaveTextContent("⏳ Clicked");
+
+    // Verify dedicated Participant Waiver Completion Roster table
+    const rosterTable = screen.getByTestId("call-sheet-waiver-roster");
+    expect(within(rosterTable).getByText("Charlie Brown")).toBeInTheDocument();
+    expect(within(rosterTable).getByText("⚠️ Pending")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Participant Waiver Completion Roster \(1\/3 Signed\)/i)).toBeInTheDocument();
+
+    // Verify copy all to clipboard includes waiver information
+    const copyBtn = screen.getByRole("button", { name: /📋 Copy All to Clipboard/i });
+    await user.click(copyBtn);
+
+    expect(writeTextSpy).toHaveBeenCalled();
+    const copiedText = writeTextSpy.mock.calls[0][0];
+    expect(copiedText).toContain("Waiver URL: https://fareharbor.com/waivers?shortname=seacartours");
+    expect(copiedText).toContain("Alice Walker (✓ Signed)");
+    expect(copiedText).toContain("Bob Stone (⏳ Clicked)");
+  });
+
+  it("allows admin to set waiver_url in Edit Activity modal", async () => {
+    const user = userEvent.setup();
+    const mockActivity: TripActivityItem = {
+      id: "act-edit-test",
+      trip_id: "trip-100",
+      title: "Kayak Adventure",
+      category: "water",
+      activity_date: "2026-11-16",
+      unit_label: "Kayak",
+      unit_capacity: 2,
+      waiver_url: null,
+      participants: [],
+      groups: [],
+    };
+
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: [mockActivity] };
+      }
+      if (action === "admin_manage_trip_activity") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-admin"
+        api={api}
+      />
+    );
+
+    const editBtn = await screen.findByRole("button", { name: /✏️ Edit/i });
+    await user.click(editBtn);
+
+    const waiverInput = screen.getByLabelText(/Activity Waiver URL \(Optional\)/i);
+    expect(waiverInput).toBeInTheDocument();
+
+    fireEvent.change(waiverInput, { target: { value: "https://waiver.example.com/kayak" } });
+
+    const saveBtn = screen.getByRole("button", { name: /Save Changes/i });
+    fireEvent.submit(saveBtn.closest("form")!);
+
+    expect(api).toHaveBeenCalledWith(
+      "admin_manage_trip_activity",
+      expect.objectContaining({
+        action: "update",
+        tripId: "trip-100",
+        activityId: "act-edit-test",
+        waiverUrl: "https://waiver.example.com/kayak",
       })
     );
   });

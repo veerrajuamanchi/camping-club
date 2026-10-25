@@ -26,7 +26,7 @@ const actionNames = [
   "submit_deposit", "verify_deposit", "save_meal_preferences", "admin_sync_trip_commitments",
   "get_trip_activities", "get_master_activities", "admin_manage_master_activity", "admin_manage_trip_activity",
   "set_activity_participation", "admin_manage_activity_pairings", "submit_activity_voucher",
-  "request_partner_swap", "respond_partner_swap",
+  "request_partner_swap", "respond_partner_swap", "record_activity_waiver_click", "confirm_activity_waiver_signed",
 ] as const;
 const requestSchema = z.object({ action: z.enum(actionNames), input: z.unknown().optional() }).strict();
 
@@ -402,6 +402,7 @@ const inputSchemas = {
     address: z.string().trim().max(500).nullable().optional(),
     directionsUrl: optionalUrl,
     bookingUrl: optionalUrl,
+    waiverUrl: optionalUrl,
     unitLabel: z.string().trim().max(50).optional(),
     unitCapacity: z.number().int().positive().optional(),
     bookingNotes: z.string().trim().max(2000).nullable().optional(),
@@ -422,6 +423,7 @@ const inputSchemas = {
     address: z.string().trim().max(500).nullable().optional(),
     directionsUrl: optionalUrl,
     bookingUrl: optionalUrl,
+    waiverUrl: optionalUrl,
     unitLabel: z.string().trim().max(50).optional(),
     unitCapacity: z.number().int().positive().optional(),
     bookingNotes: z.string().trim().max(2000).nullable().optional(),
@@ -429,6 +431,12 @@ const inputSchemas = {
     groupCount: z.number().int().nonnegative().optional(),
     autoInitializeGroups: z.boolean().optional(),
     isPairingsLocked: z.boolean().optional(),
+  }).strict(),
+  record_activity_waiver_click: z.object({
+    activityId: uuid,
+  }).strict(),
+  confirm_activity_waiver_signed: z.object({
+    activityId: uuid,
   }).strict(),
   set_activity_participation: z.object({
     tripId: uuid.optional(),
@@ -550,6 +558,7 @@ const mutatingActions = new Set<Action>([
   "submit_deposit", "verify_deposit", "admin_sync_trip_commitments",
   "admin_manage_master_activity", "admin_manage_trip_activity", "set_activity_participation",
   "admin_manage_activity_pairings", "submit_activity_voucher", "request_partner_swap", "respond_partner_swap",
+  "record_activity_waiver_click", "confirm_activity_waiver_signed",
 ]);
 
 function errorResponse(request: Request, status: number, code: string, requestId: string, message?: string): Response {
@@ -609,7 +618,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
     service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,active,version").eq("active", true).order("rotation_position"),
-    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,task_quota_target,daily_workload_target,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
+    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,cabin_payer_member_id,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,task_quota_target,daily_workload_target,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
@@ -621,7 +630,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   }
   const [bundleResult, rsvpResult, dutyAssignmentsResult] = tripIds.length ? await Promise.all([
     service.from("trip_rule_bundles").select("id,trip_id,version_no,content_hash,rendered_bundle,created_at").in("trip_id", tripIds).eq("is_current", true),
-    service.from("trip_rsvps").select("trip_id,member_id,response,rule_acknowledgment_id,version,updated_at").in("trip_id", tripIds),
+    service.from("trip_rsvps").select("trip_id,member_id,response,rule_acknowledgment_id,deposit_status,version,updated_at").in("trip_id", tripIds),
     service.from("trip_duty_assignments").select("trip_id,duty:trip_slot_duties!inner(is_active,slot:trip_time_slots!inner(is_enabled))").eq("duty.is_active", true).eq("duty.slot.is_enabled", true).in("trip_id", tripIds).eq("member_id", member.member_id).in("status", ["claimed", "assigned_by_admin"]),
   ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
   checkError(bundleResult.error); checkError(rsvpResult.error); checkError(dutyAssignmentsResult.error);
@@ -768,6 +777,8 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
         myDailyWorkload: dailyByTrip.get(trip.id) ?? null,
         additionalInformation: trip.additional_information, cabinBookingStatus: trip.cabin_booking_status,
         legacyCabinAvailabilityStatus: member.member_role === "admin" ? trip.cabin_availability_status : undefined,
+        cabinPayerMemberId: (trip as any).cabin_payer_member_id ?? null,
+        depositStatus: (trip as any).cabin_payer_member_id === member.member_id ? "exempt" : ((own as any)?.deposit_status ?? "unpaid"),
         version: trip.version, comingCount: counts.get(trip.id) ?? 0, tripDecision: "none",
         currentRuleBundle: bundle ? { id: bundle.id, version: bundle.version_no, contentHash: bundle.content_hash, rules: bundle.rendered_bundle, createdAt: bundle.created_at } : null,
         myRsvp: own ? {
@@ -2835,6 +2846,7 @@ Deno.serve(async (request) => {
           address: input.address ?? null,
           directions_url: input.directionsUrl ?? null,
           booking_url: input.bookingUrl ?? null,
+          waiver_url: input.waiverUrl ?? null,
           unit_label: input.unitLabel ?? null,
           unit_capacity: input.unitCapacity ?? null,
           booking_notes: input.bookingNotes ?? null,
@@ -2861,6 +2873,7 @@ Deno.serve(async (request) => {
           address: input.address ?? null,
           directions_url: input.directionsUrl ?? null,
           booking_url: input.bookingUrl ?? null,
+          waiver_url: input.waiverUrl ?? null,
           unit_label: input.unitLabel ?? null,
           unit_capacity: input.unitCapacity ?? null,
           booking_notes: input.bookingNotes ?? null,
@@ -2978,6 +2991,22 @@ Deno.serve(async (request) => {
       };
       break;
     }
+    case "record_activity_waiver_click":
+      rpcName = "phase6_update_activity_waiver";
+      rpcArgs = {
+        p_activity_id: input.activityId,
+        p_action: "click",
+        p_actor_id: member.member_id,
+      };
+      break;
+    case "confirm_activity_waiver_signed":
+      rpcName = "phase6_update_activity_waiver";
+      rpcArgs = {
+        p_activity_id: input.activityId,
+        p_action: "sign",
+        p_actor_id: member.member_id,
+      };
+      break;
     default: return errorResponse(request, 400, "unsupported_operation", requestId);
   }
 

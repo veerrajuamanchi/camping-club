@@ -442,4 +442,78 @@ describe("MasterActivitiesTab", () => {
     const dealLink = within(newCard).getByRole("link", { name: /🎟️ Booking \/ Deal Link/i });
     expect(dealLink).toHaveAttribute("href", "https://www.groupon.com/deals/monterey-whale-watch");
   });
+
+  it("Add Master Activity template includes waiverUrl and submits it, and displays waiver link", async () => {
+    const user = userEvent.setup();
+    let activitiesState = [...mockActivities];
+
+    const api = vi.fn().mockImplementation((action: string, input: any) => {
+      if (action === "get_master_activities") {
+        return Promise.resolve({ activities: activitiesState });
+      }
+      if (action === "admin_manage_master_activity") {
+        if (input.action === "create") {
+          const created: MasterActivityItem = {
+            id: "act-new-waiver",
+            title: input.title,
+            category: input.category,
+            image_url: input.imageUrl,
+            location_name: input.locationName,
+            address: input.address,
+            directions_url: input.directionsUrl,
+            booking_url: input.bookingUrl,
+            waiver_url: input.waiverUrl,
+            unit_label: input.unitLabel,
+            unit_capacity: input.unitCapacity,
+            booking_notes: input.bookingNotes,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          activitiesState = [...activitiesState, created];
+          return Promise.resolve({ success: true, action: "create", id: created.id });
+        }
+      }
+      return Promise.reject(new Error(`unhandled: ${action}`));
+    });
+
+    render(<MasterActivitiesTab api={api} />);
+
+    await waitFor(() => expect(screen.getByText("GoCar Tour Monterey")).toBeInTheDocument());
+
+    const addBtn = screen.getByRole("button", { name: /\+ add activity template/i });
+    await user.click(addBtn);
+
+    const modal = screen.getByRole("dialog", { name: /add activity template/i });
+    expect(modal).toBeInTheDocument();
+
+    const titleInput = within(modal).getByLabelText(/activity title/i);
+    const waiverUrlInput = within(modal).getByLabelText(/activity waiver url/i);
+
+    expect(waiverUrlInput).toBeInTheDocument();
+
+    await user.type(titleInput, "FareHarbor GoCar Monterey");
+    await user.type(waiverUrlInput, "https://fareharbor.com/waivers?shortname=seacartours");
+
+    await user.click(within(modal).getByRole("button", { name: /save template/i }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        "admin_manage_master_activity",
+        expect.objectContaining({
+          action: "create",
+          title: "FareHarbor GoCar Monterey",
+          waiverUrl: "https://fareharbor.com/waivers?shortname=seacartours",
+        })
+      );
+    });
+
+    // Check newly added card renders the waiver link
+    await waitFor(() => {
+      expect(screen.getByText("FareHarbor GoCar Monterey")).toBeInTheDocument();
+    });
+    const newCard = screen.getByText("FareHarbor GoCar Monterey").closest(".event-card") as HTMLElement;
+    const waiverLink = within(newCard).getByRole("link", { name: /📝 Waiver Form/i });
+    expect(waiverLink).toHaveAttribute("href", "https://fareharbor.com/waivers?shortname=seacartours");
+  });
 });

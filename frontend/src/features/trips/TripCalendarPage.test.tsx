@@ -461,5 +461,51 @@ describe("TripCalendarPage", () => {
     render(<TripCalendarPage isAdmin={false} api={apiFulfilled as unknown as TripApi} />);
     expect(await screen.findByText("✓ Duties: 2/2")).toBeInTheDocument();
   });
+
+  it("displays dynamic deposit status tick marks on the Calendar readiness scorecard", async () => {
+    // 1. Confirmed deposit
+    const confirmedCalendar = makeCalendar();
+    confirmedCalendar.trips[0].myRsvp = {
+      response: "coming",
+      acknowledgmentId: "ack-1",
+      version: 1,
+      updatedAt: "2026-10-14T00:00:00Z",
+    };
+    confirmedCalendar.trips[0].depositStatus = "confirmed";
+
+    const { unmount } = render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => confirmedCalendar) as unknown as TripApi} />);
+    expect(await screen.findByText("✓ $50 Deposit")).toBeInTheDocument();
+    expect(screen.getByText("Paid & Confirmed")).toBeInTheDocument();
+    unmount();
+
+    // 2. Submitted deposit
+    const submittedCalendar = makeCalendar();
+    submittedCalendar.trips[0].myRsvp = {
+      response: "coming",
+      acknowledgmentId: "ack-1",
+      version: 1,
+      updatedAt: "2026-10-14T00:00:00Z",
+    };
+    submittedCalendar.trips[0].depositStatus = "submitted_by_member";
+
+    const { unmount: unmount2 } = render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => submittedCalendar) as unknown as TripApi} />);
+    expect(await screen.findByText("✓ $50 Deposit")).toBeInTheDocument();
+    expect(screen.getByText("Submitted (Pending)")).toBeInTheDocument();
+    unmount2();
+
+    // 3. Cabin Payer exempt
+    const exemptCalendar = makeCalendar();
+    exemptCalendar.trips[0].myRsvp = {
+      response: "coming",
+      acknowledgmentId: "ack-1",
+      version: 1,
+      updatedAt: "2026-10-14T00:00:00Z",
+    };
+    exemptCalendar.trips[0].depositStatus = "exempt";
+
+    render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => exemptCalendar) as unknown as TripApi} />);
+    expect(await screen.findByText("✓ Cabin Payer")).toBeInTheDocument();
+    expect(screen.getByText("Deposit Exempt")).toBeInTheDocument();
+  });
 });
 

@@ -147,6 +147,8 @@ export type TripActivityParticipant = {
   paired_with_member_id?: string | null;
   notes?: string | null;
   display_name?: string | null;
+  waiver_clicked_at?: string | null;
+  waiver_signed_at?: string | null;
 };
 
 export type TripActivityItem = {
@@ -159,6 +161,7 @@ export type TripActivityItem = {
   address?: string | null;
   directions_url?: string | null;
   booking_url?: string | null;
+  waiver_url?: string | null;
   booking_notes?: string | null;
   activity_date?: string | null;
   start_time?: string | null;
@@ -738,9 +741,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       ? p.member_id === authProfileMemberId
       : (p.member_id === "m1" || (primaryActivity.participants && primaryActivity.participants.length === 1))
   );
+  const isWaiverRequired = Boolean(primaryActivity?.waiver_url);
+  const isWaiverSigned = Boolean(myActivityParticipant?.waiver_signed_at);
   const isActivityDone = Boolean(
     myActivityParticipant &&
-    (myActivityParticipant.status === "attending" || myActivityParticipant.status === "opted_out")
+    (myActivityParticipant.status === "opted_out" ||
+      (myActivityParticipant.status === "attending" && (!isWaiverRequired || isWaiverSigned)))
   );
   const canChangeActivity = !primaryActivity?.is_pairings_locked;
 
@@ -1259,7 +1265,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     background: "#ffffff",
                     padding: "0.6rem 0.85rem",
                     borderRadius: "8px",
-                    border: `1.5px solid ${depositStatus === "exempt" || depositStatus === "confirmed" || depositStatus === "confirmed_by_admin" ? "#86efac" : depositStatus === "submitted_by_member" ? "#93c5fd" : "#f59e0b"}`,
+                    border: `1.5px solid ${depositStatus === "exempt" || depositStatus === "confirmed" || depositStatus === "confirmed_by_admin" || depositStatus === "submitted_by_member" ? "#86efac" : "#f59e0b"}`,
                     gap: "0.75rem",
                     flexWrap: "wrap",
                   }}
@@ -1279,9 +1285,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                       </>
                     ) : depositStatus === "submitted_by_member" ? (
                       <>
-                        <span style={{ color: "#2563eb", fontWeight: 700, marginRight: "0.35rem" }}>⏳</span>
+                        <span style={{ color: "#16a34a", fontWeight: 700, marginRight: "0.35rem" }}>✓</span>
                         <strong>$50 Cabin Deposit</strong>:{" "}
-                        <span style={{ color: "#2563eb", fontWeight: 600 }}>Submitted (Pending Verification)</span>
+                        <span style={{ color: "#16a34a", fontWeight: 600 }}>Submitted (Pending Verification)</span>
                       </>
                     ) : (
                       <>
@@ -1301,8 +1307,8 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                         Confirmed ✓
                       </span>
                     ) : depositStatus === "submitted_by_member" ? (
-                      <span style={{ fontSize: "0.8rem", color: "#1d4ed8", fontWeight: 600, background: "#eff6ff", padding: "0.25rem 0.6rem", borderRadius: "9999px" }}>
-                        Submitted ⏳
+                      <span style={{ fontSize: "0.8rem", color: "#15803d", fontWeight: 600, background: "#dcfce7", padding: "0.25rem 0.6rem", borderRadius: "9999px" }}>
+                        Submitted ✓
                       </span>
                     ) : (
                       <button
@@ -1450,9 +1456,15 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     </span>
                     <strong style={{ color: "#0f172a" }}>Signature Activity</strong>:{" "}
                     {myActivityParticipant?.status === "attending" && !isEditingActivityChoice ? (
-                      <span style={{ color: "#16a34a", fontWeight: 600 }}>
-                        Participating in {primaryActivity.title}
-                      </span>
+                      isWaiverRequired && !isWaiverSigned ? (
+                        <span style={{ color: "#b45309", fontWeight: 600 }}>
+                          Participating in {primaryActivity.title} (📝 Waiver Required)
+                        </span>
+                      ) : (
+                        <span style={{ color: "#16a34a", fontWeight: 600 }}>
+                          Participating in {primaryActivity.title}{isWaiverRequired ? " (✓ Waiver Signed)" : ""}
+                        </span>
+                      )
                     ) : myActivityParticipant?.status === "opted_out" && !isEditingActivityChoice ? (
                       <span style={{ color: "#16a34a", fontWeight: 600 }}>
                         Opted Out (Stay at Camp)
@@ -1464,7 +1476,40 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     )}
                   </button>
                   <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                    {isActivityDone && !isEditingActivityChoice ? (
+                    {myActivityParticipant?.status === "attending" && isWaiverRequired && !isWaiverSigned && !isEditingActivityChoice ? (
+                      <>
+                        <span
+                          style={{
+                            fontSize: "0.8rem",
+                            color: "#b45309",
+                            fontWeight: 600,
+                            background: "#fef3c7",
+                            padding: "0.25rem 0.6rem",
+                            borderRadius: "9999px",
+                          }}
+                        >
+                          Waiver Pending ⚠️
+                        </span>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem", color: "#7c3aed", borderColor: "#c4b5fd" }}
+                          onClick={() => setTab("activities")}
+                        >
+                          Sign Waiver &rarr;
+                        </button>
+                        {canChangeActivity && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                            onClick={() => setIsEditingActivityChoice(true)}
+                          >
+                            Change
+                          </button>
+                        )}
+                      </>
+                    ) : isActivityDone && !isEditingActivityChoice ? (
                       <>
                         <span
                           style={{

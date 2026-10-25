@@ -30,6 +30,7 @@ export type Trip = {
   pollStatus: "draft" | "open" | "closed";
   title?: string | null; eventStatus?: EventStatus; campingType?: CampingType;
   taskQuotaTarget?: number; myDutyCount?: number; myDailyWorkload?: DailyWorkload | null;
+  cabinPayerMemberId?: string | null; depositStatus?: string | null;
   additionalInformation: string; cabinBookingStatus: CabinBookingStatus | null;
   legacyCabinAvailabilityStatus?: string | null; version: number; comingCount: number;
   tripDecision: "none"; currentRuleBundle: Bundle | null;
@@ -564,8 +565,27 @@ function EventCard({
               <div style={{ fontSize: "0.74rem", color: "#64748b" }}>RSVP Confirmed</div>
             </div>
             <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
-              <span style={{ color: "#0369a1", fontWeight: 600 }}>💵 $50 Deposit</span>
-              <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Cabin Contribution</div>
+              {trip.depositStatus === "exempt" ? (
+                <>
+                  <span style={{ color: "#166534", fontWeight: 600 }}>✓ Cabin Payer</span>
+                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Deposit Exempt</div>
+                </>
+              ) : trip.depositStatus === "confirmed" || trip.depositStatus === "confirmed_by_admin" ? (
+                <>
+                  <span style={{ color: "#166534", fontWeight: 600 }}>✓ $50 Deposit</span>
+                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Paid &amp; Confirmed</div>
+                </>
+              ) : trip.depositStatus === "submitted_by_member" ? (
+                <>
+                  <span style={{ color: "#166534", fontWeight: 600 }}>✓ $50 Deposit</span>
+                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Submitted (Pending)</div>
+                </>
+              ) : (
+                <Link to={`/trips/${trip.tripId}`} style={{ textDecoration: "none", color: "inherit" }}>
+                  <span style={{ color: "#b45309", fontWeight: 600 }}>⚠️ $50 Deposit</span>
+                  <div style={{ fontSize: "0.74rem", color: "#64748b" }}>Cabin Contribution Due</div>
+                </Link>
+              )}
             </div>
             <div style={{ background: "#ffffff", padding: "0.4rem 0.6rem", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
               <Link to={`/trips/${trip.tripId}?tab=tasks`} style={{ textDecoration: "none", color: "inherit" }}>

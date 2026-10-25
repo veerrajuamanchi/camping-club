@@ -20,6 +20,7 @@ export interface MasterActivityItem {
   address: string | null;
   directions_url: string | null;
   booking_url?: string | null;
+  waiver_url?: string | null;
   unit_label: string;
   unit_capacity: number;
   booking_notes: string | null;
@@ -69,6 +70,7 @@ export function MasterActivitiesTab({
   const [address, setAddress] = useState("");
   const [directionsUrl, setDirectionsUrl] = useState("");
   const [bookingUrl, setBookingUrl] = useState("");
+  const [waiverUrl, setWaiverUrl] = useState("");
   const [unitLabel, setUnitLabel] = useState("Vehicle");
   const [unitCapacity, setUnitCapacity] = useState("2");
   const [bookingNotes, setBookingNotes] = useState("");
@@ -133,6 +135,7 @@ export function MasterActivitiesTab({
     setAddress("");
     setDirectionsUrl("");
     setBookingUrl("");
+    setWaiverUrl("");
     setUnitLabel("Vehicle");
     setUnitCapacity("2");
     setBookingNotes("");
@@ -149,6 +152,7 @@ export function MasterActivitiesTab({
     setAddress(item.address || "");
     setDirectionsUrl(item.directions_url || "");
     setBookingUrl(item.booking_url || "");
+    setWaiverUrl(item.waiver_url || "");
     setUnitLabel(item.unit_label || "Vehicle");
     setUnitCapacity(String(item.unit_capacity || 2));
     setBookingNotes(item.booking_notes || "");
@@ -194,6 +198,7 @@ export function MasterActivitiesTab({
           address: address.trim() || null,
           directionsUrl: directionsUrl.trim() || null,
           bookingUrl: bookingUrl.trim() || null,
+          waiverUrl: waiverUrl.trim() || null,
           unitLabel: cleanUnitLabel,
           unitCapacity: cap,
           bookingNotes: bookingNotes.trim() || null,
@@ -208,6 +213,7 @@ export function MasterActivitiesTab({
           address: address.trim() || null,
           directionsUrl: directionsUrl.trim() || null,
           bookingUrl: bookingUrl.trim() || null,
+          waiverUrl: waiverUrl.trim() || null,
           unitLabel: cleanUnitLabel,
           unitCapacity: cap,
           bookingNotes: bookingNotes.trim() || null,
@@ -281,7 +287,8 @@ export function MasterActivitiesTab({
       const matchAddr = item.address?.toLowerCase().includes(cleanQuery) ?? false;
       const matchNotes = item.booking_notes?.toLowerCase().includes(cleanQuery) ?? false;
       const matchBooking = item.booking_url?.toLowerCase().includes(cleanQuery) ?? false;
-      if (!matchTitle && !matchCat && !matchLoc && !matchAddr && !matchNotes && !matchBooking) return false;
+      const matchWaiver = item.waiver_url?.toLowerCase().includes(cleanQuery) ?? false;
+      if (!matchTitle && !matchCat && !matchLoc && !matchAddr && !matchNotes && !matchBooking && !matchWaiver) return false;
     }
     return true;
   });
@@ -539,8 +546,8 @@ export function MasterActivitiesTab({
                     </div>
                   )}
 
-                  {/* Directions & Booking Links */}
-                  {(item.directions_url || item.booking_url) && (
+                  {/* Directions, Booking & Waiver Links */}
+                  {(item.directions_url || item.booking_url || item.waiver_url) && (
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
                       {item.directions_url && (
                         <a
@@ -570,6 +577,21 @@ export function MasterActivitiesTab({
                           }}
                         >
                           🎟️ Booking / Deal Link
+                        </a>
+                      )}
+                      {item.waiver_url && (
+                        <a
+                          href={item.waiver_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            color: "#7c3aed",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          📝 Waiver Form
                         </a>
                       )}
                     </div>
@@ -798,6 +820,16 @@ export function MasterActivitiesTab({
                   value={bookingUrl}
                   onChange={(e) => setBookingUrl(e.target.value)}
                   placeholder="https://www.groupon.com/deals/..."
+                />
+              </label>
+
+              <label>
+                Activity Waiver URL (Optional)
+                <input
+                  type="url"
+                  value={waiverUrl}
+                  onChange={(e) => setWaiverUrl(e.target.value)}
+                  placeholder="https://fareharbor.com/waivers/..."
                 />
               </label>
 
