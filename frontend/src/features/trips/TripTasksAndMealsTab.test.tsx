@@ -161,7 +161,7 @@ describe("TripTasksAndMealsTab", () => {
     });
 
     expect(screen.getByText(/1 of 2 responsibilities selected \(Target reached\)/i)).toBeInTheDocument();
-    expect(screen.getByText("+1x Credit")).toBeInTheDocument();
+    expect(screen.queryByText("🚗 Approved Driver Credits")).not.toBeInTheDocument();
     expect(screen.getAllByText("Friday Dinner").length).toBeGreaterThan(0);
     expect(screen.getByText("Main Dish Cook")).toBeInTheDocument();
     expect(screen.getByText("Kitchen Cleanup")).toBeInTheDocument();
@@ -303,11 +303,9 @@ describe("TripTasksAndMealsTab", () => {
     });
   });
 
-  it("allows administrators to grant driver workload credits", async () => {
-    const user = userEvent.setup();
+  it("retires the redundant driver credits UI section in Camping Club 2.0", async () => {
     const api = vi.fn().mockImplementation(async (action: string) => {
       if (action === "get_trip_task_matrix") return mockTaskMatrixData;
-      if (action === "admin_set_driver_credit") return { id: "credit-2" };
       return {};
     });
 
@@ -322,28 +320,12 @@ describe("TripTasksAndMealsTab", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /\+ Grant Driver Credit/i })).toBeInTheDocument();
+      expect(screen.getByText("Your Trip Responsibility Progress")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /\+ Grant Driver Credit/i }));
-
-    expect(screen.getByText("Grant Driver Workload Credit")).toBeInTheDocument();
-
-    const driverSelect = screen.getByRole("combobox", { name: /Driver \(Attendee\):/i });
-    await user.selectOptions(driverSelect, "member-1");
-
-    const grantBtn = screen.getByRole("button", { name: /^Grant Credit$/i });
-    await user.click(grantBtn);
-
-    await waitFor(() => {
-      expect(api).toHaveBeenCalledWith("admin_set_driver_credit", {
-        tripId: "trip-1",
-        memberId: "member-1",
-        workloadCredit: 1.0,
-        status: "approved",
-        notes: undefined,
-      });
-    });
+    // Verify redundant UI section is removed
+    expect(screen.queryByText("🚗 Approved Driver Credits")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\+ Grant Driver Credit/i })).not.toBeInTheDocument();
   });
 
   it("allows administrators to assign a camper to a duty", async () => {

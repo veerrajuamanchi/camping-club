@@ -15,6 +15,7 @@ import { TripCalendarPage } from "../features/trips/TripCalendarPage";
 import { EventDetailsPage } from "../features/trips/EventDetailsPage";
 import { MyActionsPage } from "../features/actions/MyActionsPage";
 import { AdminOperationsPage } from "../features/admin/AdminOperationsPage";
+import { AdminConfigurationPage } from "../features/admin/AdminConfigurationPage";
 import { configurationError, invokeAuthApi, invokeMemberApi, supabase } from "../lib/supabase";
 
 function LogoutRoute() {
@@ -213,6 +214,7 @@ export function AppRoutes() {
                     <>
                       <hr />
                       <Link to="/admin/operations">⚙️ Operations Dashboard</Link>
+                      <Link to="/admin/configuration">⚙️ Admin Configuration</Link>
                       <Link to="/admin/campsites">🏕️ Campsite Directory</Link>
                       <Link to="/admin/members" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span>👥 Members & Access</span>
@@ -475,6 +477,18 @@ export function AppRoutes() {
               ) : (
                 <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
                   <AdminOperationsPage />
+                </AccessBoundary>
+              )
+            }
+          />
+          <Route
+            path="/admin/configuration"
+            element={
+              membership.status === "signedOut" ? (
+                <Navigate to="/signin" replace />
+              ) : (
+                <AccessBoundary state={membership} onSignOut={() => void signOut().then(() => navigate("/signin", { replace: true }))} requiredRole="admin">
+                  <AdminConfigurationPage />
                 </AccessBoundary>
               )
             }

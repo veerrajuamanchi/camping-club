@@ -86,7 +86,7 @@ export function TripTasksAndMealsTab({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TripTimeSlot[]>([]);
   const [assignments, setAssignments] = useState<DutyAssignment[]>([]);
-  const [driverCredits, setDriverCredits] = useState<DriverCredit[]>([]);
+  const [_driverCredits, setDriverCredits] = useState<DriverCredit[]>([]);
   const [dailyWorkload, setDailyWorkload] = useState<DailyWorkload | null>(null);
   const [dailyTargetInput, setDailyTargetInput] = useState("4");
   const [useDailyTarget, setUseDailyTarget] = useState(false);
@@ -432,61 +432,6 @@ export function TripTasksAndMealsTab({
           </div>
         </div>
       </div>}
-
-      {/* Driver Workload Credits Section */}
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "1.1rem" }}>🚗 Approved Driver Credits</h3>
-            <p style={{ margin: "0.2rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
-              Volunteer carpool drivers receive workload credits toward their trip responsibility quota.
-            </p>
-          </div>
-          {isAdmin && (
-            <button
-              type="button"
-              className="secondary-button"
-              style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem" }}
-              onClick={() => setShowDriverModal(true)}
-            >
-              + Grant Driver Credit
-            </button>
-          )}
-        </div>
-
-        {driverCredits.length === 0 ? (
-          <p style={{ color: "#94a3b8", fontSize: "0.9rem", fontStyle: "italic", margin: "0.5rem 0 0 0" }}>
-            No driver workload credits assigned yet.
-          </p>
-        ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginTop: "0.5rem" }}>
-            {driverCredits.map((c) => {
-              const memberName = attendees.find((a) => a.memberId === c.member_id)?.displayName ?? "Driver";
-              return (
-                <div
-                  key={c.id}
-                  style={{
-                    background: "#f0f9ff",
-                    border: "1px solid #bae6fd",
-                    borderRadius: "8px",
-                    padding: "0.4rem 0.8rem",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    fontSize: "0.875rem",
-                  }}
-                >
-                  <span style={{ fontWeight: 600, color: "#0369a1" }}>{memberName}</span>
-                  <span className="badge" style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "0.8rem" }}>
-                    +{c.workload_credit}x Credit
-                  </span>
-                  {c.notes && <span style={{ color: "#64748b", fontSize: "0.8rem" }}>({c.notes})</span>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
       {/* Chronological Schedule Matrix */}
       {sortedDates.length === 0 ? (

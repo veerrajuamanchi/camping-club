@@ -78,6 +78,7 @@ type Props = {
   reservationInstructions?: string | null;
   drivingDirections?: string | null;
   api: TripApiType;
+  section?: "all" | "transportation" | "gear";
   onEditLogistics?: () => void;
   onOpenPackingChecklist?: () => void;
 };
@@ -112,6 +113,7 @@ export function TripLogisticsTab({
   reservationInstructions,
   drivingDirections,
   api,
+  section = "all",
   onEditLogistics,
   onOpenPackingChecklist,
 }: Props) {
@@ -439,22 +441,27 @@ export function TripLogisticsTab({
             gap: "0.5rem",
           }}
         >
-          <div>
-            <strong>🚗 Your Transportation: </strong>
-            {memberReadiness.carpoolRole === "driver" && `You are driving a carpool.`}
-            {memberReadiness.carpoolRole === "rider" && `${memberReadiness.carpoolDetails}`}
-            {memberReadiness.carpoolRole === "unassigned" && `You are not assigned to a carpool yet.`}
-          </div>
-          <div>
-            <strong>🎒 Your Commitments: </strong>
-            {memberReadiness.myCommitmentsCount > 0
-              ? `Bringing ${memberReadiness.myCommitmentsCount} item(s)`
-              : `None claimed yet`}
-          </div>
+          {(section === "all" || section === "transportation") && (
+            <div>
+              <strong>🚗 Your Transportation: </strong>
+              {memberReadiness.carpoolRole === "driver" && `You are driving a carpool.`}
+              {memberReadiness.carpoolRole === "rider" && `${memberReadiness.carpoolDetails}`}
+              {memberReadiness.carpoolRole === "unassigned" && `You are not assigned to a carpool yet.`}
+            </div>
+          )}
+          {(section === "all" || section === "gear") && (
+            <div>
+              <strong>🎒 Your Commitments: </strong>
+              {memberReadiness.myCommitmentsCount > 0
+                ? `Bringing ${memberReadiness.myCommitmentsCount} item(s)`
+                : `None claimed yet`}
+            </div>
+          )}
         </div>
       )}
 
       {/* Carpools Card */}
+      {(section === "all" || section === "transportation") && (
       <div className="card">
         <div
           style={{
@@ -621,8 +628,10 @@ export function TripLogisticsTab({
           </div>
         )}
       </div>
+      )}
 
       {/* Commitments Card */}
+      {(section === "all" || section === "gear") && (
       <div className="card">
         <div
           style={{
@@ -793,8 +802,10 @@ export function TripLogisticsTab({
           </div>
         )}
       </div>
+      )}
 
       {/* Trip Notes & Directions Card */}
+      {(section === "all" || section === "gear") && (
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h2 style={{ margin: 0 }}>📍 Notes, Directions &amp; Check-In</h2>
@@ -833,6 +844,7 @@ export function TripLogisticsTab({
           </div>
         )}
       </div>
+      )}
 
       {/* Modal: Add Commitment */}
       {showAddCommitmentModal && (
