@@ -88,8 +88,8 @@ flowchart LR
 - **Core Question Answered:** *"How do I get ready?"*
 - Structured into **three independently expandable accordion cards**, each displaying an authoritative summary when collapsed:
   1. **Responsibilities & Meals:**
-     - *Default Summary:* `1 of 2 credits · 1 action required`
-     - *Expanded Experience:* Daily workload progress bar, meal slots (Friday Dinner, Saturday Breakfast, Saturday Dinner, Sunday Breakfast), chore claiming interface, and driver workload credits (+1 credit for driving 3+ passengers).
+     - *Default Summary:* `6.0× of 6.0× weight met · All 3 days covered` (or `4.0× of 6.0× met · Saturday needs 2.0×`)
+     - *Expanded Experience:* Daily workload progress bar per calendar date (evaluating each day independently against the 2.0× target), meal slots (Friday Dinner, Saturday Breakfast, Saturday Dinner, Sunday Breakfast), and carpool driver duties (Inbound Driver 2.0× on arrival day, Outbound Driver 2.0× on departure day). The redundant "Approved Driver Credits" section is removed from the UI.
   2. **Transportation & Carpools:**
      - *Default Summary:* `Carpool assigned · Departure 3:30 PM`
      - *Expanded Experience:* Vehicle roster, driver details, seat availability (4/5 seats filled), pickup locations, departure schedule, and passenger swap requests.

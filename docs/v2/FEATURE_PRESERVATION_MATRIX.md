@@ -60,7 +60,8 @@ This matrix documents every 1.0 capability, its exact 2.0 location, and the auto
 | :--- | :--- | :--- | :--- |
 | Master duty catalog management | `/admin/duties` | `/admin/configuration?section=duties` | E2E duty creation & edit |
 | Integer workload weights (1–3 credits per chore) | Duty card | `/trips/:id?tab=prepare` (Accordion 1) | Credit calculation unit test |
-| Driver workload offset credit (+1 for driving 3+) | Logistics tab | `/trips/:id?tab=prepare` (Accordion 1) | Credit balance calculation test |
+| Carpool Driver duties (Inbound on arrival, Outbound on departure, 2.0× each) | Duty schedule | `/trips/:id?tab=prepare` (Accordion 1) | Daily weight satisfaction test |
+| Historical driver credit database records & audit history | `trip_driver_credits` | Preserved in PostgreSQL (UI section retired) | Database schema & audit preservation check |
 | Daily workload progress bar (Green/Yellow/Red) | `DailyWorkloadProgress` | `/trips/:id?tab=prepare` (Accordion 1) | Visual render & E2E assertion |
 | Meal preferences selector (Breakfast, Lunch, Dinner) | Tasks & Meals | `/trips/:id?tab=prepare` (Accordion 1) | E2E preference save & reload |
 | Vacating duties on RSVP `Not Going` | Database trigger | Unchanged (Migration 20261023011500) | Integration test on duty release |

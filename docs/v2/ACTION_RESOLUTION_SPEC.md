@@ -63,7 +63,7 @@ export interface ActionItem {
 | `ACT-MEM-RSVP` | Submit Trip RSVP | `critical` · `action_required` | Member has not RSVP'd for upcoming trip; Cutoff > now | "Registration closes on {pollDeadlineAt}. Your attendance determines cabin capacity." | `/trips/:tripId?tab=overview` |
 | `ACT-MEM-CONST` | Acknowledge Camping Constitution | `critical` · `action_required` | RSVP is `going`, but active Constitution bundle not acknowledged | "Constitution version {version} ({hash}) requires signed acknowledgment." | `/trips/:tripId?tab=overview&action=sign-constitution` |
 | `ACT-MEM-DEP` | Submit $50 Cabin Deposit | `high` · `action_required` | RSVP is `going`, trip confirmed, deposit status `unsubmitted` | "The $50 non-refundable cabin deposit is due to the cabin host ({hostName})." | `/trips/:tripId?tab=payments&action=submit-deposit` |
-| `ACT-MEM-RESP` | Complete Responsibility Credits | `high` · `action_required` | RSVP is `going`, remaining credits > 0 (Quota - Claimed - DriverCredits) | "You have {earned} of {required} credits. Earn {remaining} more credit(s)." | `/trips/:tripId?tab=prepare&section=duties` |
+| `ACT-MEM-RESP` | Complete Daily Responsibilities | `high` · `action_required` | RSVP is `going`, any camping day has claimed weight < 2.0× target | "{unmetDayCount} day(s) need duty selections ({unmetDayDates}). Target is 2.0× weight per day." | `/trips/:tripId?tab=prepare&section=duties` |
 | `ACT-MEM-VOUCH` | Enter Activity Voucher Code | `normal` · `review_recommended` | Opted into activity requiring vouchers; voucher status `missing` | "Voucher redemption code required for {activityName} tour operator." | `/trips/:tripId?tab=activities&action=enter-voucher` |
 | `ACT-MEM-WAIV` | Sign Tour Operator Waiver | `critical` · `action_required` | Opted into activity; waiver status `none` or `unsubmitted` | "Tour operator requires a signed liability waiver before departure." | `/trips/:tripId?tab=activities&action=sign-waiver` |
 | `ACT-MEM-SETTLE-SEND` | Send Settlement Transfer | `high` · `action_required` | Finalized settlement run exists; member has net negative balance; transfer `pending` | "Settlement finalized for {monthKey}. Please send ${amount} to {recipientName}." | `/trips/:tripId?tab=payments&action=mark-sent` |
@@ -83,17 +83,28 @@ export interface ActionItem {
 
 ---
 
-## 4. Workload Credit & Driver Bonus Evaluation Logic
+## 4. Authoritative Daily Workload Evaluation Logic
 
-A critical enhancement in Camping Club 2.0 is that responsibility progress is evaluated on **Workload Credits Remaining**, not simply a count of chores:
+In Camping Club 2.0, member responsibility satisfaction is strictly evaluated on **Daily Workload Weights**, evaluated independently for each calendar date of the trip:
 
-$$\text{Credits Remaining} = \max\left(0, \text{Required Credits} - \sum \text{Duty Weights} - \text{Driver Bonus}\right)$$
-
-- **Duty Weights:** Standard tasks carry 1 credit; intensive kitchen/cleanup tasks carry 2 credits.
-- **Driver Bonus:** A confirmed driver transporting 3 or more campers receives **+1 Workload Credit**, directly reducing their required chore burden.
-- **UI Display Rule:** The Prepare accordion displays:  
-  *`1 of 2 credits · 1 action required`*  
-  *(Never display "1 of 2 chores" if credit weights or driver bonuses are active).*
+### Core Rules
+1. **Default Requirement:** Every attendee must satisfy **`2.0×` workload weight for each camping day** by default.
+2. **Multi-Day Evaluation:** For a 3-day trip spanning dates $[d_1, d_2, d_3]$, each day is independently checked:
+   $$\text{Status}(d) = \begin{cases} 
+     \text{satisfied} & \text{if } \sum_{i \in \text{claimed}(d)} \text{weight}(i) \ge 2.0 \\
+     \text{needs\_selection} & \text{otherwise} 
+   \end{cases}$$
+   All 3 daily targets must be satisfied for the member's responsibilities to be complete (totaling $6.0\times$ across the trip).
+3. **Carpool Driver Architecture:**
+   - **Inbound Driver:** Assigned to the arrival day with configured weight (currently `2.0×`), satisfying that day's target.
+   - **Outbound Driver:** Assigned to the departure day with configured weight (currently `2.0×`), satisfying that day's target.
+   - Each driver duty contributes its weight **only toward the daily target of the specific day to which it is assigned**. There is no special multi-day credit offset or synthetic driver calculation.
+4. **Removal of Redundant Driver Credits UI:**
+   - The separate *"🚗 Approved Driver Credits / Grant Driver Credit"* UI section is completely removed. Carpool driving is claimed directly from the schedule as a standard $2.0\times$ duty. Historical database records (`trip_driver_credits`) and audit trails are preserved in PostgreSQL.
+5. **UI Summary Format:**
+   - Landing Cards: If all days are satisfied, renders `✓ Responsibilities Complete (All days met)`. If any day is deficient, renders the specific day: `⚡ Saturday duty needed (2.0× target) · [Choose Saturday Duty]`.
+   - Prepare Accordion: Displays total progress and daily breakdown:  
+     *`Responsibilities & Meals: 6.0× of 6.0× weight met · All 3 days covered`* (or *`4.0× of 6.0× met · Saturday needs 2.0×`*). Never displays legacy raw counts like "5 of 2 chosen".
 
 ---
 

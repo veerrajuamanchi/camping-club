@@ -60,8 +60,9 @@ To ensure the **Action Resolution Service** and **Trip Health Engine** are verif
   - 2 members with verified $50 deposits.
   - 1 member with submitted deposit awaiting accountant verification.
   - 1 member with unsubmitted deposit.
-  - 1 member missing chore credits (1 of 2 credits claimed).
-  - 1 driver with +1 workload offset credit.
+  - 1 member missing daily workload weight (Saturday at 0.0× of 2.0× target).
+  - 1 driver assigned Inbound Driver (2.0× on Friday) and Outbound Driver (2.0× on Sunday), each contributing strictly to that date.
+  - Historical `trip_driver_credits` records present for backward-compatibility schema checks.
   - 1 member with self-reported signed waiver awaiting operator call sheet confirmation.
 
 ### Scenario 2: The "At-Risk Cutoff" Trip (Pinnacles Camping)

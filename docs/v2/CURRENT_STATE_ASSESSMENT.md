@@ -30,7 +30,7 @@ The Camping Club 1.0 database comprises 28 sequential migrations establishing au
 | **Attendance & RSVP** | `trip_rsvps`, `trip_waitlist` | RSVP: `going`, `not_going`. Waitlist: `active`, `promoted`, `dropped`. |
 | **Constitution & Rules** | `rule_definitions`, `rule_bundles`, `member_rule_acknowledgments` | Versioned bundles with cryptographic `content_hash` and immutable timestamped signatures. |
 | **Cabin Financials** | `cabin_commitments`, `cabin_deposit_records` | Deposit status: `unsubmitted`, `submitted`, `verified`. |
-| **Duties & Workload** | `master_duties`, `trip_duties`, `trip_duty_assignments` | Assignment: `claimed`, `completed`, `dropped`. Workload credits: integer weights (1–3), driver credits (+1). |
+| **Duties & Workload** | `master_duties`, `trip_duties`, `trip_duty_assignments` | Assignment: `claimed`, `completed`, `dropped`. Workload weights: 0.5–5.0× (default 2.0× daily target per day). Carpool Driver duties assigned per arrival/departure date. |
 | **Logistics & Carpools** | `trip_vehicles`, `trip_carpool_riders` | Vehicle capacity (e.g. 4–7), departure times, passenger assignments. |
 | **Gear & Groceries** | `master_gear_catalog`, `trip_gear_items`, `master_grocery_catalog`, `trip_grocery_items`, `packing_checklist_items` | Categories: `individual`, `shared`. Status: `unclaimed`, `claimed`, `packed`. |
 | **Activities & Tours** | `master_activities`, `trip_activities`, `trip_activity_participants`, `activity_vouchers`, `tour_call_sheet_notes` | Status: `opted_in`, `opted_out`. Voucher code: encrypted string. Waiver: `none`, `member_signed`, `operator_verified`. |

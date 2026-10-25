@@ -10,7 +10,7 @@ Over its initial release (Camping Club 1.0), the platform successfully establish
 - Binary RSVP (`Going` / `Not Going`), capacity management, and automatic waitlisting.
 - The Camping Constitution, complete with versioned rule bundles and immutable cryptographic acknowledgment audits.
 - Pre-trip cabin bookings, contractual cancellation buffers, and non-refundable attendee deposits ($50).
-- Chore assignment, meal scheduling, daily workload balance, and driver workload credits.
+- Chore assignment, meal scheduling, daily workload balance (2.0× target per camping day), and dedicated carpool driver duties.
 - Individual packing checklists and shared group gear/grocery commitments.
 - Carpool coordination with seat capacities and departure schedules.
 - Signature group activities (e.g., Monterey GoCar tours), voucher tracking, tour operator call sheets, and waiver compliance.

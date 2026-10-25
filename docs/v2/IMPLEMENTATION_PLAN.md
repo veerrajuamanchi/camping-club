@@ -32,7 +32,8 @@ flowchart TD
 - **Task 1.1 — Action Resolution Domain Engine:**
   - Pure TypeScript evaluator (`frontend/src/domain/actions/ActionResolutionService.ts`).
   - Unit tests covering all 15 action rules (`ACT-MEM-*` and `ACT-ADM-*`).
-  - Workload credit evaluation including driver offset bonus (+1 credit for 3+ passengers).
+  - Daily workload weight evaluation (2.0× per camping day default; independent evaluation across all trip dates; Inbound Driver on arrival day and Outbound Driver on departure day contributing 2.0× strictly to their assigned date).
+  - Removal of redundant driver-credit calculation; historical driver records preserved.
 - **Task 1.2 — Simplified Calendar Trip Cards:**
   - Shortened campsite hero banner (95px) using real photos from the Campsite Directory.
   - Contextual Next Action callout pill derived from the Action Resolution Service.
@@ -66,10 +67,10 @@ flowchart TD
   - Integrated Camping Constitution summary and signed acknowledgment signature.
   - Collapsible Contextual Admin Drawer (`⚙️ Manage Trip Controls`).
 - **Task 2.3 — Destination 2: Prepare (3 Expandable Accordions):**
-  - Accordion 1: Responsibilities & Meal Schedule (default summary: `1 of 2 credits · 1 action required`).
+  - Accordion 1: Responsibilities & Meal Schedule (default summary: `6.0× of 6.0× weight met · All 3 days covered` or `4.0× of 6.0× met · Saturday needs 2.0×`).
   - Accordion 2: Transportation & Carpools (default summary: `Carpool assigned · Departure 3:30 PM`).
   - Accordion 3: Gear, Groceries & Packing (default summary: `2 shared items claimed · Packing 5/7`).
-  - Full preservation of meal preferences, personal packing checkboxes, and driver workload credits.
+  - Full preservation of meal preferences and personal packing checkboxes; removal of redundant Approved Driver Credits UI section while preserving historical PostgreSQL records.
 - **Task 2.4 — Destination 3: Activities Hub:**
   - Activity itinerary, opt-in toggle, and vehicle pairings.
   - Voucher redemption code input with masking (`GOCAR-****-9482`) and reveal toggle.
