@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { TripApiType } from "./EventDetailsPage";
 import { invokeTripApi } from "../../lib/supabase";
 
@@ -186,6 +186,17 @@ export function TripActivitiesTab({
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<TripActivityItem | null>(null);
 
+  const attendeesList = useMemo(() => {
+    if (tripAttendees && tripAttendees.length > 0) return tripAttendees;
+    const map = new Map<string, { memberId: string; displayName: string }>();
+    for (const act of activities) {
+      for (const p of act.participants || []) {
+        map.set(p.member_id, { memberId: p.member_id, displayName: p.display_name || "Camper" });
+      }
+    }
+    return Array.from(map.values());
+  }, [tripAttendees, activities]);
+
   async function loadActivities() {
     setError(null);
     try {
@@ -244,6 +255,7 @@ export function TripActivitiesTab({
     _activity: TripActivityItem,
     group: TripActivityGroup,
     data: {
+      purchaserMemberId?: string;
       purchaseDate: string;
       orderNumber: string;
       voucherCode: string;
@@ -258,6 +270,7 @@ export function TripActivitiesTab({
       await api("submit_activity_voucher", {
         tripId,
         groupId: group.id,
+        purchaserMemberId: data.purchaserMemberId || currentMemberId,
         purchaseDate: data.purchaseDate || new Date().toISOString().slice(0, 10),
         orderNumber: data.orderNumber.trim() || undefined,
         voucherCode: data.voucherCode.trim() || undefined,
@@ -1406,6 +1419,8 @@ export function TripActivitiesTab({
         <VoucherModal
           activity={voucherModalGroup.activity}
           group={voucherModalGroup.group}
+          attendeesList={attendeesList}
+          currentMemberId={currentMemberId}
           busy={actionBusy}
           onClose={() => setVoucherModalGroup(null)}
           onSubmit={(data) =>
@@ -1492,15 +1507,20 @@ export function TripActivitiesTab({
 function VoucherModal({
   activity,
   group,
+  attendeesList = [],
+  currentMemberId = "",
   busy,
   onClose,
   onSubmit,
 }: {
   activity: TripActivityItem;
   group: TripActivityGroup;
+  attendeesList?: Array<{ memberId: string; displayName: string }>;
+  currentMemberId?: string;
   busy: boolean;
   onClose: () => void;
   onSubmit: (data: {
+    purchaserMemberId?: string;
     purchaseDate: string;
     orderNumber: string;
     voucherCode: string;
@@ -1509,6 +1529,9 @@ function VoucherModal({
   }) => void;
 }) {
   const groupLabel = group.group_name || `${activity.unit_label || "Vehicle"} #${group.group_number}`;
+  const [purchaserMemberId, setPurchaserMemberId] = useState<string>(
+    group.purchaser_member_id || (group.members?.[0]?.member_id) || currentMemberId
+  );
   const [purchaseDate, setPurchaseDate] = useState(
     group.purchase_date || new Date().toISOString().slice(0, 10)
   );
@@ -1533,6 +1556,7 @@ function VoucherModal({
       return;
     }
     onSubmit({
+      purchaserMemberId,
       purchaseDate,
       orderNumber,
       voucherCode,
@@ -1577,6 +1601,23 @@ function VoucherModal({
           onSubmit={handleSubmit}
           style={{ display: "flex", flexDirection: "column", gap: "12px" }}
         >
+          {attendeesList.length > 0 && (
+            <label>
+              Who Paid / Purchased?
+              <select
+                value={purchaserMemberId}
+                onChange={(e) => setPurchaserMemberId(e.target.value)}
+                disabled={busy}
+              >
+                {attendeesList.map((att) => (
+                  <option key={att.memberId} value={att.memberId}>
+                    {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <label>
             Purchase Date
             <input

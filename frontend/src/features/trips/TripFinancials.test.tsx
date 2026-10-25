@@ -781,4 +781,61 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     expect(screen.getByText(/🌐 Website Maintenance/i)).toBeInTheDocument();
     expect(screen.getByText("$5.00")).toBeInTheDocument();
   });
+
+  it("allows administrator to edit an expense and reassign who paid", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") {
+        return Promise.resolve(mockDraftFinancials);
+      }
+      if (action === "admin_manage_trip_expense") {
+        return Promise.resolve({ success: true });
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-admin"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    // Find the edit button for the expense
+    const editBtn = await screen.findByRole("button", { name: /Edit Campfire S'mores and firewood/i });
+    expect(editBtn).toBeInTheDocument();
+
+    await user.click(editBtn);
+
+    // Modal opens
+    expect(screen.getByText("✏️ Edit Expense")).toBeInTheDocument();
+
+    // Select Sarah M. as the new payer
+    const payerSelect = screen.getByLabelText(/Who Paid\?/i);
+    fireEvent.change(payerSelect, { target: { value: "member-2" } });
+
+    // Submit form
+    const saveBtn = screen.getByRole("button", { name: /Save Changes/i });
+    fireEvent.submit(saveBtn.closest("form")!);
+
+    expect(mockApi).toHaveBeenCalledWith(
+      "admin_manage_trip_expense",
+      expect.objectContaining({
+        tripId: "trip-1",
+        action: "update",
+        expenseId: "exp-1",
+        payerMemberId: "member-2",
+        description: "Campfire S'mores and firewood",
+        amountCents: 4500,
+      })
+    );
+  });
 });

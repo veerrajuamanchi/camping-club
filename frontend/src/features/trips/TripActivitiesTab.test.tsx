@@ -1042,4 +1042,59 @@ describe("TripActivitiesTab", () => {
     expect(screen.getByText("GoCar #1")).toBeInTheDocument();
     expect(screen.getByText("GoCar #2")).toBeInTheDocument();
   });
+
+  it("allows selecting who paid for the voucher and passes purchaserMemberId to submit_activity_voucher API", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_activities") {
+        return { activities: mockTripActivities };
+      }
+      if (action === "submit_activity_voucher") {
+        return { success: true };
+      }
+      return {};
+    });
+
+    render(
+      <TripActivitiesTab
+        tripId="trip-100"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="mem-admin"
+        tripAttendees={[
+          { memberId: "mem-admin", displayName: "Admin Dave" },
+          { memberId: "mem-buyer", displayName: "Camper Bob" },
+        ]}
+        api={api}
+      />
+    );
+
+    const voucherBtn = (await screen.findAllByRole("button", { name: /\+ Enter Voucher Details/i }))[0];
+    await user.click(voucherBtn);
+
+    // Verify modal has Who Paid / Purchased select
+    const purchaserSelect = screen.getByLabelText(/Who Paid \/ Purchased\?/i);
+    expect(purchaserSelect).toBeInTheDocument();
+
+    // Select Camper Bob
+    fireEvent.change(purchaserSelect, { target: { value: "mem-buyer" } });
+
+    // Enter order number
+    const orderInput = screen.getByLabelText(/Groupon Order \/ Ref #/i);
+    fireEvent.change(orderInput, { target: { value: "ORD-554433" } });
+
+    // Submit form
+    const submitBtn = screen.getByRole("button", { name: /Save Voucher/i });
+    fireEvent.submit(submitBtn.closest("form")!);
+
+    expect(api).toHaveBeenCalledWith(
+      "submit_activity_voucher",
+      expect.objectContaining({
+        tripId: "trip-100",
+        groupId: "grp-1",
+        purchaserMemberId: "mem-buyer",
+        orderNumber: "ORD-554433",
+      })
+    );
+  });
 });

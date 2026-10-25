@@ -232,6 +232,52 @@ export function TripFinancialsTab({
   // Finalize Confirmation Modal
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
 
+  // Edit Expense Modal state
+  const [editingExpense, setEditingExpense] = useState<TripExpense | null>(null);
+  const [editDesc, setEditDesc] = useState("");
+  const [editPayerId, setEditPayerId] = useState("");
+  const [editDollars, setEditDollars] = useState("");
+  const [editIncurredDate, setEditIncurredDate] = useState("");
+
+  const handleOpenEditExpense = (exp: TripExpense) => {
+    setEditingExpense(exp);
+    setEditDesc(exp.description);
+    setEditPayerId(exp.payerMemberId);
+    setEditDollars((exp.amountCents / 100).toFixed(2));
+    setEditIncurredDate(exp.incurredDate);
+  };
+
+  const handleSaveEditExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExpense) return;
+    const dollars = parseFloat(editDollars);
+    if (isNaN(dollars) || dollars <= 0) {
+      setErrorMsg("Please enter a valid expense amount greater than $0.00.");
+      return;
+    }
+    const amountCents = Math.round(dollars * 100);
+    try {
+      setActionBusy(true);
+      setErrorMsg(null);
+      await api("admin_manage_trip_expense", {
+        tripId,
+        action: "update",
+        expenseId: editingExpense.id,
+        description: editDesc.trim(),
+        payerMemberId: editPayerId || editingExpense.payerMemberId,
+        amountCents,
+        incurredDate: editIncurredDate || editingExpense.incurredDate,
+      });
+      setEditingExpense(null);
+      await fetchFinancials();
+    } catch (err: any) {
+      console.error("Update expense failed:", err);
+      setErrorMsg(err?.message || "Failed to update expense.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const fetchFinancials = async () => {
     try {
       setLoading(true);
@@ -874,6 +920,19 @@ export function TripFinancialsTab({
 
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                     {!isFinalized && isAdmin && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={actionBusy}
+                        onClick={() => handleOpenEditExpense(exp)}
+                        style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                        title="Edit expense details and who paid"
+                        aria-label={`Edit ${exp.description}`}
+                      >
+                        ✏️ Edit
+                      </button>
+                    )}
+                    {!isFinalized && isAdmin && (
                       exp.splitMode === "all_attendees" ? (
                         <button
                           type="button"
@@ -1215,6 +1274,73 @@ export function TripFinancialsTab({
                   className="btn-primary"
                 >
                   {actionBusy ? "Saving..." : "Save Expense"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Edit Shared Expense */}
+      {editingExpense && (
+        <div className="modal-backdrop" onClick={() => setEditingExpense(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "460px" }}>
+            <h3>✏️ Edit Expense</h3>
+            <form onSubmit={handleSaveEditExpense} style={{ display: "grid", gap: "0.85rem", marginTop: "1rem" }}>
+              <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
+                <span>Description</span>
+                <input
+                  type="text"
+                  required
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                />
+              </label>
+
+              <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
+                <span>Who Paid?</span>
+                <select value={editPayerId} onChange={(e) => setEditPayerId(e.target.value)}>
+                  {attendeesList.map((att) => (
+                    <option key={att.memberId} value={att.memberId}>
+                      {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
+                <span>Amount ($)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  value={editDollars}
+                  onChange={(e) => setEditDollars(e.target.value)}
+                />
+              </label>
+
+              <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
+                <span>Date Incurred</span>
+                <input
+                  type="date"
+                  required
+                  value={editIncurredDate}
+                  onChange={(e) => setEditIncurredDate(e.target.value)}
+                />
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={actionBusy}
+                  onClick={() => setEditingExpense(null)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" disabled={actionBusy}>
+                  {actionBusy ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>
