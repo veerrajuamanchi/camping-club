@@ -1,6 +1,6 @@
 -- Test: Carpool mileage rate and activity booking_url backfill
 begin;
-select plan(4);
+select plan(5);
 
 -- 1. Insert dummy master and trip activity with booking_notes as URL and NULL booking_url
 insert into public.master_activities (id, title, category, booking_notes)
@@ -44,15 +44,25 @@ select is(
 
 -- 4. Verify trip_mileage_rate_cents default in camping_trips column
 select col_default_is(
-  'public', 'camping_trips', 'trip_mileage_rate_cents', '50',
-  'camping_trips trip_mileage_rate_cents defaults to 50'
+  'public', 'camping_trips', 'trip_mileage_rate_cents', '76',
+  'camping_trips trip_mileage_rate_cents defaults to 76 (Constitution standard)'
 );
 
--- 5. Verify trip instance rate
+-- 5. Verify existing historical trip instance retains explicit 50 cents
 select is(
   (select trip_mileage_rate_cents from public.camping_trips where id = 'bb100000-0000-0000-0000-000000000001'),
   50,
-  'trip mileage rate is 50 cents'
+  'historical trip instance retains explicit 50 cents'
+);
+
+-- 6. Verify newly created trip with default mileage rate receives 76 cents
+insert into public.camping_trips (id, title, month_key, rotation_position, suggested_campsite_id, selected_campsite_id, starts_on, ends_on, club_timezone_snapshot)
+values ('bb200000-0000-0000-0000-000000000002', 'New Constitutional Rate Trip', '2026-12-01', 2, 'aa300000-0000-0000-0000-000000000001', 'aa300000-0000-0000-0000-000000000001', '2026-12-14', '2026-12-15', 'America/Los_Angeles');
+
+select is(
+  (select trip_mileage_rate_cents from public.camping_trips where id = 'bb200000-0000-0000-0000-000000000002'),
+  76,
+  'newly created trip defaults to constitutional 76 cents'
 );
 
 select * from finish();
