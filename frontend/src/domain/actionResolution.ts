@@ -686,6 +686,7 @@ export function resolveActionsForCalendarTrip(
     myRsvp?: {
       response: "coming" | "not_coming";
       acceptedRuleBundle?: { contentHash?: string; version: number } | null;
+      acknowledgmentId?: string | null;
     } | null;
     myWaitlistPosition?: number | null;
     currentRuleBundle?: { contentHash?: string; version: number } | null;
@@ -737,20 +738,19 @@ export function resolveActionsForCalendarTrip(
   if (trip.myRsvp?.response === "coming") {
     // 2. Constitution Acknowledgment
     if (trip.currentRuleBundle) {
-      const acceptedHash = trip.myRsvp.acceptedRuleBundle?.contentHash;
-      const currentHash = trip.currentRuleBundle.contentHash;
-      if (!acceptedHash || acceptedHash !== currentHash) {
+      const hasAcknowledged = !!trip.myRsvp.acknowledgmentId || !!trip.myRsvp.acceptedRuleBundle;
+      if (!hasAcknowledged) {
         actions.push({
           id: `ACT-MEM-CONST:${trip.tripId}`,
           ruleId: "ACT-MEM-CONST",
           tripId: trip.tripId,
           tripTitle,
           title: `Acknowledge Camping Constitution (v${trip.currentRuleBundle.version})`,
-          reason: "An updated Camping Constitution bundle requires your signed acknowledgment.",
+          reason: "The Camping Constitution must be reviewed and signed for confirmed trip participation.",
           priority: "critical",
           informationLevel: "action_required",
           audience: "member",
-          actionUrl: `/trips/${trip.tripId}`,
+          actionUrl: `/trips/${trip.tripId}?tab=overview&action=sign-constitution`,
           sourceType: "member_rule_acknowledgments",
           sourceId: trip.tripId,
           completionCondition: "Sign Constitution acknowledgment",

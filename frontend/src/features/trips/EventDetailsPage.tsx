@@ -12,7 +12,7 @@ import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
 import { TripActivitiesTab, ACTIVITY_CATEGORIES } from "./TripActivitiesTab";
-import { resolveActionsForCalendarTrip } from "../../domain/actionResolution";
+import { resolveActionsForCalendarTrip, type ActionItem } from "../../domain/actionResolution";
 import { evaluateTripHealth } from "../../domain/tripHealth";
 import { getTripLifecyclePhase } from "../../domain/lifecyclePhase";
 
@@ -283,9 +283,11 @@ const defaultApi: TripApiType = (action, input) => invokeTripApi(action, input);
 function TripNextStepsBanner({
   trip,
   onNavigateTab,
+  onResolveAction,
 }: {
   trip: Parameters<typeof resolveActionsForCalendarTrip>[0];
   onNavigateTab: (tab: Tab) => void;
+  onResolveAction?: (action: ActionItem, targetTab: Tab) => void;
 }) {
   const actions = resolveActionsForCalendarTrip(trip);
 
@@ -356,7 +358,12 @@ function TripNextStepsBanner({
               </div>
               <button
                 type="button"
-                onClick={() => onNavigateTab(targetTab)}
+                onClick={() => {
+                  onNavigateTab(targetTab);
+                  if (onResolveAction) {
+                    onResolveAction(act, targetTab);
+                  }
+                }}
                 style={{
                   padding: "0.35rem 0.85rem",
                   background: act.priority === "critical" ? "#dc2626" : "#b45309",
@@ -1531,6 +1538,22 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 additionalInformation: details.additionalInformation,
               }}
               onNavigateTab={(targetTab) => setTab(targetTab)}
+              onResolveAction={(act, targetTab) => {
+                setTab(targetTab);
+                if (act.actionUrl.includes("action=sign-constitution") || act.ruleId === "ACT-MEM-CONST") {
+                  setConstitutionOpen(true);
+                  setTimeout(() => {
+                    document.getElementById("constitution")?.scrollIntoView({ behavior: "smooth" });
+                  }, 50);
+                } else if (act.actionUrl.includes("section=duties") || act.ruleId === "ACT-MEM-RESP") {
+                  setSection1Open(true);
+                  setTimeout(() => {
+                    document.getElementById("prepare-responsibilities")?.scrollIntoView({ behavior: "smooth" });
+                  }, 50);
+                } else if (act.actionUrl.includes("action=submit-deposit") || act.ruleId === "ACT-MEM-DEP") {
+                  setTab("payments");
+                }
+              }}
             />
           )}
 
