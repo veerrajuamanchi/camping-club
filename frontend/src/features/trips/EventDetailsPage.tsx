@@ -429,6 +429,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         setSection3Open(true);
       }
     }
+    if (searchParams.get("action") === "sign-constitution") {
+      setConstitutionOpen(true);
+      setTimeout(() => {
+        document.getElementById("constitution")?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -519,6 +525,30 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const [activityMsg, setActivityMsg] = useState<string | null>(null);
   const [isEditingActivityChoice, setIsEditingActivityChoice] = useState(false);
   const [activityImageError, setActivityImageError] = useState(false);
+  const [signAckChecked, setSignAckChecked] = useState(false);
+  const [signingAck, setSigningAck] = useState(false);
+  const [signAckMsg, setSignAckMsg] = useState<string | null>(null);
+
+  async function handleSignConstitution() {
+    if (!details?.currentRuleBundle) return;
+    setSigningAck(true);
+    setSignAckMsg(null);
+    try {
+      await api<{ waitlisted?: boolean; position?: number }>("submit_rsvp", {
+        tripId: details.tripId,
+        response: "coming",
+        expectedVersion: details.myRsvp?.version ?? 0,
+        bundleId: details.currentRuleBundle.id,
+        contentHash: details.currentRuleBundle.contentHash,
+      });
+      setSignAckMsg("Constitution acknowledged successfully!");
+      await refresh();
+    } catch {
+      setSignAckMsg("Could not save constitution acknowledgment. Please try again.");
+    } finally {
+      setSigningAck(false);
+    }
+  }
 
   async function refresh() {
     if (!tripId) return;
@@ -2915,8 +2945,76 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                           </details>
                         )
                     )}
-                    {details.myRsvp?.response === "coming" && details.myRsvp.acknowledgmentId && (
-                      <p className="eyebrow">You acknowledged version {details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version}.</p>
+                    {details.myRsvp?.response === "coming" && (
+                      <div
+                        data-testid="constitution-acknowledgment-box"
+                        style={{
+                          marginTop: "1.25rem",
+                          padding: "1rem 1.25rem",
+                          borderRadius: "8px",
+                          border: details.myRsvp.acknowledgmentId ? "1.5px solid #86efac" : "1.5px solid #f59e0b",
+                          background: details.myRsvp.acknowledgmentId ? "#f0fdf4" : "#fffbeb",
+                        }}
+                      >
+                        {details.myRsvp.acknowledgmentId ? (
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                              <div>
+                                <span style={{ color: "#166534", fontWeight: 700, fontSize: "0.95rem" }}>
+                                  ✓ Signed Constitution (v{details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version})
+                                </span>
+                                <p className="eyebrow" style={{ margin: "4px 0 0" }}>You acknowledged version {details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version}.</p>
+                                {(details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version) < details.currentRuleBundle.version && (
+                                  <p style={{ margin: "4px 0 0", color: "#15803d", fontSize: "0.82rem" }}>
+                                    An updated version (v{details.currentRuleBundle.version}) is active. Re-acknowledgment is optional.
+                                  </p>
+                                )}
+                              </div>
+                              {(details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version) < details.currentRuleBundle.version && (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  disabled={signingAck}
+                                  style={{ fontSize: "0.82rem", padding: "6px 12px" }}
+                                  onClick={handleSignConstitution}
+                                >
+                                  {signingAck ? "Signing…" : `Sign Latest (v${details.currentRuleBundle.version})`}
+                                </button>
+                              )}
+                            </div>
+                            {signAckMsg && <p style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "#166534", fontWeight: 600 }}>{signAckMsg}</p>}
+                          </div>
+                        ) : (
+                          <div>
+                            <h4 style={{ margin: "0 0 6px", color: "#92400e", fontSize: "0.95rem" }}>
+                              ✍️ Acknowledge Camping Constitution (v{details.currentRuleBundle.version})
+                            </h4>
+                            <p style={{ margin: "0 0 10px", color: "#78350f", fontSize: "0.82rem" }}>
+                              Please confirm your agreement to the Camping Constitution rules listed above.
+                            </p>
+                            <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem", color: "#1e293b" }}>
+                              <input
+                                type="checkbox"
+                                checked={signAckChecked}
+                                onChange={(e) => setSignAckChecked(e.target.checked)}
+                              />
+                              <span>I have read and agree to the Camping Constitution (v{details.currentRuleBundle.version})</span>
+                            </label>
+                            <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "10px" }}>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                disabled={!signAckChecked || signingAck}
+                                onClick={handleSignConstitution}
+                                style={{ fontSize: "0.85rem", padding: "6px 14px" }}
+                              >
+                                {signingAck ? "Saving…" : `Acknowledge Constitution (v${details.currentRuleBundle.version})`}
+                              </button>
+                              {signAckMsg && <span style={{ fontSize: "0.85rem", color: signAckMsg.includes("successfully") ? "#166534" : "#dc2626", fontWeight: 600 }}>{signAckMsg}</span>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </>
                 )}
