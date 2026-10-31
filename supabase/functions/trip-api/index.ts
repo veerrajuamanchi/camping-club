@@ -612,8 +612,14 @@ function resultId(value: unknown): string | null {
   return null;
 }
 
-function checkError(error: { code?: string } | null): void {
-  if (error) throw Object.assign(new Error("database operation failed"), { code: error.code });
+function checkError(error: { code?: string; message?: string; details?: string; hint?: string } | null): void {
+  if (error) {
+    const detailStr = [error.message, error.details, error.hint].filter(Boolean).join(" - ");
+    const err = new Error(detailStr || "database operation failed");
+    (err as any).code = error.code;
+    console.error("DB checkError failure:", detailStr, error.code);
+    throw err;
+  }
 }
 
 async function getCalendar(member: Member): Promise<Record<string, unknown>> {
@@ -1429,7 +1435,6 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     }
   }
 
-  const isFinalized = latestRun != null && (latestRun.status === "finalized" || latestRun.status === "settled");
 
   const expenses = rawExpenses.map((exp: any) => {
     let expAllocs: Array<{ id?: string; memberId: string; memberName: string; allocatedCents: number; isMe: boolean }>;
@@ -2131,7 +2136,11 @@ Deno.serve(async (request) => {
 
   if (action === "get_calendar") {
     try { return json(request, 200, { ...(await getCalendar(member)), requestId }); }
-    catch { return errorResponse(request, 500, "calendar_read_failed", requestId); }
+    catch (err: unknown) {
+      console.error("get_calendar failed:", err);
+      const errMsg = err instanceof Error ? `${err.message} ${(err as any).code || ""}`.trim() : String(err);
+      return errorResponse(request, 500, "calendar_read_failed", requestId, errMsg);
+    }
   }
   if (action === "get_constitution") {
     try {

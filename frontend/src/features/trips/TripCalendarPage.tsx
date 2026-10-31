@@ -1052,8 +1052,10 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
     setError(null);
     try {
       setCalendar(await api<Calendar>("get_calendar"));
-    } catch {
-      setError("The trip calendar could not be loaded. Please try again.");
+    } catch (err: unknown) {
+      console.error("Trip calendar load failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`The trip calendar could not be loaded. Please try again.${msg ? ` (${msg})` : ""}`);
     } finally {
       setLoading(false);
     }
