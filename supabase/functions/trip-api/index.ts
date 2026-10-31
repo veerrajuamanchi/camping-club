@@ -4,6 +4,7 @@ import { resolveServiceApiKey } from "../_shared/service-key.mjs";
 import { canonicalJson, keyedDigest, requestDigest, requiredEnv } from "../_shared/crypto.ts";
 import { corsHeaders, isOriginAllowed, json, readBody } from "../_shared/http.ts";
 import { computeSettlement, calculateEqualAllocations, type ExpenseInput, type ExternalPaymentInput } from "../_shared/settlementEngine.ts";
+import { sendEmail } from "../_shared/mailer.ts";
 
 const service = createClient(requiredEnv("SUPABASE_URL"), resolveServiceApiKey(Deno.env.get("SUPABASE_SECRET_KEYS")), { auth: { persistSession: false, autoRefreshToken: false } });
 const uuid = z.string().uuid();
@@ -15,7 +16,7 @@ const actionNames = [
   "get_calendar", "get_constitution", "get_trip_details", "get_trip_time_slots", "admin_configure_club", "admin_generate_calendar",
   "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
-  "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
+  "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
@@ -290,6 +291,8 @@ const inputSchemas = {
   }).strict(),
   request_withdrawal: z.object({ tripId: uuid, reason }).strict(),
   admin_promote_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason }).strict(),
+  admin_remove_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason: reason.optional() }).strict(),
+  admin_send_trip_summary_email: z.object({ tripId: uuid, recipientType: z.enum(["admin", "all"]).default("admin") }).strict(),
   admin_list_master_responsibilities: z.object({ includeInactive: z.boolean().optional() }).strict(),
   admin_create_master_responsibility: z.object({
     title: z.string().trim().min(3).max(100),
@@ -532,7 +535,7 @@ type Action = typeof actionNames[number];
 const adminActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
-  "admin_promote_from_waitlist", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
+  "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
   "admin_delete_campsite", "admin_set_daily_workload_target",
@@ -546,7 +549,7 @@ const adminActions = new Set<Action>([
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
-  "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist",
+  "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email",
   "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
@@ -997,40 +1000,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
   const campsite = campsiteResult.data;
   const rsvps = rsvpResult.data ?? [];
   const waitlist = waitlistResult.data ?? [];
-  let rawCommitments = commitmentsResult.data ?? [];
-  if (rawCommitments.length === 0) {
-    try {
-      let seedActorId = member.member_role === "admin" ? member.member_id : null;
-      if (!seedActorId) {
-        const { data: adminRow } = await service
-          .from("member_profiles")
-          .select("member_id")
-          .eq("member_role", "admin")
-          .eq("account_status", "active")
-          .limit(1)
-          .maybeSingle();
-        seedActorId = adminRow?.member_id ?? null;
-      }
-      if (seedActorId) {
-        const { data: seedRes } = await service.rpc("seed_trip_commitments_from_master", {
-          p_trip_id: tripId,
-          p_actor_id: seedActorId,
-        });
-        if (seedRes && ((seedRes as any).gear_seeded > 0 || (seedRes as any).food_seeded > 0)) {
-          const { data: refreshed } = await service
-            .from("trip_commitments")
-            .select("id,trip_id,category,item_name,quantity_description,assigned_member_id,is_critical,master_gear_id,master_food_id,commitment_type,is_active,created_at,updated_at")
-            .eq("trip_id", tripId)
-            .order("created_at");
-          if (refreshed && refreshed.length > 0) {
-            rawCommitments = refreshed;
-          }
-        }
-      }
-    } catch (seedErr) {
-      console.warn("Auto-seed commitments in getTripDetails warning:", seedErr);
-    }
-  }
+  const rawCommitments = commitmentsResult.data ?? [];
   const commitmentMemberIds = rawCommitments.map((c: any) => c.assigned_member_id).filter(Boolean);
   const memberIds = [...new Set([...rsvps.map((r) => r.member_id), ...waitlist.map((w) => w.member_id), ...commitmentMemberIds])];
   const { data: memberRows, error: memberRowsError } = memberIds.length
@@ -1255,41 +1225,7 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
   checkError(commitmentsResult.error);
   checkError(carpoolsResult.error);
 
-  let rawCommitments = commitmentsResult.data ?? [];
-  if (rawCommitments.length === 0) {
-    try {
-      let seedActorId = member.member_role === "admin" ? member.member_id : null;
-      if (!seedActorId) {
-        const { data: adminRow } = await service
-          .from("member_profiles")
-          .select("member_id")
-          .eq("member_role", "admin")
-          .eq("account_status", "active")
-          .limit(1)
-          .maybeSingle();
-        seedActorId = adminRow?.member_id ?? null;
-      }
-      if (seedActorId) {
-        const { data: seedRes } = await service.rpc("seed_trip_commitments_from_master", {
-          p_trip_id: tripId,
-          p_actor_id: seedActorId,
-        });
-        if (seedRes && ((seedRes as any).gear_seeded > 0 || (seedRes as any).food_seeded > 0)) {
-          const { data: refreshed } = await service
-            .from("trip_commitments")
-            .select("id, trip_id, category, item_name, quantity_description, assigned_member_id, is_critical, master_gear_id, master_food_id, commitment_type, is_active, created_at, updated_at")
-            .eq("trip_id", tripId)
-            .order("category")
-            .order("item_name");
-          if (refreshed && refreshed.length > 0) {
-            rawCommitments = refreshed;
-          }
-        }
-      }
-    } catch (seedErr) {
-      console.warn("Auto-seed commitments in getTripLogistics warning:", seedErr);
-    }
-  }
+  const rawCommitments = commitmentsResult.data ?? [];
   const rawCarpools = carpoolsResult.data ?? [];
 
   const memberIdSet = new Set<string>();
@@ -1597,6 +1533,14 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     const confirmedDepositCount = (rsvpsResult.data ?? []).filter(
       (r: any) => r.member_id !== cabinPayerId && (r.deposit_status === "confirmed" || r.deposit_status === "confirmed_by_admin")
     ).length;
+    const cabinAllocs = confirmedAttendees
+      .filter((mId) => mId !== cabinPayerId)
+      .map((mId) => ({
+        memberId: mId,
+        memberName: nameMap.get(mId) ?? "Attendee",
+        allocatedCents: depositAmountPerPerson,
+        isMe: mId === member.member_id,
+      }));
     cabinDeposit = {
       payerMemberId: cabinPayerId,
       payerName: nameMap.get(cabinPayerId) ?? "Cabin Payer",
@@ -1604,6 +1548,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       confirmedCount: confirmedDepositCount,
       expectedCount: Math.max(0, confirmedAttendees.length - 1),
       amountCents: confirmedDepositCount * depositAmountPerPerson,
+      allocations: cabinAllocs,
     };
   }
 
@@ -1909,6 +1854,243 @@ async function getConstitution(member: Member, tripId?: string): Promise<Record<
     currentBundle: bundle,
     myAcknowledgments: acknowledgments,
     overrides,
+  };
+}
+
+async function sendTripSummaryEmail(
+  authUser: { id: string; email?: string },
+  tripId: string,
+  recipientType: "admin" | "all"
+): Promise<{ sent: boolean; recipientCount: number; recipients: string[]; provider?: string }> {
+  const { data: trip, error: tripErr } = await service
+    .from("camping_trips")
+    .select(`
+      id, title, month_key, starts_on, ends_on, additional_information,
+      selected_campsite:campsites(name, county, driving_directions, map_url)
+    `)
+    .eq("id", tripId)
+    .single();
+  checkError(tripErr);
+
+  // 1. Confirmed RSVPs
+  const { data: rsvps } = await service
+    .from("trip_rsvps")
+    .select("member_id")
+    .eq("trip_id", tripId)
+    .eq("response", "coming");
+  const confirmedMemberIds = (rsvps ?? []).map((r: any) => r.member_id).filter(Boolean);
+
+  // 2. Member profiles & emails
+  const { data: profiles } = await service
+    .from("member_profiles")
+    .select("member_id, auth_user_id, display_name, phone_e164")
+    .in("member_id", confirmedMemberIds.length > 0 ? confirmedMemberIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  const { data: usersData } = await service.auth.admin.listUsers();
+  const emailByAuthId = new Map((usersData?.users ?? []).map((u: any) => [u.id, u.email]));
+  const nameByMemberId = new Map((profiles ?? []).map((p: any) => [p.member_id, p.display_name]));
+
+  const attendeesList = (profiles ?? []).map((p: any) => ({
+    memberId: p.member_id,
+    name: p.display_name,
+    email: emailByAuthId.get(p.auth_user_id) ?? null,
+    phone: p.phone_e164 ?? null,
+  }));
+
+  // 3. Carpools
+  const { data: carpools } = await service
+    .from("trip_carpools")
+    .select(`
+      id, driver_member_id, vehicle_description, max_seats, departure_details,
+      riders:trip_carpool_riders(rider_member_id)
+    `)
+    .eq("trip_id", tripId);
+
+  // 4. Activities & Vouchers
+  const { data: activities } = await service
+    .from("trip_activities")
+    .select(`
+      id, activity_name, activity_date, start_time, location, description,
+      groups:trip_activity_groups(
+        id, group_number, purchaser_member_id, voucher_reference, voucher_document_url, notes,
+        members:trip_activity_group_members(member_id)
+      )
+    `)
+    .eq("trip_id", tripId);
+
+  // 5. Commitments
+  const { data: commitments } = await service
+    .from("trip_commitments")
+    .select("id, category, item_name, quantity_description, is_critical, assigned_member_id, commitment_type, is_active")
+    .eq("trip_id", tripId)
+    .eq("is_active", true)
+    .neq("commitment_type", "individual_pack")
+    .order("category")
+    .order("item_name");
+
+  // Determine recipients
+  let toList: string[] = [];
+  const adminEmail = authUser.email || Deno.env.get("ADMIN_NOTIFICATION_EMAIL") || Deno.env.get("GMAIL_USER") || "veerraju.amanchi@gmail.com";
+
+  if (recipientType === "all") {
+    const attendeeEmails = attendeesList.map((a) => a.email).filter(Boolean) as string[];
+    const allEmails = new Set([...attendeeEmails, adminEmail]);
+    toList = Array.from(allEmails);
+  } else {
+    toList = [adminEmail];
+  }
+
+  // Build HTML email
+  const campsiteName = (trip as any)?.selected_campsite?.name || "Private Campsite";
+  const tripTitle = trip?.title || `${trip?.month_key} Camping Trip`;
+  const datesStr = trip?.starts_on && trip?.ends_on ? `${trip.starts_on} to ${trip.ends_on}` : "Upcoming Dates";
+  const webAppUrl = Deno.env.get("WEB_APP_URL") || "https://camping-club.onrender.com";
+
+  let carpoolsHtml = "";
+  if (!carpools || carpools.length === 0) {
+    carpoolsHtml = `<p style="color: #64748b; font-style: italic;">No carpools configured yet.</p>`;
+  } else {
+    carpoolsHtml = carpools.map((cp: any, idx: number) => {
+      const driverName = nameByMemberId.get(cp.driver_member_id) || "Designated Driver";
+      const riderNames = (cp.riders ?? []).map((r: any) => nameByMemberId.get(r.rider_member_id) || "Passenger").join(", ");
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
+          <strong style="color: #0f172a;">🚗 Vehicle ${idx + 1}: ${driverName}</strong> (${cp.vehicle_description || "Personal Vehicle"})<br/>
+          <span style="font-size: 0.88rem; color: #334155;"><strong>Seats:</strong> ${cp.max_seats} max | <strong>Passengers:</strong> ${riderNames || "None assigned yet"}</span>
+          ${cp.departure_details ? `<br/><span style="font-size: 0.85rem; color: #475569;">📍 <em>Departure: ${cp.departure_details}</em></span>` : ""}
+        </div>
+      `;
+    }).join("");
+  }
+
+  let activitiesHtml = "";
+  if (!activities || activities.length === 0) {
+    activitiesHtml = `<p style="color: #64748b; font-style: italic;">No activity vouchers scheduled.</p>`;
+  } else {
+    activitiesHtml = activities.map((act: any) => {
+      const groupsHtml = (act.groups ?? []).map((g: any) => {
+        const purchaser = nameByMemberId.get(g.purchaser_member_id) || "Group Accountant";
+        const memberNames = (g.members ?? []).map((m: any) => nameByMemberId.get(m.member_id) || "Member").join(", ");
+        return `
+          <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px; margin-top: 6px; font-size: 0.88rem;">
+            <strong>Group ${g.group_number}:</strong> Paid/Purchased by <strong>${purchaser}</strong><br/>
+            <strong>Participants:</strong> ${memberNames || "All group members"}<br/>
+            ${g.voucher_reference ? `<strong>Voucher Code:</strong> <code style="background:#e2e8f0;padding:2px 4px;border-radius:3px;">${g.voucher_reference}</code>` : ""}
+            ${g.voucher_document_url ? ` | <a href="${g.voucher_document_url}" target="_blank" style="color:#0284c7;">View Voucher PDF</a>` : ""}
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
+          <strong style="color: #0f172a;">🎟️ ${act.activity_name}</strong> — ${act.activity_date}${act.start_time ? ` at ${act.start_time}` : ""}<br/>
+          ${act.location ? `<span style="font-size: 0.85rem; color: #475569;">📍 ${act.location}</span><br/>` : ""}
+          ${groupsHtml}
+        </div>
+      `;
+    }).join("");
+  }
+
+  let commitmentsHtml = "";
+  if (!commitments || commitments.length === 0) {
+    commitmentsHtml = `<p style="color: #64748b; font-style: italic;">No group supplies listed.</p>`;
+  } else {
+    commitmentsHtml = `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+        <thead>
+          <tr style="background: #f1f5f9; text-align: left; border-bottom: 1.5px solid #cbd5e1;">
+            <th style="padding: 6px 8px;">Item</th>
+            <th style="padding: 6px 8px;">Qty</th>
+            <th style="padding: 6px 8px;">Assigned To</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${commitments.map((c: any) => {
+            const assigneeName = c.assigned_member_id ? (nameByMemberId.get(c.assigned_member_id) || "Assigned") : "<span style='color: #dc2626; font-weight: 600;'>⚠️ Unclaimed</span>";
+            return `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 6px 8px;">${c.is_critical ? "🚨 " : ""}${c.item_name}</td>
+                <td style="padding: 6px 8px; color: #64748b;">${c.quantity_description || "—"}</td>
+                <td style="padding: 6px 8px;">${assigneeName}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  const attendeesHtml = attendeesList.map((a) => `
+    <li style="margin-bottom: 4px;">
+      <strong>${a.name}</strong> ${a.phone ? `(${a.phone})` : ""}
+    </li>
+  `).join("");
+
+  const emailSubject = `🏕️ Trip Briefing: ${tripTitle} (${datesStr})`;
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #ffffff; color: #1e293b;">
+      <div style="border-bottom: 2px solid #16a34a; padding-bottom: 12px; margin-bottom: 16px;">
+        <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #16a34a;">
+          ${recipientType === "admin" ? "🧪 Admin Test Dispatch" : "🏕️ Official Trip Briefing"}
+        </span>
+        <h1 style="color: #0f172a; margin: 4px 0 6px; font-size: 1.45rem;">${tripTitle}</h1>
+        <p style="margin: 0; color: #475569; font-size: 0.95rem;">
+          📅 <strong>${datesStr}</strong> &nbsp;•&nbsp; 📍 <strong>${campsiteName}</strong>
+        </p>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          👥 Who's Coming (${attendeesList.length} Confirmed)
+        </h3>
+        <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem;">
+          ${attendeesHtml || "<li>No confirmed attendees yet.</li>"}
+        </ul>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🚗 Carpools &amp; Transit
+        </h3>
+        ${carpoolsHtml}
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎟️ Activity Pools &amp; Vouchers
+        </h3>
+        ${activitiesHtml}
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎒 Trip Commitments &amp; Supplies
+        </h3>
+        ${commitmentsHtml}
+      </div>
+
+      <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
+        <a href="${webAppUrl.replace(/\/$/, "")}/trips/${tripId}" style="background-color: #16a34a; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
+          Open Trip in Camping App →
+        </a>
+        <p style="font-size: 0.78rem; color: #94a3b8; margin-top: 12px;">
+          Private Camping Club • Sent to ${toList.length} recipient${toList.length === 1 ? "" : "s"} (${recipientType === "admin" ? "Admin Preview" : "All Confirmed Members"}).
+        </p>
+      </div>
+    </div>
+  `;
+
+  const sendRes = await sendEmail({
+    to: toList,
+    subject: emailSubject,
+    html: emailHtml,
+  });
+
+  return {
+    sent: sendRes.success,
+    recipientCount: toList.length,
+    recipients: toList,
+    provider: sendRes.provider,
   };
 }
 
@@ -2562,6 +2744,14 @@ Deno.serve(async (request) => {
           }
         }
       }
+      if (input.response === "not_coming") {
+        await service
+          .from("trip_waitlist_entries")
+          .update({ status: "removed", resolved_at: new Date().toISOString() })
+          .eq("trip_id", input.tripId)
+          .eq("member_id", member.member_id)
+          .eq("status", "waiting");
+      }
       rpcName = "phase2_submit_rsvp";
       rpcArgs = { p_auth_user_id: authUser.id, p_trip_id: input.tripId, p_response: input.response, p_bundle_id: input.bundleId ?? null, p_content_hash: input.contentHash ?? null, p_expected_version: input.expectedVersion, p_request_id: key };
       break;
@@ -2589,6 +2779,54 @@ Deno.serve(async (request) => {
         return errorResponse(request, 500, "idempotency_completion_failed", requestId);
       }
       return json(request, 200, { promoted: true, requestId });
+    }
+    case "admin_remove_from_waitlist": {
+      if (member.member_role !== "admin") return errorResponse(request, 403, "forbidden", requestId);
+      const { error: wlErr } = await service
+        .from("trip_waitlist_entries")
+        .update({ status: "removed", resolved_at: new Date().toISOString() })
+        .eq("trip_id", input.tripId)
+        .eq("member_id", input.memberId)
+        .eq("status", "waiting");
+      checkError(wlErr);
+
+      await service
+        .from("trip_rsvps")
+        .update({ response: "not_coming", updated_at: new Date().toISOString() })
+        .eq("trip_id", input.tripId)
+        .eq("member_id", input.memberId);
+
+      const { data: memberAllocRows } = await service
+        .from("trip_expense_allocations")
+        .select("expense_id")
+        .eq("member_id", input.memberId);
+      if (memberAllocRows && memberAllocRows.length > 0) {
+        const expIds = memberAllocRows.map((r: any) => r.expense_id);
+        await service
+          .from("trip_expenses")
+          .delete()
+          .eq("trip_id", input.tripId)
+          .eq("expense_type", "website_maintenance")
+          .eq("is_locked", false)
+          .in("id", expIds);
+      }
+
+      try {
+        await finish(authUser.id, action, aggregate, key, input, null);
+      } catch {
+        return errorResponse(request, 500, "idempotency_completion_failed", requestId);
+      }
+      return json(request, 200, { removed: true, requestId });
+    }
+    case "admin_send_trip_summary_email": {
+      if (member.member_role !== "admin") return errorResponse(request, 403, "forbidden", requestId);
+      const summaryResult = await sendTripSummaryEmail(authUser, input.tripId as string, (input.recipientType as "admin" | "all") || "admin");
+      try {
+        await finish(authUser.id, action, aggregate, key, input, null);
+      } catch {
+        return errorResponse(request, 500, "idempotency_completion_failed", requestId);
+      }
+      return json(request, 200, { ...summaryResult, requestId });
     }
     case "admin_create_master_responsibility":
       rpcName = "phase3_admin_create_master_responsibility";

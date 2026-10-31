@@ -313,30 +313,40 @@ export function TripFinancialsTab({
   const matrixMembers = useMemo(() => {
     if (!data) return [];
     const map = new Map<string, { memberId: string; displayName: string; isMe: boolean }>();
-    for (const b of data.balances) {
+    for (const b of (data.balances ?? [])) {
       map.set(b.memberId, { memberId: b.memberId, displayName: b.displayName, isMe: b.isMe });
     }
-    for (const ca of confirmedAttendees) {
+    for (const ca of (confirmedAttendees ?? [])) {
       if (!map.has(ca.memberId)) {
         map.set(ca.memberId, { memberId: ca.memberId, displayName: ca.displayName, isMe: ca.memberId === currentMemberId });
       }
     }
     if (data.cabinDeposit) {
-      for (const a of data.cabinDeposit.allocations) {
+      const cabinAllocs = (data.cabinDeposit.allocations ?? []).length > 0
+        ? data.cabinDeposit.allocations
+        : (confirmedAttendees ?? [])
+            .filter((ca) => ca.memberId !== data.cabinDeposit!.payerMemberId)
+            .map((ca) => ({
+              memberId: ca.memberId,
+              memberName: ca.displayName,
+              allocatedCents: data.cabinDeposit!.depositPerPersonCents,
+              isMe: ca.memberId === currentMemberId,
+            }));
+      for (const a of cabinAllocs) {
         if (!map.has(a.memberId)) {
           map.set(a.memberId, { memberId: a.memberId, displayName: a.memberName, isMe: a.isMe });
         }
       }
     }
-    for (const exp of data.expenses) {
-      for (const a of exp.allocations) {
+    for (const exp of (data.expenses ?? [])) {
+      for (const a of (exp.allocations ?? [])) {
         if (!map.has(a.memberId)) {
           map.set(a.memberId, { memberId: a.memberId, displayName: a.memberName, isMe: a.isMe });
         }
       }
     }
-    for (const cpr of data.carpoolReimbursements) {
-      for (const a of cpr.allocations) {
+    for (const cpr of (data.carpoolReimbursements ?? [])) {
+      for (const a of (cpr.allocations ?? [])) {
         if (!map.has(a.memberId)) {
           map.set(a.memberId, { memberId: a.memberId, displayName: a.memberName, isMe: a.isMe });
         }
@@ -370,6 +380,17 @@ export function TripFinancialsTab({
 
     // 1. Cabin Deposit Advance
     if (data.cabinDeposit) {
+      const cabinAllocs = (data.cabinDeposit.allocations ?? []).length > 0
+        ? data.cabinDeposit.allocations
+        : (confirmedAttendees ?? [])
+            .filter((ca) => ca.memberId !== data.cabinDeposit!.payerMemberId)
+            .map((ca) => ({
+              memberId: ca.memberId,
+              memberName: ca.displayName,
+              allocatedCents: data.cabinDeposit!.depositPerPersonCents,
+              isMe: ca.memberId === currentMemberId,
+            }));
+
       rows.push({
         id: "cabin-deposit",
         category: "cabin",
@@ -379,12 +400,13 @@ export function TripFinancialsTab({
         payerName: data.cabinDeposit.payerName,
         payerMemberId: data.cabinDeposit.payerMemberId,
         totalCents: data.cabinDeposit.amountCents,
-        allocationsMap: new Map(data.cabinDeposit.allocations.map((a) => [a.memberId, a.allocatedCents])),
+        allocationsMap: new Map(cabinAllocs.map((a) => [a.memberId, a.allocatedCents])),
       });
     }
 
     // 2. Carpools
-    for (const cpr of data.carpoolReimbursements) {
+    for (const cpr of (data.carpoolReimbursements ?? [])) {
+      const cprAllocs = cpr.allocations ?? [];
       rows.push({
         id: `carpool-${cpr.carpoolId}`,
         category: "carpool",
@@ -394,15 +416,16 @@ export function TripFinancialsTab({
         payerName: cpr.driverName,
         payerMemberId: cpr.driverMemberId,
         totalCents: cpr.amountCents,
-        allocationsMap: new Map(cpr.allocations.map((a) => [a.memberId, a.allocatedCents])),
+        allocationsMap: new Map(cprAllocs.map((a) => [a.memberId, a.allocatedCents])),
       });
     }
 
     // 3. Shared Receipts & Website Fees
-    for (const exp of data.expenses) {
+    for (const exp of (data.expenses ?? [])) {
+      const expAllocs = exp.allocations ?? [];
       const isWebsite = exp.expenseType === "website_maintenance";
       const isDynamic = exp.splitMode === "all_attendees";
-      let tagLabel = `👥 Custom Split (${exp.allocations.length} campers)`;
+      let tagLabel = `👥 Custom Split (${expAllocs.length} campers)`;
       let tagStyle = { bg: "#fef3c7", color: "#92400e", border: "#fde68a" };
 
       if (isWebsite) {
@@ -424,12 +447,12 @@ export function TripFinancialsTab({
         date: exp.incurredDate,
         totalCents: exp.amountCents,
         rawExpense: exp,
-        allocationsMap: new Map(exp.allocations.map((a) => [a.memberId, a.allocatedCents])),
+        allocationsMap: new Map(expAllocs.map((a) => [a.memberId, a.allocatedCents])),
       });
     }
 
     return rows;
-  }, [data]);
+  }, [data, confirmedAttendees, currentMemberId]);
 
   const handleCreateExpense = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -622,8 +645,8 @@ export function TripFinancialsTab({
   const isFinalized = data?.isFinalized ?? false;
   const isSettled = data?.settlementRun?.status === "settled" || tripStatus === "financially_settled";
   const totalExpensesCents = data?.settlementRun?.totalExpensesCents ?? 0;
-  const totalTransfers = data?.transfers.length ?? 0;
-  const completedTransfers = data?.transfers.filter((t) => t.status === "confirmed").length ?? 0;
+  const totalTransfers = data?.transfers?.length ?? 0;
+  const completedTransfers = (data?.transfers ?? []).filter((t) => t.status === "confirmed").length;
 
   return (
     <div className="stack" style={{ gap: "1.5rem" }}>
@@ -715,7 +738,7 @@ export function TripFinancialsTab({
           </div>
         ) : (
           <div style={{ display: "grid", gap: "0.75rem" }}>
-            {data.transfers.map((tx) => {
+            {(data?.transfers ?? []).map((tx) => {
               const isPayer = tx.isPayer || tx.payerMemberId === currentMemberId;
               const isRecipient = tx.isRecipient || tx.recipientMemberId === currentMemberId;
               const isConfirmed = tx.status === "confirmed";
@@ -830,7 +853,7 @@ export function TripFinancialsTab({
               </tr>
             </thead>
             <tbody>
-              {data?.balances.map((b) => {
+              {(data?.balances ?? []).map((b) => {
                 const isMe = b.isMe || b.memberId === currentMemberId;
                 const netCents = b.netBalanceCents;
                 return (
@@ -1476,7 +1499,7 @@ export function TripFinancialsTab({
                   No shared receipts submitted yet.
                 </p>
               ) : (
-                data.expenses.map((exp) => (
+                (data.expenses ?? []).map((exp) => (
                   <div
                     key={exp.id}
                     style={{
@@ -1532,7 +1555,7 @@ export function TripFinancialsTab({
                               fontWeight: 600,
                             }}
                           >
-                            👥 Custom Split ({exp.allocations.length} campers)
+                            👥 Custom Split ({(exp.allocations ?? []).length} campers)
                           </span>
                         )}
                         {(exp.receiptStoragePath || exp.receiptUrl) && (
@@ -1557,7 +1580,7 @@ export function TripFinancialsTab({
                         )}
                       </div>
                       <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
-                        Paid by {exp.payerName} on {exp.incurredDate} • Split among {exp.allocations.length} members
+                        Paid by {exp.payerName} on {exp.incurredDate} • Split among {(exp.allocations ?? []).length} members
                         {exp.splitMode === "all_attendees" && " (auto-includes new attendees)"}
                       </div>
                     </div>

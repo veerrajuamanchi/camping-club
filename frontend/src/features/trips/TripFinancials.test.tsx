@@ -917,4 +917,66 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     await user.click(matrixToggle);
     expect(screen.getByText("Expense Item & Payer")).toBeInTheDocument();
   });
+
+  it("renders without blank screen when cabinDeposit has no allocations array (production API format)", async () => {
+    const mockProductionResponse: any = {
+      tripId: "trip-prod-1",
+      isFinalized: false,
+      cabinDeposit: {
+        payerMemberId: "member-admin",
+        payerName: "Veerraju Amanchi",
+        depositPerPersonCents: 5000,
+        confirmedCount: 2,
+        expectedCount: 2,
+        amountCents: 10000,
+        // allocations is undefined in production API response!
+      },
+      carpoolReimbursements: [],
+      expenses: [],
+      settlementRun: null,
+      balances: [
+        {
+          memberId: "member-admin",
+          displayName: "Veerraju Amanchi",
+          totalPaidCents: 10000,
+          totalAllocatedCents: 0,
+          netBalanceCents: 10000,
+          isMe: true,
+        },
+        {
+          memberId: "member-1",
+          displayName: "Dave K.",
+          totalPaidCents: 0,
+          totalAllocatedCents: 5000,
+          netBalanceCents: -5000,
+          isMe: false,
+        },
+      ],
+      transfers: [],
+    };
+
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockProductionResponse);
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-prod-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-admin"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Veerraju Amanchi" },
+          { memberId: "member-1", displayName: "Dave K." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    expect(await screen.findByText(/🏡 Cabin Deposit Advance/i)).toBeInTheDocument();
+    expect(screen.getByText("Expense Item & Payer")).toBeInTheDocument();
+    expect(screen.getAllByText("Veerraju Amanchi").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Dave K.").length).toBeGreaterThan(0);
+  });
 });

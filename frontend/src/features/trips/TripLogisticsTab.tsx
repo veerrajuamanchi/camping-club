@@ -205,6 +205,24 @@ export function TripLogisticsTab({
     }
   }
 
+  async function handleAdminAssignCommitment(commitmentId: string, assignedMemberId: string | null) {
+    setActionBusy(true);
+    setErrorMsg(null);
+    try {
+      await api("manage_trip_commitment", {
+        tripId,
+        action: "admin_update",
+        commitmentId,
+        assignedMemberId: assignedMemberId || null,
+      });
+      await loadLogistics();
+    } catch {
+      setErrorMsg("Failed to assign commitment.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleDeleteCommitment(commitmentId: string) {
     if (!window.confirm("Are you sure you want to remove this commitment item?")) return;
     setActionBusy(true);
@@ -741,7 +759,35 @@ export function TripLogisticsTab({
                     )}
                   </div>
                   <div style={{ fontSize: "0.82rem", color: "#4b5563", marginTop: "0.25rem" }}>
-                    {c.assignedMemberName ? (
+                    {isAdmin ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
+                        <label htmlFor={`assign-${c.id}`} style={{ fontWeight: 600, color: "#374151" }}>
+                          Assigned:
+                        </label>
+                        <select
+                          id={`assign-${c.id}`}
+                          aria-label={`Assign attendee for ${c.itemName}`}
+                          value={c.assignedMemberId || ""}
+                          disabled={actionBusy}
+                          onChange={(e) => void handleAdminAssignCommitment(c.id, e.target.value || null)}
+                          style={{
+                            fontSize: "0.78rem",
+                            padding: "0.2rem 0.4rem",
+                            borderRadius: "4px",
+                            border: "1px solid #cbd5e1",
+                            backgroundColor: c.assignedMemberId ? "#f0fdf4" : "#ffffff",
+                            fontWeight: c.assignedMemberId ? 600 : 400,
+                          }}
+                        >
+                          <option value="">⚠️ Unclaimed</option>
+                          {confirmedAttendees.map((a) => (
+                            <option key={a.memberId} value={a.memberId}>
+                              {a.displayName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : c.assignedMemberName ? (
                       <span>
                         Assigned to: <strong>{c.assignedMemberName}</strong> {c.isMine && "(You)"}
                       </span>

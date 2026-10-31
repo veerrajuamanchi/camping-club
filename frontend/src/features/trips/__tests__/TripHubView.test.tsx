@@ -476,7 +476,7 @@ describe("Task 5: Frontend 'My Trip Hub' Dashboard Refactor", () => {
 
     expect(await screen.findByText(/Waitlisted \(Position #1\)/i)).toBeInTheDocument();
     expect(screen.getByText(/You confirmed interest in Going, but the event is currently at capacity/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Change to Not Going/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Withdraw \/ Leave Waitlist|Change to Not Going/i })).toBeInTheDocument();
     expect(screen.queryByText(/You're not attending this event\. No tasks or deposits required\./i)).not.toBeInTheDocument();
     expect(screen.queryByTestId("hub-deposit-row")).not.toBeInTheDocument();
     expect(screen.queryByTestId("hub-chores-row")).not.toBeInTheDocument();

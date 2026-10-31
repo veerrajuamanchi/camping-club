@@ -1,8 +1,85 @@
 import nodemailer from "nodemailer";
 
-export async function notifyAdminNewAccessRequest(applicantName: string, applicantEmail: string) {
+export type SendEmailOptions = {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+};
+
+export type SendEmailResult = {
+  success: boolean;
+  provider?: string;
+  reason?: string;
+};
+
+export async function sendEmail({ to, subject, html, text }: SendEmailOptions): Promise<SendEmailResult> {
   const gmailPass = Deno.env.get("GMAIL_APP_PASSWORD");
   const gmailUser = Deno.env.get("GMAIL_USER") || "veerraju.amanchi@gmail.com";
+  const toList = Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
+
+  if (toList.length === 0) {
+    return { success: false, reason: "no_recipients" };
+  }
+
+  // Option 1: Send via Gmail SMTP with App Password
+  if (gmailPass && gmailUser) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true, // SSL
+        auth: {
+          user: gmailUser.trim(),
+          pass: gmailPass.replace(/\s+/g, ""),
+        },
+      });
+
+      await transporter.sendMail({
+        from: `"Camping Club" <${gmailUser.trim()}>`,
+        to: toList.join(", "),
+        subject,
+        html,
+        ...(text ? { text } : {}),
+      });
+      return { success: true, provider: "gmail" };
+    } catch (gmailErr) {
+      console.warn("Gmail SMTP dispatch error:", gmailErr);
+    }
+  }
+
+  // Option 2: Fallback to Resend HTTPS API if configured
+  const resendApiKey = Deno.env.get("RESEND_API_KEY");
+  if (resendApiKey) {
+    try {
+      const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Camping Club <onboarding@resend.dev>";
+      const resp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: toList,
+          subject,
+          html,
+          ...(text ? { text } : {}),
+        }),
+      });
+      if (resp.ok) {
+        return { success: true, provider: "resend" };
+      }
+      console.warn("Resend API error:", await resp.text());
+    } catch (resendErr) {
+      console.warn("Resend API dispatch error:", resendErr);
+    }
+  }
+
+  return { success: false, reason: "no_provider_succeeded" };
+}
+
+export async function notifyAdminNewAccessRequest(applicantName: string, applicantEmail: string): Promise<SendEmailResult> {
   const adminEmail = Deno.env.get("ADMIN_NOTIFICATION_EMAIL") || "veerraju.amanchi@gmail.com";
   const webAppUrl = Deno.env.get("WEB_APP_URL") || "https://camping-club.onrender.com";
 
@@ -24,57 +101,9 @@ export async function notifyAdminNewAccessRequest(applicantName: string, applica
     </div>
   `;
 
-  // Option 1: Send via Gmail SMTP with App Password
-  if (gmailPass && gmailUser) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true, // SSL
-        auth: {
-          user: gmailUser.trim(),
-          pass: gmailPass.replace(/\s+/g, ""),
-        },
-      });
-
-      await transporter.sendMail({
-        from: `"Camping Club Alerts" <${gmailUser.trim()}>`,
-        to: adminEmail,
-        subject: emailSubject,
-        html: emailHtml,
-      });
-      return { success: true, provider: "gmail" };
-    } catch (gmailErr) {
-      console.warn("Gmail SMTP dispatch error:", gmailErr);
-    }
-  }
-
-  // Option 2: Fallback to Resend HTTPS API if configured
-  const resendApiKey = Deno.env.get("RESEND_API_KEY");
-  if (resendApiKey) {
-    try {
-      const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "Camping Club <onboarding@resend.dev>";
-      const resp = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: [adminEmail],
-          subject: emailSubject,
-          html: emailHtml,
-        }),
-      });
-      if (resp.ok) {
-        return { success: true, provider: "resend" };
-      }
-      console.warn("Resend API error:", await resp.text());
-    } catch (resendErr) {
-      console.warn("Resend API dispatch error:", resendErr);
-    }
-  }
-
-  return { success: false, reason: "no_provider_succeeded" };
+  return sendEmail({
+    to: adminEmail,
+    subject: emailSubject,
+    html: emailHtml,
+  });
 }
