@@ -696,8 +696,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const daysUntilTrip = details.startsOn ? (Date.parse(details.startsOn) - Date.parse(today)) / 86_400_000 : null;
   const showLateWithdrawalWarning = (details.myRsvp?.response === "coming" && rsvpChoice === "not_coming") &&
     daysUntilTrip !== null && daysUntilTrip >= 0 && daysUntilTrip <= 30;
-  const isComing = details.myRsvp?.response === "coming";
-  const isNotComing = details.myRsvp?.response === "not_coming";
+  const currentWaitlistPosition = details.myWaitlistPosition ?? waitlistedPosition;
+  const isWaitlisted = currentWaitlistPosition !== null && currentWaitlistPosition !== undefined;
+  const isComing = details.myRsvp?.response === "coming" && !isWaitlisted;
+  const isNotComing = details.myRsvp?.response === "not_coming" && !isWaitlisted;
   const confirmedAttendees = (details.participantEntries ?? [])
     .filter((p) => p.response === "coming")
     .map((p) => {
@@ -707,7 +709,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         displayName: p.displayName?.trim() || fallbackName || "Camper",
       };
     });
-  const rsvpStatusLabel = details.myWaitlistPosition
+  const rsvpStatusLabel = currentWaitlistPosition
     ? "Waitlisted"
     : isComing
       ? "Going"
@@ -1115,8 +1117,8 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           <div
             className="card"
             style={{
-              background: details.myRsvp?.response === "not_coming" ? "#f8fafc" : requiredCompletedCount === totalRequiredCount ? "#f0fdf4" : "#fffbeb",
-              border: `1.5px solid ${details.myRsvp?.response === "not_coming" ? "#cbd5e1" : requiredCompletedCount === totalRequiredCount ? "#86efac" : "#f59e0b"}`,
+              background: isWaitlisted ? "#fffbeb" : isNotComing ? "#f8fafc" : requiredCompletedCount === totalRequiredCount ? "#f0fdf4" : "#fffbeb",
+              border: `1.5px solid ${isWaitlisted ? "#f59e0b" : isNotComing ? "#cbd5e1" : requiredCompletedCount === totalRequiredCount ? "#86efac" : "#f59e0b"}`,
               padding: "1rem 1.25rem",
               borderRadius: "10px",
             }}
@@ -1135,26 +1137,28 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 style={{
                   margin: 0,
                   fontWeight: 700,
-                  color: details.myRsvp?.response === "not_coming" ? "#475569" : requiredCompletedCount === totalRequiredCount ? "#166534" : "#92400e",
+                  color: isWaitlisted ? "#92400e" : isNotComing ? "#475569" : requiredCompletedCount === totalRequiredCount ? "#166534" : "#92400e",
                   fontSize: "1.05rem",
                   letterSpacing: "0.3px",
                 }}
               >
-                {details.myRsvp?.response === "not_coming"
+                {isWaitlisted || isNotComing
                   ? "⚡ Required From You"
                   : `⚡ Required From You (${requiredCompletedCount} of ${totalRequiredCount} Completed)`}
               </h2>
               <span
                 style={{
-                  background: details.myRsvp?.response === "not_coming" ? "#f1f5f9" : requiredCompletedCount === totalRequiredCount ? "#dcfce7" : "#fef3c7",
-                  color: details.myRsvp?.response === "not_coming" ? "#64748b" : requiredCompletedCount === totalRequiredCount ? "#15803d" : "#b45309",
+                  background: isWaitlisted ? "#fef3c7" : isNotComing ? "#f1f5f9" : requiredCompletedCount === totalRequiredCount ? "#dcfce7" : "#fef3c7",
+                  color: isWaitlisted ? "#b45309" : isNotComing ? "#64748b" : requiredCompletedCount === totalRequiredCount ? "#15803d" : "#b45309",
                   fontSize: "0.75rem",
                   fontWeight: 700,
                   padding: "3px 8px",
                   borderRadius: "4px",
                 }}
               >
-                {details.myRsvp?.response === "not_coming"
+                {isWaitlisted
+                  ? `Waitlisted (#${currentWaitlistPosition})`
+                  : isNotComing
                   ? "Not Attending"
                   : requiredCompletedCount === totalRequiredCount
                   ? "All Done ✓"
@@ -1162,7 +1166,53 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </span>
             </div>
 
-            {details.myRsvp?.response === "not_coming" ? (
+            {isWaitlisted ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <div
+                  data-testid="hub-rsvp-row"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#ffffff",
+                    padding: "0.6rem 0.85rem",
+                    borderRadius: "8px",
+                    border: "1.5px solid #f59e0b",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "#d97706", fontWeight: 700, marginRight: "0.35rem" }}>⏳</span>
+                    <strong>RSVP Status</strong>:{" "}
+                    <span style={{ color: "#b45309", fontWeight: 700 }}>
+                      Waitlisted (Position #{currentWaitlistPosition})
+                    </span>
+                  </div>
+                  <div>
+                    {canChangeRsvp && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem" }}
+                        onClick={() => {
+                          const rsvpEl = document.getElementById("rsvp-actions-card");
+                          if (rsvpEl) {
+                            rsvpEl.scrollIntoView({ behavior: "smooth" });
+                          }
+                          setRsvpChoice("not_coming");
+                        }}
+                      >
+                        Change to Not Going
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "#92400e", lineHeight: 1.5 }}>
+                  You confirmed interest in Going, but the event is currently at capacity. You are #{currentWaitlistPosition} on the waitlist and are not confirmed to attend yet. No tasks or deposits are required unless a spot opens up.
+                </p>
+              </div>
+            ) : isNotComing ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
                 <div
                   data-testid="hub-rsvp-row"
@@ -2151,11 +2201,16 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 <button
                   type="button"
                   className={
-                    rsvpChoice === "coming" || (!rsvpChoice && details.myRsvp?.response === "coming")
+                    isWaitlisted
+                      ? "selected"
+                      : rsvpChoice === "coming" || (!rsvpChoice && details.myRsvp?.response === "coming")
                       ? "selected"
                       : "secondary-button"
                   }
                   onClick={() => {
+                    if (isWaitlisted) {
+                      return;
+                    }
                     if (details.myRsvp?.response !== "coming") {
                       setShowConfirmGoingModal(true);
                       setRsvpChoice("coming");
@@ -2165,7 +2220,11 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     setRsvpError(null);
                   }}
                 >
-                  {!rsvpChoice && details.myRsvp?.response === "coming" ? "Going ✓" : "Going"}
+                  {isWaitlisted
+                    ? `Waitlisted (Going) ✓`
+                    : !rsvpChoice && details.myRsvp?.response === "coming"
+                    ? "Going ✓"
+                    : "Going"}
                 </button>
                 <button
                   type="button"
@@ -2178,6 +2237,30 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 >
                   Not Going
                 </button>
+              </div>
+            )}
+
+            {rsvpChoice === "coming" && details.myRsvp?.response !== "coming" && !isWaitlisted && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: "0.6rem",
+                  backgroundColor: "#fef2f2",
+                  border: "2px solid #ef4444",
+                  color: "#b91c1c",
+                  padding: "0.65rem 0.85rem",
+                  borderRadius: "8px",
+                  fontSize: "0.88rem",
+                  fontWeight: 600,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" }}>
+                  <span>🚨</span>
+                  <span style={{ fontWeight: 800, textTransform: "uppercase" }}>NOT CONFIRMED YET!</span>
+                </div>
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#991b1b" }}>
+                  Please complete the agreement and click <strong>&quot;Confirm Going&quot;</strong> in the dialog to lock in your RSVP.
+                </p>
               </div>
             )}
 
@@ -2210,9 +2293,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </button>
             )}
 
-            {waitlistedPosition !== null && (
-              <p role="status">
-                You are #{waitlistedPosition} on the waitlist. The administrator will notify you if a spot opens.
+            {currentWaitlistPosition !== null && currentWaitlistPosition !== undefined && (
+              <p role="status" style={{ margin: "0.75rem 0", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", padding: "0.6rem 0.85rem", borderRadius: "6px", fontWeight: 600 }}>
+                You are #{currentWaitlistPosition} on the waitlist. The administrator will notify you if a spot opens.
               </p>
             )}
 

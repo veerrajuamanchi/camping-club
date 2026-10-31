@@ -1443,10 +1443,24 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
   checkError(carpoolsResult.error);
 
   const trip = tripResult.data;
-  const rawExpenses = expensesResult.data ?? [];
   const confirmedAttendees = (rsvpsResult.data ?? []).map((r) => r.member_id);
-  const rawCarpools = carpoolsResult.data ?? [];
   const latestRun = latestRunResult?.data ?? null;
+  const isFinalized = latestRun != null && (latestRun.status === "finalized" || latestRun.status === "settled");
+
+  const rawExpenses = (expensesResult.data ?? []).filter((exp: any) => {
+    if (exp.expense_type === "website_maintenance") {
+      const allocatedMemberId = exp.allocations?.[0]?.member_id;
+      // If member is not an active confirmed attendee (e.g. waitlisted or withdrawn), exclude fee
+      if (allocatedMemberId && !confirmedAttendees.includes(allocatedMemberId)) {
+        if (!isFinalized && !exp.is_locked) {
+          service.from("trip_expenses").delete().eq("id", exp.id).then(() => {});
+        }
+        return false;
+      }
+    }
+    return true;
+  });
+  const rawCarpools = carpoolsResult.data ?? [];
 
   const memberIdSet = new Set<string>(confirmedAttendees);
   if (trip.cabin_payer_member_id) memberIdSet.add(trip.cabin_payer_member_id);
@@ -2523,6 +2537,22 @@ Deno.serve(async (request) => {
               p_request_id: key,
             });
             checkError(waitlistError);
+
+            // Clean up any unfinalized website maintenance fee for this member since they are waitlisted
+            const { data: memberAllocRows } = await service
+              .from("trip_expense_allocations")
+              .select("expense_id")
+              .eq("member_id", member.member_id);
+            if (memberAllocRows && memberAllocRows.length > 0) {
+              const expIds = memberAllocRows.map((r: any) => r.expense_id);
+              await service
+                .from("trip_expenses")
+                .delete()
+                .eq("trip_id", input.tripId)
+                .eq("expense_type", "website_maintenance")
+                .eq("is_locked", false)
+                .in("id", expIds);
+            }
             try {
               await finish(authUser.id, action, aggregate, key, input, (waitlistResult as { entryId?: string })?.entryId ?? null);
             } catch {

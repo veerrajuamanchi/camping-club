@@ -35,4 +35,25 @@ describe("AcceptInvitation", () => {
     });
     expect(onComplete).toHaveBeenCalled();
   });
+
+  it("normalizes standard phone number formats and completes profile redirecting via onComplete", async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    const invokeMemberApiMock = vi.mocked(supabaseLib.invokeMemberApi).mockResolvedValue(undefined as never);
+
+    render(<AcceptInvitation onComplete={onComplete} />);
+
+    await user.type(screen.getByLabelText(/display name/i), "Sambath Camper");
+    await user.type(screen.getByLabelText(/phone number/i), "(415) 555-0199");
+    await user.type(screen.getByLabelText(/payment handle or account email/i), "sambath@example.com");
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(invokeMemberApiMock).toHaveBeenCalledWith("complete_profile", {
+      displayName: "Sambath Camper",
+      phoneE164: "+14155550199",
+      paymentMethod: "venmo",
+      paymentIdentifier: "sambath@example.com",
+    });
+    expect(onComplete).toHaveBeenCalled();
+  });
 });

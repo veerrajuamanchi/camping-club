@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { TripApiType } from "./EventDetailsPage";
 import { calculateEqualAllocations } from "../../domain/settlementEngine";
 import { supabase } from "../../lib/supabase";
@@ -239,6 +239,9 @@ export function TripFinancialsTab({
   const [editDollars, setEditDollars] = useState("");
   const [editIncurredDate, setEditIncurredDate] = useState("");
 
+  // Unified Expense Ledger View Mode: "matrix" (Spreadsheet with frozen panes) vs "cards"
+  const [ledgerView, setLedgerView] = useState<"matrix" | "cards">("matrix");
+
   const handleOpenEditExpense = (exp: TripExpense) => {
     setEditingExpense(exp);
     setEditDesc(exp.description);
@@ -294,6 +297,139 @@ export function TripFinancialsTab({
   useEffect(() => {
     fetchFinancials();
   }, [tripId]);
+
+  // Fast lookup for member settlement balances
+  const balancesMap = useMemo(() => {
+    const map = new Map<string, SettlementBalance>();
+    if (data?.balances) {
+      for (const b of data.balances) {
+        map.set(b.memberId, b);
+      }
+    }
+    return map;
+  }, [data?.balances]);
+
+  // Unique list of members to display as spreadsheet columns
+  const matrixMembers = useMemo(() => {
+    if (!data) return [];
+    const map = new Map<string, { memberId: string; displayName: string; isMe: boolean }>();
+    for (const b of data.balances) {
+      map.set(b.memberId, { memberId: b.memberId, displayName: b.displayName, isMe: b.isMe });
+    }
+    for (const ca of confirmedAttendees) {
+      if (!map.has(ca.memberId)) {
+        map.set(ca.memberId, { memberId: ca.memberId, displayName: ca.displayName, isMe: ca.memberId === currentMemberId });
+      }
+    }
+    if (data.cabinDeposit) {
+      for (const a of data.cabinDeposit.allocations) {
+        if (!map.has(a.memberId)) {
+          map.set(a.memberId, { memberId: a.memberId, displayName: a.memberName, isMe: a.isMe });
+        }
+      }
+    }
+    for (const exp of data.expenses) {
+      for (const a of exp.allocations) {
+        if (!map.has(a.memberId)) {
+          map.set(a.memberId, { memberId: a.memberId, displayName: a.memberName, isMe: a.isMe });
+        }
+      }
+    }
+    for (const cpr of data.carpoolReimbursements) {
+      for (const a of cpr.allocations) {
+        if (!map.has(a.memberId)) {
+          map.set(a.memberId, { memberId: a.memberId, displayName: a.memberName, isMe: a.isMe });
+        }
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.isMe && !b.isMe) return -1;
+      if (!a.isMe && b.isMe) return 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+  }, [data, confirmedAttendees, currentMemberId]);
+
+  type MatrixRow = {
+    id: string;
+    category: "cabin" | "carpool" | "shared" | "website";
+    title: string;
+    tagLabel: string;
+    tagStyle: { bg: string; color: string; border: string };
+    payerName: string;
+    payerMemberId: string;
+    date?: string;
+    totalCents: number;
+    rawExpense?: TripExpense;
+    allocationsMap: Map<string, number>;
+  };
+
+  const matrixRows = useMemo<MatrixRow[]>(() => {
+    if (!data) return [];
+    const rows: MatrixRow[] = [];
+
+    // 1. Cabin Deposit Advance
+    if (data.cabinDeposit) {
+      rows.push({
+        id: "cabin-deposit",
+        category: "cabin",
+        title: "🏡 Cabin Deposit Advance",
+        tagLabel: `🏡 Cabin (${formatMoney(data.cabinDeposit.depositPerPersonCents)}/camper)`,
+        tagStyle: { bg: "#f0fdf4", color: "#166534", border: "#bbf7d0" },
+        payerName: data.cabinDeposit.payerName,
+        payerMemberId: data.cabinDeposit.payerMemberId,
+        totalCents: data.cabinDeposit.amountCents,
+        allocationsMap: new Map(data.cabinDeposit.allocations.map((a) => [a.memberId, a.allocatedCents])),
+      });
+    }
+
+    // 2. Carpools
+    for (const cpr of data.carpoolReimbursements) {
+      rows.push({
+        id: `carpool-${cpr.carpoolId}`,
+        category: "carpool",
+        title: `🚗 Carpool Mileage Reimbursement: ${cpr.driverName}`,
+        tagLabel: `Carpool Mileage Reimbursements ($${((cpr.rateCentsPerMile ?? 50) / 100).toFixed(2)}/mile)`,
+        tagStyle: { bg: "#eff6ff", color: "#1e40af", border: "#bfdbfe" },
+        payerName: cpr.driverName,
+        payerMemberId: cpr.driverMemberId,
+        totalCents: cpr.amountCents,
+        allocationsMap: new Map(cpr.allocations.map((a) => [a.memberId, a.allocatedCents])),
+      });
+    }
+
+    // 3. Shared Receipts & Website Fees
+    for (const exp of data.expenses) {
+      const isWebsite = exp.expenseType === "website_maintenance";
+      const isDynamic = exp.splitMode === "all_attendees";
+      let tagLabel = `👥 Custom Split (${exp.allocations.length} campers)`;
+      let tagStyle = { bg: "#fef3c7", color: "#92400e", border: "#fde68a" };
+
+      if (isWebsite) {
+        tagLabel = "🌐 Website Maintenance";
+        tagStyle = { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" };
+      } else if (isDynamic) {
+        tagLabel = "🌐 All Attendees (Dynamic)";
+        tagStyle = { bg: "#dcfce7", color: "#166534", border: "#86efac" };
+      }
+
+      rows.push({
+        id: `exp-${exp.id}`,
+        category: isWebsite ? "website" : "shared",
+        title: exp.description,
+        tagLabel,
+        tagStyle,
+        payerName: exp.payerName,
+        payerMemberId: exp.payerMemberId,
+        date: exp.incurredDate,
+        totalCents: exp.amountCents,
+        rawExpense: exp,
+        allocationsMap: new Map(exp.allocations.map((a) => [a.memberId, a.allocatedCents])),
+      });
+    }
+
+    return rows;
+  }, [data]);
 
   const handleCreateExpense = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -743,7 +879,7 @@ export function TripFinancialsTab({
 
       {/* 4. Unified Expense Ledger */}
       <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
           <div>
             <h3 style={{ margin: 0, fontSize: "1.1rem" }}>📋 Unified Expense Ledger</h3>
             <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
@@ -751,232 +887,741 @@ export function TripFinancialsTab({
             </p>
           </div>
 
-          {!isFinalized && (isAdmin || isConfirmedAttendee) && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={openAddExpenseModal}
-              style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", padding: "0.4rem 0.8rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}
-            >
-              + Add Shared Expense
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: "grid", gap: "1rem" }}>
-          {/* Cabin Deposit Section */}
-          {data?.cabinDeposit ? (
-            <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a" }}>🏡 Cabin Deposit Advance</h4>
-                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
-                    Paid by <strong>{data.cabinDeposit.payerName}</strong> ({formatMoney(data.cabinDeposit.depositPerPersonCents)} per attendee × {data.cabinDeposit.confirmedCount} attendees)
-                  </p>
-                </div>
-                <span style={{ fontWeight: 700, fontSize: "1rem", color: "#0f172a" }}>
-                  {formatMoney(data.cabinDeposit.amountCents)}
-                </span>
-              </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            {/* View Switcher Toggle */}
+            <div style={{ display: "inline-flex", borderRadius: "6px", border: "1px solid #cbd5e1", overflow: "hidden", background: "#f8fafc" }}>
+              <button
+                type="button"
+                onClick={() => setLedgerView("matrix")}
+                style={{
+                  padding: "0.35rem 0.75rem",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  border: "none",
+                  background: ledgerView === "matrix" ? "#0284c7" : "transparent",
+                  color: ledgerView === "matrix" ? "#ffffff" : "#475569",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                📊 Spreadsheet Matrix
+              </button>
+              <button
+                type="button"
+                onClick={() => setLedgerView("cards")}
+                style={{
+                  padding: "0.35rem 0.75rem",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  border: "none",
+                  borderLeft: "1px solid #cbd5e1",
+                  background: ledgerView === "cards" ? "#0284c7" : "transparent",
+                  color: ledgerView === "cards" ? "#ffffff" : "#475569",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                📋 Itemized Cards
+              </button>
             </div>
-          ) : (
-            <div style={{ border: "1px dashed #cbd5e1", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
-              <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#475569" }}>🏡 Cabin Deposit ($50 / Attendee)</h4>
-              <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
-                No cabin reservation payer is assigned yet. When assigned by an administrator via Edit Event, the $50/attendee deposit will automatically populate here in the ledger and route transfers in the settlement matrix.
-              </p>
-            </div>
-          )}
 
-          {/* Carpool Mileage Reimbursements */}
-          {data?.carpoolReimbursements && data.carpoolReimbursements.length > 0 && (
-            <div style={{ display: "grid", gap: "0.5rem" }}>
-              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
-                🚗 Carpool Mileage Reimbursements ({`$${((data.carpoolReimbursements[0]?.rateCentsPerMile ?? 50) / 100).toFixed(2)}/mile`})
-              </h4>
-              {data.carpoolReimbursements.map((cpr) => (
-                <div
-                  key={cpr.carpoolId}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "8px",
-                    padding: "0.85rem 1rem",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    background: "#fff",
-                  }}
-                >
-                  <div>
-                    <strong style={{ fontSize: "0.9rem" }}>{cpr.driverName}</strong>
-                    <span style={{ color: "#64748b", fontSize: "0.85rem", marginLeft: "0.5rem" }}>
-                      ({cpr.vehicleDescription}) • {cpr.milesDriven.toLocaleString()} mi
-                    </span>
-                    <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
-                      Split equally among {cpr.occupantCount} occupants: {cpr.occupantNames.join(", ")}
-                    </div>
-                  </div>
-                  <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f172a" }}>
-                    {formatMoney(cpr.amountCents)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Member Shared Receipts */}
-          <div style={{ display: "grid", gap: "0.5rem" }}>
-            <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>🧾 Shared Member Receipts</h4>
-            {(!data?.expenses || data.expenses.length === 0) ? (
-              <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>
-                No shared receipts submitted yet.
-              </p>
-            ) : (
-              data.expenses.map((exp) => (
-                <div
-                  key={exp.id}
-                  style={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "8px",
-                    padding: "0.85rem 1rem",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    background: "#fff",
-                  }}
-                >
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "0.9rem" }}>{exp.description}</strong>
-                      {exp.expenseType === "website_maintenance" ? (
-                        <span
-                          style={{
-                            background: "#e0e7ff",
-                            color: "#3730a3",
-                            border: "1px solid #c7d2fe",
-                            fontSize: "0.75rem",
-                            padding: "0.15rem 0.5rem",
-                            borderRadius: "9999px",
-                            fontWeight: 600,
-                          }}
-                        >
-                          🌐 Website Maintenance
-                        </span>
-                      ) : exp.splitMode === "all_attendees" ? (
-                        <span
-                          style={{
-                            background: "#dcfce7",
-                            color: "#166534",
-                            border: "1px solid #86efac",
-                            fontSize: "0.75rem",
-                            padding: "0.15rem 0.5rem",
-                            borderRadius: "9999px",
-                            fontWeight: 600,
-                          }}
-                        >
-                          🌐 All Attendees (Dynamic)
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            background: "#fef3c7",
-                            color: "#92400e",
-                            border: "1px solid #fde68a",
-                            fontSize: "0.75rem",
-                            padding: "0.15rem 0.5rem",
-                            borderRadius: "9999px",
-                            fontWeight: 600,
-                          }}
-                        >
-                          👥 Custom Split ({exp.allocations.length} campers)
-                        </span>
-                      )}
-                      {(exp.receiptStoragePath || exp.receiptUrl) && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenReceiptViewer(exp)}
-                          style={{
-                            background: "transparent",
-                            border: "none",
-                            padding: 0,
-                            fontSize: "0.75rem",
-                            color: "#2563eb",
-                            textDecoration: "underline",
-                            cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "0.2rem",
-                          }}
-                        >
-                          📄 View Receipt
-                        </button>
-                      )}
-                    </div>
-                    <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
-                      Paid by {exp.payerName} on {exp.incurredDate} • Split among {exp.allocations.length} members
-                      {exp.splitMode === "all_attendees" && " (auto-includes new attendees)"}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    {!isFinalized && isAdmin && (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={actionBusy}
-                        onClick={() => handleOpenEditExpense(exp)}
-                        style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
-                        title="Edit expense details and who paid"
-                        aria-label={`Edit ${exp.description}`}
-                      >
-                        ✏️ Edit
-                      </button>
-                    )}
-                    {!isFinalized && isAdmin && (
-                      exp.splitMode === "all_attendees" ? (
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={actionBusy}
-                          onClick={() => handleToggleExpenseSplitMode(exp.id, "custom")}
-                          style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
-                          title="Convert to fixed static allocations for current attendees"
-                        >
-                          Make Custom 🎯
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={actionBusy}
-                          onClick={() => handleToggleExpenseSplitMode(exp.id, "all_attendees")}
-                          style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
-                          title="Convert to dynamic split across all confirmed attendees"
-                        >
-                          Make Dynamic 🌐
-                        </button>
-                      )
-                    )}
-                    <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f172a" }}>
-                      {formatMoney(exp.amountCents)}
-                    </span>
-                    {!isFinalized && (isAdmin || exp.payerMemberId === currentMemberId) && (
-                      <button
-                        type="button"
-                        disabled={actionBusy}
-                        onClick={() => handleDeleteExpense(exp.id)}
-                        style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "0.85rem", padding: "0.25rem" }}
-                        aria-label={`Delete ${exp.description}`}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
+            {!isFinalized && (isAdmin || isConfirmedAttendee) && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={openAddExpenseModal}
+                style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", padding: "0.4rem 0.8rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}
+              >
+                + Add Shared Expense
+              </button>
             )}
           </div>
         </div>
+
+        {ledgerView === "matrix" ? (
+          /* Spreadsheet-Style Matrix View with Freeze Panes */
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              maxWidth: "100%",
+              overflowX: "auto",
+              overflowY: "auto",
+              maxHeight: "560px",
+              border: "1px solid #cbd5e1",
+              borderRadius: "8px",
+              background: "#ffffff",
+              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                fontSize: "0.85rem",
+                textAlign: "left",
+              }}
+            >
+              <thead>
+                <tr>
+                  {/* Frozen Top-Left Cell */}
+                  <th
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      left: 0,
+                      zIndex: 30,
+                      background: "#f1f5f9",
+                      padding: "0.75rem 0.85rem",
+                      fontWeight: 700,
+                      color: "#1e293b",
+                      borderBottom: "2px solid #cbd5e1",
+                      borderRight: "2px solid #cbd5e1",
+                      minWidth: "260px",
+                      maxWidth: "320px",
+                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                    }}
+                  >
+                    Expense Item & Payer
+                  </th>
+                  <th
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 20,
+                      background: "#f8fafc",
+                      padding: "0.75rem 0.85rem",
+                      fontWeight: 700,
+                      color: "#1e293b",
+                      borderBottom: "2px solid #cbd5e1",
+                      borderRight: "1px solid #e2e8f0",
+                      textAlign: "right",
+                      minWidth: "95px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Total
+                  </th>
+                  {matrixMembers.map((m) => (
+                    <th
+                      key={m.memberId}
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 20,
+                        background: m.isMe ? "#eff6ff" : "#f8fafc",
+                        padding: "0.75rem 0.85rem",
+                        fontWeight: 700,
+                        color: m.isMe ? "#1d4ed8" : "#1e293b",
+                        borderBottom: "2px solid #cbd5e1",
+                        borderRight: "1px solid #e2e8f0",
+                        textAlign: "right",
+                        minWidth: "120px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <div>{m.displayName}</div>
+                      {m.isMe && (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            fontSize: "0.68rem",
+                            background: "#dbeafe",
+                            color: "#1e40af",
+                            padding: "0.05rem 0.35rem",
+                            borderRadius: "4px",
+                            fontWeight: 600,
+                            marginTop: "0.15rem",
+                          }}
+                        >
+                          You
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrixRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={matrixMembers.length + 2}
+                      style={{ padding: "2.5rem 1rem", textAlign: "center", color: "#64748b", fontStyle: "italic" }}
+                    >
+                      No expenses recorded yet.
+                    </td>
+                  </tr>
+                ) : (
+                  matrixRows.map((row, idx) => {
+                    const isEven = idx % 2 === 0;
+                    const rowBg = isEven ? "#ffffff" : "#f8fafc";
+                    return (
+                      <tr key={row.id} style={{ background: rowBg }}>
+                        {/* Frozen Left Expense Header Cell */}
+                        <td
+                          style={{
+                            position: "sticky",
+                            left: 0,
+                            zIndex: 10,
+                            background: rowBg,
+                            padding: "0.65rem 0.85rem",
+                            borderBottom: "1px solid #e2e8f0",
+                            borderRight: "2px solid #cbd5e1",
+                            minWidth: "260px",
+                            maxWidth: "320px",
+                            boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
+                              <strong style={{ fontSize: "0.88rem", color: "#0f172a" }}>{row.title}</strong>
+                              <span
+                                style={{
+                                  background: row.tagStyle.bg,
+                                  color: row.tagStyle.color,
+                                  border: `1px solid ${row.tagStyle.border}`,
+                                  fontSize: "0.7rem",
+                                  padding: "0.1rem 0.4rem",
+                                  borderRadius: "9999px",
+                                  fontWeight: 600,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {row.tagLabel}
+                              </span>
+                            </div>
+
+                            <div style={{ fontSize: "0.76rem", color: "#64748b" }}>
+                              Paid by <strong>{row.payerName}</strong>
+                              {row.date ? ` • ${row.date}` : ""}
+                            </div>
+
+                            {/* Quick action buttons on matrix row */}
+                            {row.rawExpense && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.2rem", flexWrap: "wrap" }}>
+                                {(row.rawExpense.receiptStoragePath || row.rawExpense.receiptUrl) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenReceiptViewer(row.rawExpense!)}
+                                    aria-label="View Receipt"
+                                    style={{
+                                      background: "transparent",
+                                      border: "none",
+                                      padding: 0,
+                                      fontSize: "0.74rem",
+                                      color: "#2563eb",
+                                      textDecoration: "underline",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    📄 View Receipt
+                                  </button>
+                                )}
+                                {!isFinalized && isAdmin && (
+                                  <button
+                                    type="button"
+                                    disabled={actionBusy}
+                                    onClick={() => handleOpenEditExpense(row.rawExpense!)}
+                                    style={{
+                                      background: "#f1f5f9",
+                                      border: "1px solid #cbd5e1",
+                                      borderRadius: "4px",
+                                      padding: "0.15rem 0.4rem",
+                                      fontSize: "0.72rem",
+                                      cursor: "pointer",
+                                    }}
+                                    aria-label={`Edit ${row.rawExpense.description}`}
+                                  >
+                                    ✏️ Edit
+                                  </button>
+                                )}
+                                {!isFinalized && isAdmin && row.rawExpense.expenseType !== "website_maintenance" && (
+                                  row.rawExpense.splitMode === "all_attendees" ? (
+                                    <button
+                                      type="button"
+                                      className="btn-secondary"
+                                      disabled={actionBusy}
+                                      onClick={() => handleToggleExpenseSplitMode(row.rawExpense!.id, "custom")}
+                                      style={{ fontSize: "0.72rem", padding: "0.15rem 0.4rem", borderRadius: "4px" }}
+                                      title="Convert to fixed static allocations for current attendees"
+                                    >
+                                      Make Custom 🎯
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="btn-secondary"
+                                      disabled={actionBusy}
+                                      onClick={() => handleToggleExpenseSplitMode(row.rawExpense!.id, "all_attendees")}
+                                      style={{ fontSize: "0.72rem", padding: "0.15rem 0.4rem", borderRadius: "4px" }}
+                                      title="Convert to dynamic split across all confirmed attendees"
+                                    >
+                                      Make Dynamic 🌐
+                                    </button>
+                                  )
+                                )}
+                                {!isFinalized && (isAdmin || row.rawExpense.payerMemberId === currentMemberId) && (
+                                  <button
+                                    type="button"
+                                    disabled={actionBusy}
+                                    onClick={() => handleDeleteExpense(row.rawExpense!.id)}
+                                    style={{
+                                      background: "transparent",
+                                      border: "none",
+                                      color: "#ef4444",
+                                      cursor: "pointer",
+                                      fontSize: "0.8rem",
+                                      padding: "0.1rem 0.25rem",
+                                    }}
+                                    aria-label={`Delete ${row.rawExpense.description}`}
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Total Column */}
+                        <td
+                          style={{
+                            padding: "0.65rem 0.85rem",
+                            borderBottom: "1px solid #e2e8f0",
+                            borderRight: "1px solid #e2e8f0",
+                            textAlign: "right",
+                            fontWeight: 700,
+                            color: "#0f172a",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {formatMoney(row.totalCents)}
+                        </td>
+
+                        {/* Member Allocation Cells */}
+                        {matrixMembers.map((m) => {
+                          const allocated = row.allocationsMap.get(m.memberId);
+                          const isPayer = m.memberId === row.payerMemberId;
+                          return (
+                            <td
+                              key={m.memberId}
+                              style={{
+                                padding: "0.65rem 0.85rem",
+                                borderBottom: "1px solid #e2e8f0",
+                                borderRight: "1px solid #e2e8f0",
+                                textAlign: "right",
+                                whiteSpace: "nowrap",
+                                background: m.isMe ? (isEven ? "#f8fafc" : "#f1f5f9") : undefined,
+                              }}
+                            >
+                              {allocated !== undefined ? (
+                                <div>
+                                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{formatMoney(allocated)}</span>
+                                  {isPayer && (
+                                    <div style={{ fontSize: "0.68rem", color: "#166534", fontWeight: 700, marginTop: "0.1rem" }}>
+                                      (Paid)
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: "#94a3b8", fontWeight: 500, fontSize: "0.8rem" }}>
+                                  N/A
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+              <tfoot>
+                {/* Total Share Owed */}
+                <tr style={{ background: "#f8fafc", borderTop: "2px solid #cbd5e1" }}>
+                  <td
+                    style={{
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 10,
+                      background: "#f1f5f9",
+                      padding: "0.65rem 0.85rem",
+                      fontWeight: 700,
+                      color: "#334155",
+                      borderRight: "2px solid #cbd5e1",
+                      borderBottom: "1px solid #e2e8f0",
+                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                    }}
+                  >
+                    Total Share Owed
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.65rem 0.85rem",
+                      borderRight: "1px solid #e2e8f0",
+                      borderBottom: "1px solid #e2e8f0",
+                      textAlign: "right",
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatMoney(matrixRows.reduce((sum, r) => sum + r.totalCents, 0))}
+                  </td>
+                  {matrixMembers.map((m) => {
+                    const balance = balancesMap.get(m.memberId);
+                    const allocatedSum = balance ? balance.totalAllocatedCents : matrixRows.reduce((sum, r) => sum + (r.allocationsMap.get(m.memberId) ?? 0), 0);
+                    return (
+                      <td
+                        key={m.memberId}
+                        style={{
+                          padding: "0.65rem 0.85rem",
+                          borderRight: "1px solid #e2e8f0",
+                          borderBottom: "1px solid #e2e8f0",
+                          textAlign: "right",
+                          fontWeight: 700,
+                          color: "#1e293b",
+                          whiteSpace: "nowrap",
+                          background: m.isMe ? "#eff6ff" : undefined,
+                        }}
+                      >
+                        {formatMoney(allocatedSum)}
+                      </td>
+                    );
+                  })}
+                </tr>
+
+                {/* Paid Out-of-Pocket */}
+                <tr style={{ background: "#f8fafc" }}>
+                  <td
+                    style={{
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 10,
+                      background: "#f1f5f9",
+                      padding: "0.65rem 0.85rem",
+                      fontWeight: 700,
+                      color: "#334155",
+                      borderRight: "2px solid #cbd5e1",
+                      borderBottom: "1px solid #e2e8f0",
+                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                    }}
+                  >
+                    Paid Out-of-Pocket
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.65rem 0.85rem",
+                      borderRight: "1px solid #e2e8f0",
+                      borderBottom: "1px solid #e2e8f0",
+                      textAlign: "right",
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatMoney(matrixRows.reduce((sum, r) => sum + r.totalCents, 0))}
+                  </td>
+                  {matrixMembers.map((m) => {
+                    const balance = balancesMap.get(m.memberId);
+                    const paidSum = balance ? balance.totalPaidCents : 0;
+                    return (
+                      <td
+                        key={m.memberId}
+                        style={{
+                          padding: "0.65rem 0.85rem",
+                          borderRight: "1px solid #e2e8f0",
+                          borderBottom: "1px solid #e2e8f0",
+                          textAlign: "right",
+                          fontWeight: 700,
+                          color: paidSum > 0 ? "#166534" : "#64748b",
+                          whiteSpace: "nowrap",
+                          background: m.isMe ? "#eff6ff" : undefined,
+                        }}
+                      >
+                        {formatMoney(paidSum)}
+                      </td>
+                    );
+                  })}
+                </tr>
+
+                {/* Net Settlement Position */}
+                <tr style={{ background: "#f1f5f9", borderTop: "2px solid #94a3b8" }}>
+                  <td
+                    style={{
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 10,
+                      background: "#e2e8f0",
+                      padding: "0.75rem 0.85rem",
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      borderRight: "2px solid #cbd5e1",
+                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                    }}
+                  >
+                    Net Settlement Position
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.75rem 0.85rem",
+                      borderRight: "1px solid #cbd5e1",
+                      textAlign: "right",
+                      fontWeight: 700,
+                      color: "#64748b",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    $0.00
+                  </td>
+                  {matrixMembers.map((m) => {
+                    const balance = balancesMap.get(m.memberId);
+                    const net = balance ? balance.netBalanceCents : 0;
+                    const isPositive = net > 0;
+                    const isNegative = net < 0;
+                    return (
+                      <td
+                        key={m.memberId}
+                        style={{
+                          padding: "0.75rem 0.85rem",
+                          borderRight: "1px solid #cbd5e1",
+                          textAlign: "right",
+                          fontWeight: 800,
+                          color: isPositive ? "#166534" : isNegative ? "#dc2626" : "#64748b",
+                          whiteSpace: "nowrap",
+                          background: m.isMe ? "#dbeafe" : undefined,
+                        }}
+                      >
+                        {isPositive ? `+${formatMoney(net)}` : isNegative ? `-${formatMoney(Math.abs(net))}` : "$0.00"}
+                        <div style={{ fontSize: "0.68rem", fontWeight: 600 }}>
+                          {isPositive ? "(Gets back)" : isNegative ? "(Owes)" : "(Settled)"}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          /* Itemized Cards View */
+          <div style={{ display: "grid", gap: "1rem" }}>
+            {/* Cabin Deposit Section */}
+            {data?.cabinDeposit ? (
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a" }}>🏡 Cabin Deposit Advance</h4>
+                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                      Paid by <strong>{data.cabinDeposit.payerName}</strong> ({formatMoney(data.cabinDeposit.depositPerPersonCents)} per attendee × {data.cabinDeposit.confirmedCount} attendees)
+                    </p>
+                  </div>
+                  <span style={{ fontWeight: 700, fontSize: "1rem", color: "#0f172a" }}>
+                    {formatMoney(data.cabinDeposit.amountCents)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ border: "1px dashed #cbd5e1", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
+                <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#475569" }}>🏡 Cabin Deposit ($50 / Attendee)</h4>
+                <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                  No cabin reservation payer is assigned yet. When assigned by an administrator via Edit Event, the $50/attendee deposit will automatically populate here in the ledger and route transfers in the settlement matrix.
+                </p>
+              </div>
+            )}
+
+            {/* Carpool Mileage Reimbursements */}
+            {data?.carpoolReimbursements && data.carpoolReimbursements.length > 0 && (
+              <div style={{ display: "grid", gap: "0.5rem" }}>
+                <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
+                  🚗 Carpool Mileage Reimbursements ({`$${((data.carpoolReimbursements[0]?.rateCentsPerMile ?? 50) / 100).toFixed(2)}/mile`})
+                </h4>
+                {data.carpoolReimbursements.map((cpr) => (
+                  <div
+                    key={cpr.carpoolId}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      padding: "0.85rem 1rem",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      background: "#fff",
+                    }}
+                  >
+                    <div>
+                      <strong style={{ fontSize: "0.9rem" }}>{cpr.driverName}</strong>
+                      <span style={{ color: "#64748b", fontSize: "0.85rem", marginLeft: "0.5rem" }}>
+                        ({cpr.vehicleDescription}) • {cpr.milesDriven.toLocaleString()} mi
+                      </span>
+                      <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
+                        Split equally among {cpr.occupantCount} occupants: {cpr.occupantNames.join(", ")}
+                      </div>
+                    </div>
+                    <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f172a" }}>
+                      {formatMoney(cpr.amountCents)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Member Shared Receipts */}
+            <div style={{ display: "grid", gap: "0.5rem" }}>
+              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>🧾 Shared Member Receipts</h4>
+              {(!data?.expenses || data.expenses.length === 0) ? (
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>
+                  No shared receipts submitted yet.
+                </p>
+              ) : (
+                data.expenses.map((exp) => (
+                  <div
+                    key={exp.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      padding: "0.85rem 1rem",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      background: "#fff",
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <strong style={{ fontSize: "0.9rem" }}>{exp.description}</strong>
+                        {exp.expenseType === "website_maintenance" ? (
+                          <span
+                            style={{
+                              background: "#e0e7ff",
+                              color: "#3730a3",
+                              border: "1px solid #c7d2fe",
+                              fontSize: "0.75rem",
+                              padding: "0.15rem 0.5rem",
+                              borderRadius: "9999px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            🌐 Website Maintenance
+                          </span>
+                        ) : exp.splitMode === "all_attendees" ? (
+                          <span
+                            style={{
+                              background: "#dcfce7",
+                              color: "#166534",
+                              border: "1px solid #86efac",
+                              fontSize: "0.75rem",
+                              padding: "0.15rem 0.5rem",
+                              borderRadius: "9999px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            🌐 All Attendees (Dynamic)
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              background: "#fef3c7",
+                              color: "#92400e",
+                              border: "1px solid #fde68a",
+                              fontSize: "0.75rem",
+                              padding: "0.15rem 0.5rem",
+                              borderRadius: "9999px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            👥 Custom Split ({exp.allocations.length} campers)
+                          </span>
+                        )}
+                        {(exp.receiptStoragePath || exp.receiptUrl) && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReceiptViewer(exp)}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              padding: 0,
+                              fontSize: "0.75rem",
+                              color: "#2563eb",
+                              textDecoration: "underline",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.2rem",
+                            }}
+                          >
+                            📄 View Receipt
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
+                        Paid by {exp.payerName} on {exp.incurredDate} • Split among {exp.allocations.length} members
+                        {exp.splitMode === "all_attendees" && " (auto-includes new attendees)"}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      {!isFinalized && isAdmin && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={actionBusy}
+                          onClick={() => handleOpenEditExpense(exp)}
+                          style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                          title="Edit expense details and who paid"
+                          aria-label={`Edit ${exp.description}`}
+                        >
+                          ✏️ Edit
+                        </button>
+                      )}
+                      {!isFinalized && isAdmin && (
+                        exp.splitMode === "all_attendees" ? (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={actionBusy}
+                            onClick={() => handleToggleExpenseSplitMode(exp.id, "custom")}
+                            style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                            title="Convert to fixed static allocations for current attendees"
+                          >
+                            Make Custom 🎯
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={actionBusy}
+                            onClick={() => handleToggleExpenseSplitMode(exp.id, "all_attendees")}
+                            style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                            title="Convert to dynamic split across all confirmed attendees"
+                          >
+                            Make Dynamic 🌐
+                          </button>
+                        )
+                      )}
+                      <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f172a" }}>
+                        {formatMoney(exp.amountCents)}
+                      </span>
+                      {!isFinalized && (isAdmin || exp.payerMemberId === currentMemberId) && (
+                        <button
+                          type="button"
+                          disabled={actionBusy}
+                          onClick={() => handleDeleteExpense(exp.id)}
+                          style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "0.85rem", padding: "0.25rem" }}
+                          aria-label={`Delete ${exp.description}`}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL: Add Shared Expense */}

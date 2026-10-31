@@ -202,7 +202,7 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
 
     // Header & badge
     expect(await screen.findByText(/Draft Calculation/i)).toBeInTheDocument();
-    expect(screen.getByText("$271.00")).toBeInTheDocument();
+    expect(screen.getAllByText("$271.00").length).toBeGreaterThan(0);
     expect(screen.getByText("Exact (DP)")).toBeInTheDocument();
 
     // Cabin deposit
@@ -219,7 +219,7 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
 
     // Member Balances table
     expect(screen.getAllByText("Alice Admin").length).toBeGreaterThan(0);
-    expect(screen.getByText("+$59.67")).toBeInTheDocument();
+    expect(screen.getAllByText("+$59.67").length).toBeGreaterThan(0);
   });
 
   it("allows admin to add a shared receipt with automatic equal split", async () => {
@@ -779,7 +779,7 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
 
     expect(await screen.findByText(/Website Build & Maintenance Fee/i)).toBeInTheDocument();
     expect(screen.getByText(/🌐 Website Maintenance/i)).toBeInTheDocument();
-    expect(screen.getByText("$5.00")).toBeInTheDocument();
+    expect(screen.getAllByText("$5.00").length).toBeGreaterThan(0);
   });
 
   it("allows administrator to edit an expense and reassign who paid", async () => {
@@ -837,5 +837,84 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
         amountCents: 4500,
       })
     );
+  });
+
+  it("renders spreadsheet matrix view with frozen columns, member shares, and N/A for non-participants", async () => {
+    const user = userEvent.setup();
+    const mockFinancialsWithCustomSplit: TripFinancialsData = {
+      ...mockDraftFinancials,
+      expenses: [
+        {
+          id: "exp-custom-1",
+          expenseType: "shared_receipt",
+          payerMemberId: "member-admin",
+          payerName: "Alice Admin",
+          amountCents: 3000,
+          description: "Wine and Cheese Night",
+          incurredDate: "2026-10-19",
+          receiptUrl: null,
+          isLocked: false,
+          allocations: [
+            // Split only between Alice and Dave, Sarah is NOT a participant!
+            { memberId: "member-admin", memberName: "Alice Admin", allocatedCents: 1500, isMe: false },
+            { memberId: "member-1", memberName: "Dave K.", allocatedCents: 1500, isMe: true },
+          ],
+        },
+      ],
+    };
+
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") {
+        return Promise.resolve(mockFinancialsWithCustomSplit);
+      }
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    // Verify matrix toggle is present and active
+    const matrixToggle = await screen.findByRole("button", { name: /📊 Spreadsheet Matrix/i });
+    expect(matrixToggle).toBeInTheDocument();
+
+    // Verify column headers
+    expect(screen.getByText("Expense Item & Payer")).toBeInTheDocument();
+    expect(screen.getAllByText("Dave K.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Alice Admin").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Sarah M.").length).toBeGreaterThan(0);
+
+    // Wine and Cheese Night row
+    expect(screen.getByText("Wine and Cheese Night")).toBeInTheDocument();
+    expect(screen.getByText("👥 Custom Split (2 campers)")).toBeInTheDocument();
+
+    // Verify N/A rendered for Sarah M. who did not participate in Wine and Cheese
+    expect(screen.getAllByText("N/A").length).toBeGreaterThan(0);
+
+    // Verify footer summary rows
+    expect(screen.getByText("Total Share Owed")).toBeInTheDocument();
+    expect(screen.getByText("Paid Out-of-Pocket")).toBeInTheDocument();
+    expect(screen.getByText("Net Settlement Position")).toBeInTheDocument();
+
+    // Toggle to Itemized Cards view
+    const cardsToggle = screen.getByRole("button", { name: /📋 Itemized Cards/i });
+    await user.click(cardsToggle);
+    expect(screen.getByText("🧾 Shared Member Receipts")).toBeInTheDocument();
+    expect(screen.getByText("Wine and Cheese Night")).toBeInTheDocument();
+
+    // Switch back to Spreadsheet Matrix
+    await user.click(matrixToggle);
+    expect(screen.getByText("Expense Item & Payer")).toBeInTheDocument();
   });
 });
