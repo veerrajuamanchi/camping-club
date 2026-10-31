@@ -1866,16 +1866,23 @@ async function sendTripSummaryEmail(
   authUser: { id: string; email?: string },
   tripId: string,
   recipientType: "admin" | "all"
-): Promise<{ sent: boolean; recipientCount: number; recipients: string[]; provider?: string }> {
+): Promise<{ sent: boolean; recipientCount: number; recipients: string[]; provider?: string; reason?: string }> {
   const { data: trip, error: tripErr } = await service
     .from("camping_trips")
-    .select(`
-      id, title, month_key, starts_on, ends_on, additional_information,
-      selected_campsite:campsites(name, county, driving_directions, map_url)
-    `)
+    .select("id, title, month_key, starts_on, ends_on, additional_information, selected_campsite_id")
     .eq("id", tripId)
     .single();
   checkError(tripErr);
+
+  let campsite: { name: string; location_description?: string; directions?: string } | null = null;
+  if (trip?.selected_campsite_id) {
+    const { data: cs } = await service
+      .from("campsites")
+      .select("name, location_description, directions")
+      .eq("id", trip.selected_campsite_id)
+      .maybeSingle();
+    campsite = cs;
+  }
 
   // 1. Confirmed RSVPs
   const { data: rsvps } = await service
@@ -1888,8 +1895,14 @@ async function sendTripSummaryEmail(
   // 2. Member profiles & emails
   const { data: profiles } = await service
     .from("member_profiles")
-    .select("member_id, auth_user_id, display_name, phone_e164")
+    .select("member_id, auth_user_id, display_name")
     .in("member_id", confirmedMemberIds.length > 0 ? confirmedMemberIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  const { data: contacts } = await service
+    .from("member_private_contacts")
+    .select("member_id, phone_e164")
+    .in("member_id", confirmedMemberIds.length > 0 ? confirmedMemberIds : ["00000000-0000-0000-0000-000000000000"]);
+  const phoneByMemberId = new Map((contacts ?? []).map((c: any) => [c.member_id, c.phone_e164]));
 
   const { data: usersData } = await service.auth.admin.listUsers();
   const emailByAuthId = new Map((usersData?.users ?? []).map((u: any) => [u.id, u.email]));
@@ -1899,29 +1912,65 @@ async function sendTripSummaryEmail(
     memberId: p.member_id,
     name: p.display_name,
     email: emailByAuthId.get(p.auth_user_id) ?? null,
-    phone: p.phone_e164 ?? null,
+    phone: phoneByMemberId.get(p.member_id) ?? null,
   }));
 
   // 3. Carpools
-  const { data: carpools } = await service
+  const { data: rawCarpools } = await service
     .from("trip_carpools")
-    .select(`
-      id, driver_member_id, vehicle_description, max_seats, departure_details,
-      riders:trip_carpool_riders(rider_member_id)
-    `)
+    .select("id, driver_member_id, vehicle_description, max_seats, departure_details")
     .eq("trip_id", tripId);
 
+  const carpoolIds = (rawCarpools ?? []).map((c: any) => c.id);
+  const { data: rawRiders } = carpoolIds.length > 0
+    ? await service
+        .from("trip_carpool_riders")
+        .select("carpool_id, rider_member_id")
+        .in("carpool_id", carpoolIds)
+    : { data: [] };
+
+  const ridersByCarpool = new Map<string, string[]>();
+  for (const r of rawRiders ?? []) {
+    const list = ridersByCarpool.get(r.carpool_id) ?? [];
+    list.push(r.rider_member_id);
+    ridersByCarpool.set(r.carpool_id, list);
+  }
+
   // 4. Activities & Vouchers
-  const { data: activities } = await service
+  const { data: rawActivities } = await service
     .from("trip_activities")
-    .select(`
-      id, activity_name, activity_date, start_time, location, description,
-      groups:trip_activity_groups(
-        id, group_number, purchaser_member_id, voucher_reference, voucher_document_url, notes,
-        members:trip_activity_group_members(member_id)
-      )
-    `)
+    .select("id, title, activity_date, start_time, location_name")
     .eq("trip_id", tripId);
+
+  const activityIds = (rawActivities ?? []).map((a: any) => a.id);
+  const { data: rawGroups } = activityIds.length > 0
+    ? await service
+        .from("trip_activity_groups")
+        .select("id, activity_id, group_number, group_name, purchaser_member_id, order_reference_number, voucher_code")
+        .in("activity_id", activityIds)
+    : { data: [] };
+
+  const groupIds = (rawGroups ?? []).map((g: any) => g.id);
+  const { data: rawGroupMembers } = groupIds.length > 0
+    ? await service
+        .from("trip_activity_group_members")
+        .select("group_id, member_id")
+        .in("group_id", groupIds)
+    : { data: [] };
+
+  const membersByGroup = new Map<string, string[]>();
+  for (const gm of rawGroupMembers ?? []) {
+    const list = membersByGroup.get(gm.group_id) ?? [];
+    list.push(gm.member_id);
+    membersByGroup.set(gm.group_id, list);
+  }
+
+  const groupsByActivity = new Map<string, any[]>();
+  for (const g of rawGroups ?? []) {
+    const list = groupsByActivity.get(g.activity_id) ?? [];
+    list.push({ ...g, members: (membersByGroup.get(g.id) ?? []).map((mId: string) => ({ member_id: mId })) });
+    groupsByActivity.set(g.activity_id, list);
+  }
 
   // 5. Commitments
   const { data: commitments } = await service
@@ -1946,18 +1995,18 @@ async function sendTripSummaryEmail(
   }
 
   // Build HTML email
-  const campsiteName = (trip as any)?.selected_campsite?.name || "Private Campsite";
+  const campsiteName = campsite?.name || "Private Campsite";
   const tripTitle = trip?.title || `${trip?.month_key} Camping Trip`;
   const datesStr = trip?.starts_on && trip?.ends_on ? `${trip.starts_on} to ${trip.ends_on}` : "Upcoming Dates";
   const webAppUrl = Deno.env.get("WEB_APP_URL") || "https://camping-club.onrender.com";
 
   let carpoolsHtml = "";
-  if (!carpools || carpools.length === 0) {
+  if (!rawCarpools || rawCarpools.length === 0) {
     carpoolsHtml = `<p style="color: #64748b; font-style: italic;">No carpools configured yet.</p>`;
   } else {
-    carpoolsHtml = carpools.map((cp: any, idx: number) => {
+    carpoolsHtml = rawCarpools.map((cp: any, idx: number) => {
       const driverName = nameByMemberId.get(cp.driver_member_id) || "Designated Driver";
-      const riderNames = (cp.riders ?? []).map((r: any) => nameByMemberId.get(r.rider_member_id) || "Passenger").join(", ");
+      const riderNames = (ridersByCarpool.get(cp.id) ?? []).map((rId: string) => nameByMemberId.get(rId) || "Passenger").join(", ");
       return `
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
           <strong style="color: #0f172a;">🚗 Vehicle ${idx + 1}: ${driverName}</strong> (${cp.vehicle_description || "Personal Vehicle"})<br/>
@@ -1969,27 +2018,28 @@ async function sendTripSummaryEmail(
   }
 
   let activitiesHtml = "";
-  if (!activities || activities.length === 0) {
+  if (!rawActivities || rawActivities.length === 0) {
     activitiesHtml = `<p style="color: #64748b; font-style: italic;">No activity vouchers scheduled.</p>`;
   } else {
-    activitiesHtml = activities.map((act: any) => {
-      const groupsHtml = (act.groups ?? []).map((g: any) => {
+    activitiesHtml = rawActivities.map((act: any) => {
+      const actGroups = groupsByActivity.get(act.id) ?? [];
+      const groupsHtml = actGroups.map((g: any) => {
         const purchaser = nameByMemberId.get(g.purchaser_member_id) || "Group Accountant";
         const memberNames = (g.members ?? []).map((m: any) => nameByMemberId.get(m.member_id) || "Member").join(", ");
+        const voucherInfo = g.voucher_code || g.order_reference_number;
         return `
           <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px; margin-top: 6px; font-size: 0.88rem;">
             <strong>Group ${g.group_number}:</strong> Paid/Purchased by <strong>${purchaser}</strong><br/>
             <strong>Participants:</strong> ${memberNames || "All group members"}<br/>
-            ${g.voucher_reference ? `<strong>Voucher Code:</strong> <code style="background:#e2e8f0;padding:2px 4px;border-radius:3px;">${g.voucher_reference}</code>` : ""}
-            ${g.voucher_document_url ? ` | <a href="${g.voucher_document_url}" target="_blank" style="color:#0284c7;">View Voucher PDF</a>` : ""}
+            ${voucherInfo ? `<strong>Voucher / Ref:</strong> <code style="background:#e2e8f0;padding:2px 4px;border-radius:3px;">${voucherInfo}</code>` : ""}
           </div>
         `;
       }).join("");
 
       return `
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
-          <strong style="color: #0f172a;">🎟️ ${act.activity_name}</strong> — ${act.activity_date}${act.start_time ? ` at ${act.start_time}` : ""}<br/>
-          ${act.location ? `<span style="font-size: 0.85rem; color: #475569;">📍 ${act.location}</span><br/>` : ""}
+          <strong style="color: #0f172a;">🎟️ ${act.title}</strong> — ${act.activity_date}${act.start_time ? ` at ${act.start_time}` : ""}<br/>
+          ${act.location_name ? `<span style="font-size: 0.85rem; color: #475569;">📍 ${act.location_name}</span><br/>` : ""}
           ${groupsHtml}
         </div>
       `;
@@ -2096,6 +2146,7 @@ async function sendTripSummaryEmail(
     recipientCount: toList.length,
     recipients: toList,
     provider: sendRes.provider,
+    reason: sendRes.reason,
   };
 }
 
@@ -2829,13 +2880,19 @@ Deno.serve(async (request) => {
     }
     case "admin_send_trip_summary_email": {
       if (member.member_role !== "admin") return errorResponse(request, 403, "forbidden", requestId);
-      const summaryResult = await sendTripSummaryEmail(authUser, input.tripId as string, (input.recipientType as "admin" | "all") || "admin");
       try {
-        await finish(authUser.id, action, aggregate, key, input, null);
-      } catch {
-        return errorResponse(request, 500, "idempotency_completion_failed", requestId);
+        const summaryResult = await sendTripSummaryEmail(authUser, input.tripId as string, (input.recipientType as "admin" | "all") || "admin");
+        try {
+          await finish(authUser.id, action, aggregate, key, input, null);
+        } catch {
+          return errorResponse(request, 500, "idempotency_completion_failed", requestId);
+        }
+        return json(request, 200, { ...summaryResult, requestId });
+      } catch (err: unknown) {
+        console.error("sendTripSummaryEmail error:", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        return errorResponse(request, 500, "email_send_failed", requestId, errMsg);
       }
-      return json(request, 200, { ...summaryResult, requestId });
     }
     case "admin_create_master_responsibility":
       rpcName = "phase3_admin_create_master_responsibility";

@@ -2799,14 +2799,14 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                   setEmailErrorMsg(null);
                   setEmailSuccessMsg(null);
                   try {
-                    const res = await api<{ sent: boolean; recipientCount: number }>("admin_send_trip_summary_email", {
+                    const res = await api<{ sent: boolean; recipientCount: number; reason?: string }>("admin_send_trip_summary_email", {
                       tripId: details.tripId,
                       recipientType: emailRecipientType,
                     });
                     if (res?.sent) {
                       setEmailSuccessMsg(`✓ Briefing email successfully dispatched to ${res.recipientCount} recipient${res.recipientCount === 1 ? "" : "s"}!`);
                     } else {
-                      setEmailErrorMsg("Email service returned failure. Check server email credentials.");
+                      setEmailErrorMsg(`Email dispatch failed: ${res?.reason || "Check server email credentials."}`);
                     }
                   } catch (err: unknown) {
                     setEmailErrorMsg((err as Error)?.message || "Failed to dispatch email.");
