@@ -1535,11 +1535,13 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   let cabinDeposit = null;
   if (cabinPayerId && confirmedAttendees.length > 0) {
-    const confirmedDepositCount = (rsvpsResult.data ?? []).filter(
+    const confirmedDepositMembers = (rsvpsResult.data ?? []).filter(
       (r: any) => r.member_id !== cabinPayerId && (r.deposit_status === "confirmed" || r.deposit_status === "confirmed_by_admin")
-    ).length;
+    );
+    const confirmedDepositMemberIds = new Set(confirmedDepositMembers.map((r: any) => r.member_id));
+    const confirmedDepositCount = confirmedDepositMemberIds.size;
     const cabinAllocs = confirmedAttendees
-      .filter((mId) => mId !== cabinPayerId)
+      .filter((mId) => mId !== cabinPayerId && confirmedDepositMemberIds.has(mId))
       .map((mId) => ({
         memberId: mId,
         memberName: nameMap.get(mId) ?? "Attendee",

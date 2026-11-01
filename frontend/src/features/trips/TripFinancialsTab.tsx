@@ -380,24 +380,15 @@ export function TripFinancialsTab({
 
     // 1. Cabin Deposit Advance
     if (data.cabinDeposit) {
-      const cabinAllocs = (data.cabinDeposit.allocations ?? []).length > 0
-        ? data.cabinDeposit.allocations
-        : (confirmedAttendees ?? [])
-            .filter((ca) => ca.memberId !== data.cabinDeposit!.payerMemberId)
-            .map((ca) => ({
-              memberId: ca.memberId,
-              memberName: ca.displayName,
-              allocatedCents: data.cabinDeposit!.depositPerPersonCents,
-              isMe: ca.memberId === currentMemberId,
-            }));
+      const cabinAllocs = data.cabinDeposit.allocations ?? [];
 
       rows.push({
         id: "cabin-deposit",
         category: "cabin",
-        title: "🏡 Cabin Deposit Advance",
-        tagLabel: `🏡 Cabin (${formatMoney(data.cabinDeposit.depositPerPersonCents)}/camper)`,
+        title: "🏡 Cabin Deposit Advance (Prepayments)",
+        tagLabel: `🏡 Cabin Advance (${formatMoney(data.cabinDeposit.depositPerPersonCents)}/camper)`,
         tagStyle: { bg: "#f0fdf4", color: "#166534", border: "#bbf7d0" },
-        payerName: data.cabinDeposit.payerName,
+        payerName: `Collected by ${data.cabinDeposit.payerName}`,
         payerMemberId: data.cabinDeposit.payerMemberId,
         totalCents: data.cabinDeposit.amountCents,
         allocationsMap: new Map(cabinAllocs.map((a) => [a.memberId, a.allocatedCents])),
@@ -1261,11 +1252,11 @@ export function TripFinancialsTab({
                             borderRight: "1px solid #e2e8f0",
                             textAlign: "right",
                             fontWeight: 700,
-                            color: "#0f172a",
+                            color: row.category === "cabin" ? "#166534" : "#0f172a",
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {formatMoney(row.totalCents)}
+                          {row.category === "cabin" ? `-${formatMoney(row.totalCents)}` : formatMoney(row.totalCents)}
                         </td>
 
                         {/* Member Allocation Cells */}
@@ -1286,10 +1277,17 @@ export function TripFinancialsTab({
                             >
                               {allocated !== undefined ? (
                                 <div>
-                                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{formatMoney(allocated)}</span>
-                                  {isPayer && (
+                                  <span style={{ fontWeight: 600, color: row.category === "cabin" ? "#166534" : "#1e293b" }}>
+                                    {row.category === "cabin" ? `-${formatMoney(allocated)}` : formatMoney(allocated)}
+                                  </span>
+                                  {isPayer && row.category !== "cabin" && (
                                     <div style={{ fontSize: "0.68rem", color: "#166534", fontWeight: 700, marginTop: "0.1rem" }}>
                                       (Paid)
+                                    </div>
+                                  )}
+                                  {row.category === "cabin" && (
+                                    <div style={{ fontSize: "0.68rem", color: "#166534", fontWeight: 700, marginTop: "0.1rem" }}>
+                                      (Prepaid)
                                     </div>
                                   )}
                                 </div>
@@ -1481,13 +1479,13 @@ export function TripFinancialsTab({
               <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
-                    <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a" }}>🏡 Cabin Deposit Advance</h4>
+                    <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a" }}>🏡 Cabin Deposit Advance (Prepayments)</h4>
                     <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
-                      Paid by <strong>{data.cabinDeposit.payerName}</strong> ({formatMoney(data.cabinDeposit.depositPerPersonCents)} per attendee × {data.cabinDeposit.confirmedCount} attendees)
+                      Collected by <strong>{data.cabinDeposit.payerName}</strong> ({formatMoney(data.cabinDeposit.depositPerPersonCents)} advance deposit received from {data.cabinDeposit.confirmedCount} attendees)
                     </p>
                   </div>
-                  <span style={{ fontWeight: 700, fontSize: "1rem", color: "#0f172a" }}>
-                    {formatMoney(data.cabinDeposit.amountCents)}
+                  <span style={{ fontWeight: 700, fontSize: "1rem", color: "#166534" }}>
+                    -{formatMoney(data.cabinDeposit.amountCents)}
                   </span>
                 </div>
               </div>
