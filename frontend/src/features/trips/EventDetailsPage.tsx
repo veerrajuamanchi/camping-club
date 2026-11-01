@@ -550,6 +550,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
     }
   }
 
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailRecipientType, setEmailRecipientType] = useState<"admin" | "all">("admin");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSuccessMsg, setEmailSuccessMsg] = useState<string | null>(null);
+  const [emailErrorMsg, setEmailErrorMsg] = useState<string | null>(null);
+
   async function refresh() {
     if (!tripId) return;
     setError(null);
@@ -852,7 +858,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       await refresh();
     } catch (err: unknown) {
       if (
-        (err instanceof TripApiError && (err.status === 409 || err.code === "trip_at_capacity")) ||
+        (err instanceof TripApiError && (err.status === 409 || err.code === "trip_at_capacity" || err.code === "23514")) ||
         (err instanceof Error && /capacity/i.test(err.message))
       ) {
         setRsvpError("Could not promote member. The trip may be at capacity.");
@@ -861,6 +867,33 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       }
     } finally {
       setRsvpBusy(false);
+    }
+  }
+
+  async function removeFromWaitlist(memberId: string, displayName: string) {
+    if (!details) return;
+    if (!window.confirm(`Are you sure you want to remove ${displayName} from the waitlist?`)) return;
+    setRsvpBusy(true);
+    setRsvpError(null);
+    try {
+      await api("admin_remove_from_waitlist", {
+        tripId: details.tripId,
+        memberId,
+      });
+      await refresh();
+    } catch (err: unknown) {
+      setRsvpError("Could not remove member from waitlist. Refresh and try again.");
+    } finally {
+      setRsvpBusy(false);
+    }
+  }
+
+  async function withdrawFromWaitlist() {
+    if (!window.confirm("Are you sure you want to withdraw from the waitlist for this trip?")) return;
+    try {
+      await submitRsvpWithChoice("not_coming");
+    } catch {
+      // error handled in submitRsvpWithChoice
     }
   }
 
@@ -911,8 +944,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const daysUntilTrip = details.startsOn ? (Date.parse(details.startsOn) - Date.parse(today)) / 86_400_000 : null;
   const showLateWithdrawalWarning = (details.myRsvp?.response === "coming" && rsvpChoice === "not_coming") &&
     daysUntilTrip !== null && daysUntilTrip >= 0 && daysUntilTrip <= 30;
-  const isComing = details.myRsvp?.response === "coming";
-  const isNotComing = details.myRsvp?.response === "not_coming";
+  const currentWaitlistPosition = details.myWaitlistPosition ?? waitlistedPosition;
+  const isWaitlisted = currentWaitlistPosition !== null && currentWaitlistPosition !== undefined;
+  const isComing = details.myRsvp?.response === "coming" && !isWaitlisted;
+  const isNotComing = details.myRsvp?.response === "not_coming" && !isWaitlisted;
   const confirmedAttendees = (details.participantEntries ?? [])
     .filter((p) => p.response === "coming")
     .map((p) => {
@@ -922,7 +957,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         displayName: p.displayName?.trim() || fallbackName || "Camper",
       };
     });
-  const rsvpStatusLabel = details.myWaitlistPosition
+  const rsvpStatusLabel = currentWaitlistPosition
     ? "Waitlisted"
     : isComing
       ? "Going"
@@ -1251,6 +1286,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                   onClick={() => setShowTimeSlotsModal(true)}
                 >
                   🍽️ Manage Meals &amp; Chores
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", background: "#f0fdf4", borderColor: "#86efac", color: "#166534" }}
+                  onClick={() => {
+                    setEmailSuccessMsg(null);
+                    setEmailErrorMsg(null);
+                    setShowEmailModal(true);
+                  }}
+                >
+                  📧 Send Briefing Email
                 </button>
                 <button
                   type="button"
@@ -1591,8 +1638,8 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           <div
             className="card"
             style={{
-              background: details.myRsvp?.response === "not_coming" ? "#f8fafc" : requiredCompletedCount === totalRequiredCount ? "#f0fdf4" : "#fffbeb",
-              border: `1.5px solid ${details.myRsvp?.response === "not_coming" ? "#cbd5e1" : requiredCompletedCount === totalRequiredCount ? "#86efac" : "#f59e0b"}`,
+              background: isWaitlisted ? "#fffbeb" : isNotComing ? "#f8fafc" : requiredCompletedCount === totalRequiredCount ? "#f0fdf4" : "#fffbeb",
+              border: `1.5px solid ${isWaitlisted ? "#f59e0b" : isNotComing ? "#cbd5e1" : requiredCompletedCount === totalRequiredCount ? "#86efac" : "#f59e0b"}`,
               padding: "1rem 1.25rem",
               borderRadius: "10px",
             }}
@@ -1611,26 +1658,28 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 style={{
                   margin: 0,
                   fontWeight: 700,
-                  color: details.myRsvp?.response === "not_coming" ? "#475569" : requiredCompletedCount === totalRequiredCount ? "#166534" : "#92400e",
+                  color: isWaitlisted ? "#92400e" : isNotComing ? "#475569" : requiredCompletedCount === totalRequiredCount ? "#166534" : "#92400e",
                   fontSize: "1.05rem",
                   letterSpacing: "0.3px",
                 }}
               >
-                {details.myRsvp?.response === "not_coming"
+                {isWaitlisted || isNotComing
                   ? "⚡ Required From You"
                   : `⚡ Required From You (${requiredCompletedCount} of ${totalRequiredCount} Completed)`}
               </h2>
               <span
                 style={{
-                  background: details.myRsvp?.response === "not_coming" ? "#f1f5f9" : requiredCompletedCount === totalRequiredCount ? "#dcfce7" : "#fef3c7",
-                  color: details.myRsvp?.response === "not_coming" ? "#64748b" : requiredCompletedCount === totalRequiredCount ? "#15803d" : "#b45309",
+                  background: isWaitlisted ? "#fef3c7" : isNotComing ? "#f1f5f9" : requiredCompletedCount === totalRequiredCount ? "#dcfce7" : "#fef3c7",
+                  color: isWaitlisted ? "#b45309" : isNotComing ? "#64748b" : requiredCompletedCount === totalRequiredCount ? "#15803d" : "#b45309",
                   fontSize: "0.75rem",
                   fontWeight: 700,
                   padding: "3px 8px",
                   borderRadius: "4px",
                 }}
               >
-                {details.myRsvp?.response === "not_coming"
+                {isWaitlisted
+                  ? `Waitlisted (#${currentWaitlistPosition})`
+                  : isNotComing
                   ? "Not Attending"
                   : requiredCompletedCount === totalRequiredCount
                   ? "All Done ✓"
@@ -1638,7 +1687,48 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </span>
             </div>
 
-            {details.myRsvp?.response === "not_coming" ? (
+            {isWaitlisted ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <div
+                  data-testid="hub-rsvp-row"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#ffffff",
+                    padding: "0.6rem 0.85rem",
+                    borderRadius: "8px",
+                    border: "1.5px solid #f59e0b",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "#d97706", fontWeight: 700, marginRight: "0.35rem" }}>⏳</span>
+                    <strong>RSVP Status</strong>:{" "}
+                    <span style={{ color: "#b45309", fontWeight: 700 }}>
+                      Waitlisted (Position #{currentWaitlistPosition})
+                    </span>
+                  </div>
+                  <div>
+                    {canChangeRsvp && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ fontSize: "0.8rem", padding: "0.25rem 0.6rem", color: "#dc2626", borderColor: "#fca5a5" }}
+                        disabled={rsvpBusy}
+                        onClick={() => void withdrawFromWaitlist()}
+                      >
+                        {rsvpBusy ? "Withdrawing…" : "Withdraw / Leave Waitlist"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "#92400e", lineHeight: 1.5 }}>
+                  You confirmed interest in Going, but the event is currently at capacity. You are #{currentWaitlistPosition} on the waitlist and are not confirmed to attend yet. No tasks or deposits are required unless a spot opens up.
+                </p>
+              </div>
+            ) : isNotComing ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
                 <div
                   data-testid="hub-rsvp-row"
@@ -2627,11 +2717,16 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 <button
                   type="button"
                   className={
-                    rsvpChoice === "coming" || (!rsvpChoice && details.myRsvp?.response === "coming")
+                    isWaitlisted
+                      ? "selected"
+                      : rsvpChoice === "coming" || (!rsvpChoice && details.myRsvp?.response === "coming")
                       ? "selected"
                       : "secondary-button"
                   }
                   onClick={() => {
+                    if (isWaitlisted) {
+                      return;
+                    }
                     if (details.myRsvp?.response !== "coming") {
                       setShowConfirmGoingModal(true);
                       setRsvpChoice("coming");
@@ -2641,7 +2736,11 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     setRsvpError(null);
                   }}
                 >
-                  {!rsvpChoice && details.myRsvp?.response === "coming" ? "Going ✓" : "Going"}
+                  {isWaitlisted
+                    ? `Waitlisted (Going) ✓`
+                    : !rsvpChoice && details.myRsvp?.response === "coming"
+                    ? "Going ✓"
+                    : "Going"}
                 </button>
                 <button
                   type="button"
@@ -2654,6 +2753,30 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 >
                   Not Going
                 </button>
+              </div>
+            )}
+
+            {rsvpChoice === "coming" && details.myRsvp?.response !== "coming" && !isWaitlisted && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: "0.6rem",
+                  backgroundColor: "#fef2f2",
+                  border: "2px solid #ef4444",
+                  color: "#b91c1c",
+                  padding: "0.65rem 0.85rem",
+                  borderRadius: "8px",
+                  fontSize: "0.88rem",
+                  fontWeight: 600,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" }}>
+                  <span>🚨</span>
+                  <span style={{ fontWeight: 800, textTransform: "uppercase" }}>NOT CONFIRMED YET!</span>
+                </div>
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#991b1b" }}>
+                  Please complete the agreement and click <strong>&quot;Confirm Going&quot;</strong> in the dialog to lock in your RSVP.
+                </p>
               </div>
             )}
 
@@ -2686,10 +2809,21 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </button>
             )}
 
-            {waitlistedPosition !== null && (
-              <p role="status">
-                You are #{waitlistedPosition} on the waitlist. The administrator will notify you if a spot opens.
-              </p>
+            {currentWaitlistPosition !== null && currentWaitlistPosition !== undefined && (
+              <div style={{ margin: "0.75rem 0", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", padding: "0.75rem 0.85rem", borderRadius: "6px" }}>
+                <p role="status" style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>
+                  You are #{currentWaitlistPosition} on the waitlist. The administrator will notify you if a spot opens.
+                </p>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", color: "#dc2626", borderColor: "#fca5a5" }}
+                  disabled={rsvpBusy}
+                  onClick={() => void withdrawFromWaitlist()}
+                >
+                  {rsvpBusy ? "Withdrawing…" : "Leave / Withdraw from Waitlist"}
+                </button>
+              </div>
             )}
 
             {rsvpError && (
@@ -2876,15 +3010,32 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             )}
 
             {isAdmin && (details.waitlistEntries ?? []).length > 0 && (
-              <details style={{ marginTop: "1rem" }}>
-                <summary>Waitlist ({(details.waitlistEntries ?? []).length})</summary>
-                <ol>
+              <details style={{ marginTop: "1rem" }} open>
+                <summary style={{ fontWeight: 600, cursor: "pointer" }}>Waitlist ({(details.waitlistEntries ?? []).length})</summary>
+                <ol style={{ paddingLeft: "1.25rem", margin: "0.5rem 0" }}>
                   {(details.waitlistEntries ?? []).map((w) => (
-                    <li key={w.memberId}>
-                      #{w.position} {w.displayName}
-                      <button type="button" disabled={rsvpBusy} onClick={() => void promoteFromWaitlist(w.memberId)}>
-                        Promote
-                      </button>
+                    <li key={w.memberId} style={{ marginBottom: "0.45rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <span>#{w.position} <strong>{w.displayName}</strong></span>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          style={{ fontSize: "0.78rem", padding: "0.2rem 0.55rem" }}
+                          disabled={rsvpBusy}
+                          onClick={() => void promoteFromWaitlist(w.memberId)}
+                        >
+                          Promote
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          style={{ fontSize: "0.78rem", padding: "0.2rem 0.55rem", color: "#dc2626", borderColor: "#fca5a5" }}
+                          disabled={rsvpBusy}
+                          onClick={() => void removeFromWaitlist(w.memberId, w.displayName)}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ol>
@@ -3151,6 +3302,120 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           }}
           onClose={() => setShowDutyPromptModal(false)}
         />
+      )}
+
+      {showEmailModal && details && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="send-briefing-title">
+          <div className="modal-content" style={{ maxWidth: "560px", padding: "1.5rem" }}>
+            <h2 id="send-briefing-title" style={{ marginTop: 0, fontSize: "1.25rem", color: "#0f172a" }}>
+              📧 Send Trip Briefing Email
+            </h2>
+            <p style={{ fontSize: "0.88rem", color: "#475569", margin: "0.25rem 0 1rem" }}>
+              Dispatch an official summary email containing Who's Coming, Carpools, Activity Pools, and Gear/Supplies Commitments.
+            </p>
+
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+                Select Recipients:
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="recipientType"
+                    value="admin"
+                    checked={emailRecipientType === "admin"}
+                    onChange={() => setEmailRecipientType("admin")}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <div>
+                    <strong>Admin Only (Test Mode)</strong> <span style={{ color: "#16a34a", fontSize: "0.75rem", fontWeight: 700 }}>(Recommended)</span>
+                    <p style={{ margin: "0.15rem 0 0", fontSize: "0.82rem", color: "#64748b" }}>
+                      Sends a test preview exclusively to your admin email address to review formatting before broadcasting.
+                    </p>
+                  </div>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="recipientType"
+                    value="all"
+                    checked={emailRecipientType === "all"}
+                    onChange={() => setEmailRecipientType("all")}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <div>
+                    <strong>All Confirmed Attendees</strong> ({details.comingCount} members)
+                    <p style={{ margin: "0.15rem 0 0", fontSize: "0.82rem", color: "#64748b" }}>
+                      Sends the briefing to all confirmed attendees and the admin team.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ fontSize: "0.85rem", color: "#334155", background: "#f1f5f9", padding: "0.75rem", borderRadius: "6px", marginBottom: "1.25rem" }}>
+              <strong>Included Sections:</strong>
+              <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.25rem" }}>
+                <li>👥 Confirmed Attendees Roster ({details.comingCount})</li>
+                <li>🚗 Carpools, Drivers &amp; Riders</li>
+                <li>🎟️ Activity Pools &amp; Vouchers</li>
+                <li>🎒 Trip Commitments (Gear &amp; Supplies)</li>
+              </ul>
+            </div>
+
+            {emailSuccessMsg && (
+              <p role="status" style={{ background: "#dcfce7", color: "#166534", padding: "0.6rem 0.85rem", borderRadius: "6px", fontSize: "0.88rem", fontWeight: 600 }}>
+                {emailSuccessMsg}
+              </p>
+            )}
+
+            {emailErrorMsg && (
+              <p role="alert" className="form-error" style={{ margin: "0.5rem 0" }}>
+                {emailErrorMsg}
+              </p>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "1rem" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={emailSending}
+                onClick={() => setShowEmailModal(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={emailSending}
+                onClick={async () => {
+                  if (!details) return;
+                  setEmailSending(true);
+                  setEmailErrorMsg(null);
+                  setEmailSuccessMsg(null);
+                  try {
+                    const res = await api<{ sent: boolean; recipientCount: number; reason?: string }>("admin_send_trip_summary_email", {
+                      tripId: details.tripId,
+                      recipientType: emailRecipientType,
+                    });
+                    if (res?.sent) {
+                      setEmailSuccessMsg(`✓ Briefing email successfully dispatched to ${res.recipientCount} recipient${res.recipientCount === 1 ? "" : "s"}!`);
+                    } else {
+                      setEmailErrorMsg(`Email dispatch failed: ${res?.reason || "Check server email credentials."}`);
+                    }
+                  } catch (err: unknown) {
+                    setEmailErrorMsg((err as Error)?.message || "Failed to dispatch email.");
+                  } finally {
+                    setEmailSending(false);
+                  }
+                }}
+              >
+                {emailSending ? "Sending…" : emailRecipientType === "admin" ? "Send Test Email to Admin" : "Send to All Attendees"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showEditLogistics && details && (

@@ -182,6 +182,7 @@ describe("EventDetailsPage", () => {
     await screen.findByText("December Camping");
 
     await user.click(screen.getByRole("button", { name: "Going" }));
+    expect(screen.getAllByText(/NOT CONFIRMED YET/i).length).toBeGreaterThanOrEqual(1);
     expect(
       screen.getByText(/by selecting going you agree to the current camping constitution/i)
     ).toBeInTheDocument();

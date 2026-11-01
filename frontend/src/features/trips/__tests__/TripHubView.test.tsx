@@ -21,7 +21,7 @@ const mockTripHubData = {
   comingCount: 4,
   spotsRemaining: 2,
   waitlistCount: 0,
-  myWaitlistPosition: null,
+  myWaitlistPosition: null as number | null,
   myDutyCount: 1,
   taskQuotaTarget: 2,
   myDailyWorkload: {
@@ -456,6 +456,28 @@ describe("Task 5: Frontend 'My Trip Hub' Dashboard Refactor", () => {
     renderTripHub(notComingData);
 
     expect(await screen.findByText(/You're not attending this event\. No tasks or deposits required\./i)).toBeInTheDocument();
+    expect(screen.queryByTestId("hub-deposit-row")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("hub-chores-row")).not.toBeInTheDocument();
+  });
+
+  it("displays waitlisted banner and status in Required From You hub when user is on waitlist", async () => {
+    const waitlistedData = {
+      ...mockTripHubData,
+      myWaitlistPosition: 1,
+      myRsvp: {
+        response: "not_coming" as const,
+        version: 1,
+        acknowledgmentId: null,
+        updatedAt: "2026-10-01T00:00:00Z",
+      },
+    };
+
+    renderTripHub(waitlistedData);
+
+    expect(await screen.findByText(/Waitlisted \(Position #1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/You confirmed interest in Going, but the event is currently at capacity/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Withdraw \/ Leave Waitlist|Change to Not Going/i })).toBeInTheDocument();
+    expect(screen.queryByText(/You're not attending this event\. No tasks or deposits required\./i)).not.toBeInTheDocument();
     expect(screen.queryByTestId("hub-deposit-row")).not.toBeInTheDocument();
     expect(screen.queryByTestId("hub-chores-row")).not.toBeInTheDocument();
   });

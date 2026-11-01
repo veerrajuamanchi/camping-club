@@ -159,6 +159,26 @@ export function ConfirmGoingModal({
             color: "#334155",
           }}
         >
+          {/* Red Alert: Not confirmed yet */}
+          <div
+            role="alert"
+            style={{
+              backgroundColor: "#fef2f2",
+              border: "1.5px solid #ef4444",
+              color: "#b91c1c",
+              padding: "0.65rem 0.85rem",
+              borderRadius: "8px",
+              fontSize: "0.88rem",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
+          >
+            <span>🚨</span>
+            <span>NOT CONFIRMED YET: You must check the box below and click &quot;Confirm Going&quot; to lock in your spot!</span>
+          </div>
+
           <p style={{ margin: 0, lineHeight: 1.5 }}>
             By selecting Going you agree to the current Camping Constitution
             {bundleVersion != null ? ` (version ${bundleVersion})` : ""}.
@@ -271,36 +291,44 @@ export function ConfirmGoingModal({
             borderBottomLeftRadius: "13px",
             borderBottomRightRadius: "13px",
             display: "flex",
-            justifyContent: "flex-end",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
             gap: "0.75rem",
           }}
         >
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={busy}
-            onClick={onClose}
-            style={{ padding: "0.45rem 0.95rem", fontSize: "0.9rem" }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="primary-button"
-            disabled={busy}
-            onClick={() => void handleConfirmClick()}
-            style={{
-              padding: "0.45rem 1.25rem",
-              fontSize: "0.9rem",
-              fontWeight: 700,
-              background: "#16a34a",
-              borderColor: "#15803d",
-              color: "#ffffff",
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
-          >
-            {busy ? "Saving…" : "Confirm Going"}
-          </button>
+          <div style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+            <span>⚠️</span>
+            <span>Not confirmed until you click:</span>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busy}
+              onClick={onClose}
+              style={{ padding: "0.45rem 0.95rem", fontSize: "0.9rem" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busy}
+              onClick={() => void handleConfirmClick()}
+              style={{
+                padding: "0.45rem 1.25rem",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                background: "#16a34a",
+                borderColor: "#15803d",
+                color: "#ffffff",
+                cursor: busy ? "not-allowed" : "pointer",
+              }}
+            >
+              {busy ? "Saving…" : "Confirm Going"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -319,9 +319,10 @@ function EventCard({
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: trip.clubTimezone ?? "America/Los_Angeles" }).format(new Date());
   const isOpen = trip.pollStatus !== "draft" && trip.eventStatus !== "cancelled" && !!trip.endsOn && trip.endsOn >= today;
   const daysUntilTrip = trip.startsOn ? (Date.parse(trip.startsOn) - Date.parse(today)) / 86_400_000 : null;
-  const isComing = trip.myRsvp?.response === "coming";
-  const isNotComing = trip.myRsvp?.response === "not_coming";
-  const needsAcknowledgment = choice === "coming" && !isComing;
+  const isWaitlisted = Boolean(trip.myWaitlistPosition);
+  const isComing = trip.myRsvp?.response === "coming" && !isWaitlisted;
+  const isNotComing = trip.myRsvp?.response === "not_coming" && !isWaitlisted;
+  const needsAcknowledgment = choice === "coming" && !isComing && !isWaitlisted;
 
   const dateLabel = !trip.startsOn || !trip.endsOn ? "Dates TBA" : `${trip.startsOn} – ${trip.endsOn}`;
 
@@ -601,15 +602,16 @@ function EventCard({
             <button
               type="button"
               disabled={!isOpen}
-              aria-label={!choice && isComing ? "Going ✓" : "Going"}
-              className={`rsvp-pill-btn ${choice === "coming" || (!choice && isComing) ? "active selected" : ""}`}
+              aria-label={!choice && isComing ? "Going ✓" : isWaitlisted && !choice ? "Waitlisted ✓" : "Going"}
+              className={`rsvp-pill-btn ${choice === "coming" || (!choice && (isComing || isWaitlisted)) ? "active selected" : ""}`}
               onClick={() => {
                 if (!isOpen) return;
+                if (isWaitlisted && !choice) return;
                 setChoice(isComing && !choice ? null : "coming");
                 setError(null);
               }}
             >
-              {!choice && isComing ? "Yes, Going ✓" : "Yes, Going"}
+              {!choice && isComing ? "Yes, Going ✓" : isWaitlisted && !choice ? `Waitlisted (Going #${trip.myWaitlistPosition}) ✓` : "Yes, Going"}
             </button>
             <button
               type="button"
@@ -626,6 +628,55 @@ function EventCard({
               No, Not Going
             </button>
           </div>
+          {isWaitlisted && !choice && (
+            <div
+              role="status"
+              style={{
+                marginTop: "0.6rem",
+                backgroundColor: "#fffbeb",
+                border: "1.5px solid #f59e0b",
+                color: "#92400e",
+                padding: "0.65rem 0.85rem",
+                borderRadius: "8px",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" }}>
+                <span>⏳</span>
+                <span style={{ fontWeight: 800 }}>WAITLISTED (Position #{trip.myWaitlistPosition})</span>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.83rem", color: "#92400e" }}>
+                You confirmed interest in Going. Because this trip is at capacity, you are not confirmed to attend yet. You will be notified if a spot opens up.
+              </p>
+            </div>
+          )}
+          {choice === "coming" && !isComing && !isWaitlisted && (
+            <div
+              role="alert"
+              className="rsvp-pending-alert"
+              style={{
+                marginTop: "0.6rem",
+                backgroundColor: "#fef2f2",
+                border: "2px solid #ef4444",
+                color: "#b91c1c",
+                padding: "0.65rem 0.85rem",
+                borderRadius: "8px",
+                fontSize: "0.88rem",
+                fontWeight: 600,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" }}>
+                <span>🚨</span>
+                <span style={{ fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                  NOT CONFIRMED YET!
+                </span>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#991b1b", fontWeight: 500 }}>
+                You must review the Camping Constitution below, check the agreement, and click <strong>&quot;Confirm Going&quot;</strong> to secure your spot.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -734,7 +785,22 @@ function EventCard({
           {trip.myWaitlistPosition && (
             <span className="status-badge-not-going status-chip status-waitlisted">Waitlisted</span>
           )}
-          {!isComing && !isNotComing && !trip.myWaitlistPosition && (
+          {choice === "coming" && !isComing && (
+            <span
+              style={{
+                backgroundColor: "#fee2e2",
+                border: "1px solid #f87171",
+                color: "#dc2626",
+                fontWeight: 700,
+                padding: "0.2rem 0.55rem",
+                borderRadius: "4px",
+                fontSize: "0.8rem",
+              }}
+            >
+              ⚠️ NOT CONFIRMED (Pending &quot;Confirm Going&quot;)
+            </span>
+          )}
+          {!isComing && !isNotComing && !trip.myWaitlistPosition && choice !== "coming" && (
             <span className="status-chip status-none">No response</span>
           )}
           {isComing && (
@@ -778,6 +844,24 @@ function EventCard({
 
       {choice === "coming" && needsAcknowledgment && trip.currentRuleBundle && (
         <section className="rules-acknowledgment" aria-label="Camping Constitution acknowledgment">
+          <div
+            style={{
+              backgroundColor: "#fef2f2",
+              border: "1.5px solid #ef4444",
+              color: "#b91c1c",
+              padding: "0.65rem 0.85rem",
+              borderRadius: "6px",
+              fontWeight: 700,
+              fontSize: "0.88rem",
+              marginBottom: "1rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
+          >
+            <span>🚨</span>
+            <span>NOT CONFIRMED YET: Check the box below and click &quot;Confirm Going&quot; to complete your RSVP!</span>
+          </div>
           <h3>Camping Constitution · version {trip.currentRuleBundle.version}</h3>
           <div className="rules-list">
             {trip.currentRuleBundle.rules.map((rule) => (
@@ -791,9 +875,24 @@ function EventCard({
             <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
             <span>I have read and agree to the Camping Constitution shown above.</span>
           </label>
-          <button type="button" onClick={() => void submit()} disabled={busy}>
-            {busy ? "Saving…" : "Confirm Going"}
-          </button>
+          <div style={{ marginTop: "0.75rem" }}>
+            <p style={{ color: "#dc2626", fontWeight: 700, fontSize: "0.88rem", margin: "0 0 0.4rem 0" }}>
+              ⚠️ You are NOT confirmed yet until you click the button below:
+            </p>
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={busy}
+              style={{
+                backgroundColor: acknowledged ? "#16a34a" : "#dc2626",
+                borderColor: acknowledged ? "#15803d" : "#b91c1c",
+                color: "#ffffff",
+                fontWeight: 700,
+              }}
+            >
+              {busy ? "Saving…" : "Confirm Going"}
+            </button>
+          </div>
         </section>
       )}
 
@@ -1068,8 +1167,10 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
     setError(null);
     try {
       setCalendar(await api<Calendar>("get_calendar"));
-    } catch {
-      setError("The trip calendar could not be loaded. Please try again.");
+    } catch (err: unknown) {
+      console.error("Trip calendar load failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`The trip calendar could not be loaded. Please try again.${msg ? ` (${msg})` : ""}`);
     } finally {
       setLoading(false);
     }

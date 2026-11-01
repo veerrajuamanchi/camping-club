@@ -39,6 +39,7 @@ describe("TripCalendarPage", () => {
     render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
     await screen.findByText(/January 2027/);
     fireEvent.click(screen.getByRole("button", { name: "Going" }));
+    expect(screen.getAllByText(/NOT CONFIRMED YET/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Coming is an interest response only.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
     expect(await screen.findByText("Acknowledge the Camping Constitution before selecting Going.")).toBeInTheDocument();
@@ -46,6 +47,27 @@ describe("TripCalendarPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
     await waitFor(() => expect(api).toHaveBeenCalledWith("submit_rsvp", expect.objectContaining({
       tripId: "trip-1", response: "coming", bundleId: "bundle-1", contentHash: "a".repeat(64), expectedVersion: 0,
+    })));
+  });
+
+  it("clearly indicates in red that member is NOT confirmed yet until they click Confirm Going", async () => {
+    const api = vi.fn(async () => makeCalendar());
+    render(<TripCalendarPage isAdmin={false} api={api as unknown as TripApi} />);
+    await screen.findByText(/January 2027/);
+
+    expect(screen.queryByText(/NOT CONFIRMED YET/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Going" }));
+
+    expect(screen.getAllByText(/NOT CONFIRMED YET/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/You must review the Camping Constitution below/i)).toBeInTheDocument();
+    expect(screen.getByText(/You are NOT confirmed yet until you click the button below/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /I have read and agree/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Going" }));
+
+    await waitFor(() => expect(api).toHaveBeenCalledWith("submit_rsvp", expect.objectContaining({
+      tripId: "trip-1", response: "coming",
     })));
   });
 

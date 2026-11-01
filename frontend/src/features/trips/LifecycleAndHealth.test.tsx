@@ -66,7 +66,7 @@ describe("EventDetailsPage Lifecycle & Health", () => {
 
     // Verify exception text explaining "Why?" and "Action Required"
     expect(screen.getByText(/Cabin booking status or critical trip readiness records are unconfirmed or stale/i)).toBeInTheDocument();
-    expect(screen.getByText(/Action:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Action:/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders Active Camping banner with directions and camp host contact when on-site", async () => {
