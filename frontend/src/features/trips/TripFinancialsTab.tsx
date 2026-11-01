@@ -420,25 +420,24 @@ export function TripFinancialsTab({
       });
     }
 
-    // 3. Shared Receipts & Website Fees
-    for (const exp of (data.expenses ?? [])) {
+    // 3. Shared Member Receipts (excluding website maintenance)
+    const nonWebsiteExpenses = (data.expenses ?? []).filter((exp) => exp.expenseType !== "website_maintenance");
+    const websiteExpenses = (data.expenses ?? []).filter((exp) => exp.expenseType === "website_maintenance");
+
+    for (const exp of nonWebsiteExpenses) {
       const expAllocs = exp.allocations ?? [];
-      const isWebsite = exp.expenseType === "website_maintenance";
       const isDynamic = exp.splitMode === "all_attendees";
       let tagLabel = `👥 Custom Split (${expAllocs.length} campers)`;
       let tagStyle = { bg: "#fef3c7", color: "#92400e", border: "#fde68a" };
 
-      if (isWebsite) {
-        tagLabel = "🌐 Website Maintenance";
-        tagStyle = { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" };
-      } else if (isDynamic) {
+      if (isDynamic) {
         tagLabel = "🌐 All Attendees (Dynamic)";
         tagStyle = { bg: "#dcfce7", color: "#166534", border: "#86efac" };
       }
 
       rows.push({
         id: `exp-${exp.id}`,
-        category: isWebsite ? "website" : "shared",
+        category: "shared",
         title: exp.description,
         tagLabel,
         tagStyle,
@@ -450,6 +449,52 @@ export function TripFinancialsTab({
         allocationsMap: new Map(expAllocs.map((a) => [a.memberId, a.allocatedCents])),
       });
     }
+
+    // 4. Website Build & Maintenance Fees (consolidated into two distinct canonical rows)
+    const firstEventAllocs = new Map<string, number>();
+    const returningMemberAllocs = new Map<string, number>();
+    let adminPayerName = "Veerraju Amanchi";
+    let adminPayerId = "";
+
+    for (const we of websiteExpenses) {
+      if (we.payerName) adminPayerName = we.payerName;
+      if (we.payerMemberId) adminPayerId = we.payerMemberId;
+      for (const a of (we.allocations ?? [])) {
+        if (we.description.includes("2.50") || we.description.includes("Returning")) {
+          returningMemberAllocs.set(a.memberId, a.allocatedCents);
+        } else {
+          firstEventAllocs.set(a.memberId, a.allocatedCents);
+        }
+      }
+    }
+
+    // Row 1: Website Build & Maintenance Fee ($5.00 - First Event)
+    const firstEventTotalCents = Array.from(firstEventAllocs.values()).reduce((sum, c) => sum + c, 0);
+    rows.push({
+      id: "website-fee-first-event",
+      category: "website",
+      title: "🌐 Website Build & Maintenance Fee ($5.00 - First Event)",
+      tagLabel: "🌐 Website Maintenance ($5.00)",
+      tagStyle: { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
+      payerName: adminPayerName,
+      payerMemberId: adminPayerId,
+      totalCents: firstEventTotalCents,
+      allocationsMap: firstEventAllocs,
+    });
+
+    // Row 2: Website Build & Maintenance Fee ($2.50 - Returning Member)
+    const returningMemberTotalCents = Array.from(returningMemberAllocs.values()).reduce((sum, c) => sum + c, 0);
+    rows.push({
+      id: "website-fee-returning-member",
+      category: "website",
+      title: "🌐 Website Build & Maintenance Fee ($2.50 - Returning Member)",
+      tagLabel: "🌐 Website Maintenance ($2.50)",
+      tagStyle: { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
+      payerName: adminPayerName,
+      payerMemberId: adminPayerId,
+      totalCents: returningMemberTotalCents,
+      allocationsMap: returningMemberAllocs,
+    });
 
     return rows;
   }, [data, confirmedAttendees, currentMemberId]);
@@ -1494,12 +1539,12 @@ export function TripFinancialsTab({
             {/* Member Shared Receipts */}
             <div style={{ display: "grid", gap: "0.5rem" }}>
               <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>🧾 Shared Member Receipts</h4>
-              {(!data?.expenses || data.expenses.length === 0) ? (
+              {(!data?.expenses || data.expenses.filter((e) => e.expenseType !== "website_maintenance").length === 0) ? (
                 <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>
                   No shared receipts submitted yet.
                 </p>
               ) : (
-                (data.expenses ?? []).map((exp) => (
+                (data.expenses ?? []).filter((e) => e.expenseType !== "website_maintenance").map((exp) => (
                   <div
                     key={exp.id}
                     style={{
