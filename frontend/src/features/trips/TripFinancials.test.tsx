@@ -207,7 +207,7 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
 
     // Cabin deposit
     expect(screen.getByText(/Cabin Deposit Advance/i)).toBeInTheDocument();
-    expect(screen.getAllByText("$150.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/-?\$150\.00/).length).toBeGreaterThan(0);
 
     // Carpool reimbursement ($0.76/mi)
     expect(screen.getByText(/Carpool Mileage Reimbursements \(\$0\.76\/mile\)/i)).toBeInTheDocument();

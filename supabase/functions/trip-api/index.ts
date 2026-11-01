@@ -1146,7 +1146,7 @@ async function getTripDetails(member: Member, tripId: string): Promise<Record<st
     cabinBookingStatus: trip.cabin_booking_status,
     selectedCampsiteId: trip.selected_campsite_id,
     additionalInformation: trip.additional_information,
-    tripMileageRateCents: trip.trip_mileage_rate_cents ?? 76,
+    tripMileageRateCents: trip.trip_mileage_rate_cents ?? 50,
     depositAmountCents: trip.deposit_amount_cents ?? 5000,
     cabinPayerMemberId: trip.cabin_payer_member_id ?? null,
     depositStatus: trip.cabin_payer_member_id === member.member_id ? "exempt" : (ownRsvp?.deposit_status ?? "unpaid"),
@@ -1483,7 +1483,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     };
   });
 
-  const ratePerMile = trip.trip_mileage_rate_cents ?? 76;
+  const ratePerMile = trip.trip_mileage_rate_cents ?? 50;
   const carpoolReimbursements = rawCarpools
     .filter((cp: any) => {
       const occupantCount = ((cp as any).riders ?? []).length + 1;
@@ -1535,11 +1535,13 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   let cabinDeposit = null;
   if (cabinPayerId && confirmedAttendees.length > 0) {
-    const confirmedDepositCount = (rsvpsResult.data ?? []).filter(
+    const confirmedDepositMembers = (rsvpsResult.data ?? []).filter(
       (r: any) => r.member_id !== cabinPayerId && (r.deposit_status === "confirmed" || r.deposit_status === "confirmed_by_admin")
-    ).length;
+    );
+    const confirmedDepositMemberIds = new Set(confirmedDepositMembers.map((r: any) => r.member_id));
+    const confirmedDepositCount = confirmedDepositMemberIds.size;
     const cabinAllocs = confirmedAttendees
-      .filter((mId) => mId !== cabinPayerId)
+      .filter((mId) => mId !== cabinPayerId && confirmedDepositMemberIds.has(mId))
       .map((mId) => ({
         memberId: mId,
         memberName: nameMap.get(mId) ?? "Attendee",
