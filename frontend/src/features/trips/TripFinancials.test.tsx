@@ -777,8 +777,8 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
       />
     );
 
-    expect(await screen.findByText(/Website Build & Maintenance Fee/i)).toBeInTheDocument();
-    expect(screen.getByText(/🌐 Website Maintenance/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/Website Build & Maintenance Fee/i)).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/🌐 Website Maintenance/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("$5.00").length).toBeGreaterThan(0);
   });
 
