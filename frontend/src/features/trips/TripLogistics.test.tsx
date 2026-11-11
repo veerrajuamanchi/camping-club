@@ -46,6 +46,8 @@ const mockCarpools: TripCarpool[] = [
     endingMileage: 45380.0,
     totalMiles: 180.0,
     departureDetails: "Leaving Friday 3:30 PM from Northgate",
+    meetingTime: "3:15 PM",
+    meetingLocation: "Northgate Park & Ride",
     isMyCarpool: false,
     riders: [
       { id: "rider-1", riderMemberId: "member-1", displayName: "Dave K.", isMe: true },
@@ -205,6 +207,8 @@ describe("Phase 4: Trip Logistics, Commitments & Carpools", () => {
     expect(screen.getByText(/45200 mi/i)).toBeInTheDocument();
     expect(screen.getByText(/45380 mi/i)).toBeInTheDocument();
     expect(screen.getByText(/180 mi/i)).toBeInTheDocument();
+    expect(screen.getByText(/3:15 PM/i)).toBeInTheDocument();
+    expect(screen.getByText(/Northgate Park & Ride/i)).toBeInTheDocument();
     expect(screen.getByText(/Dave K. \(You\)/i)).toBeInTheDocument();
   });
 

@@ -336,6 +336,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const [activityImageError, setActivityImageError] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailRecipientType, setEmailRecipientType] = useState<"admin" | "all">("admin");
+  const [emailSections, setEmailSections] = useState({
+    whosComing: true,
+    carpools: true,
+    activityPairings: true,
+    commitments: false,
+    activityVouchers: false,
+  });
   const [emailSending, setEmailSending] = useState(false);
   const [emailSuccessMsg, setEmailSuccessMsg] = useState<string | null>(null);
   const [emailErrorMsg, setEmailErrorMsg] = useState<string | null>(null);
@@ -2758,14 +2765,52 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </div>
             </div>
 
-            <div style={{ fontSize: "0.85rem", color: "#334155", background: "#f1f5f9", padding: "0.75rem", borderRadius: "6px", marginBottom: "1.25rem" }}>
-              <strong>Included Sections:</strong>
-              <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.25rem" }}>
-                <li>👥 Confirmed Attendees Roster ({details.comingCount})</li>
-                <li>🚗 Carpools, Drivers &amp; Riders</li>
-                <li>🎟️ Activity Pools &amp; Vouchers</li>
-                <li>🎒 Trip Commitments (Gear &amp; Supplies)</li>
-              </ul>
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem", color: "#0f172a" }}>
+                Select Sections to Include:
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.whosComing}
+                    onChange={(e) => setEmailSections({ ...emailSections, whosComing: e.target.checked })}
+                  />
+                  <span>👥 <strong>Who's Coming ({details.comingCount} Confirmed)</strong></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.carpools}
+                    onChange={(e) => setEmailSections({ ...emailSections, carpools: e.target.checked })}
+                  />
+                  <span>🚗 <strong>Carpools &amp; Transit</strong> (Vehicles, Drivers, Riders, Meeting Time &amp; Location)</span>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.activityPairings}
+                    onChange={(e) => setEmailSections({ ...emailSections, activityPairings: e.target.checked })}
+                  />
+                  <span>🏎️ <strong>Activity Pool Vehicle Pairings</strong> (Pairings per vehicle/unit &amp; location)</span>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.commitments}
+                    onChange={(e) => setEmailSections({ ...emailSections, commitments: e.target.checked })}
+                  />
+                  <span>🎒 <strong>Trip Commitments &amp; Supplies</strong> (Assigned items &amp; critical gear)</span>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.activityVouchers}
+                    onChange={(e) => setEmailSections({ ...emailSections, activityVouchers: e.target.checked })}
+                  />
+                  <span>🎟️ <strong>Activity Pools &amp; Vouchers</strong> (Purchasers, order &amp; voucher codes)</span>
+                </label>
+              </div>
             </div>
 
             {emailSuccessMsg && (
@@ -2802,6 +2847,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     const res = await api<{ sent: boolean; recipientCount: number; reason?: string }>("admin_send_trip_summary_email", {
                       tripId: details.tripId,
                       recipientType: emailRecipientType,
+                      sections: emailSections,
                     });
                     if (res?.sent) {
                       setEmailSuccessMsg(`✓ Briefing email successfully dispatched to ${res.recipientCount} recipient${res.recipientCount === 1 ? "" : "s"}!`);

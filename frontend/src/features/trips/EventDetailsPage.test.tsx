@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -1137,6 +1137,70 @@ describe("EventDetailsPage", () => {
       const signedActivityRow = screen.getByTestId("hub-activity-row");
       expect(within(signedActivityRow).getByText(/✓ Waiver Signed/i)).toBeInTheDocument();
       expect(within(signedActivityRow).getByText("Attending ✓")).toBeInTheDocument();
+    });
+
+    it("opens Briefing Email modal with customizable section checkboxes and dispatches selected sections", async () => {
+      let dispatchedPayload: any = null;
+      const apiMock = vi.fn().mockImplementation((action: string, payload?: any) => {
+        if (action === "get_trip_details") return Promise.resolve(tripData);
+        if (action === "get_constitution") return Promise.resolve({ definitions: [] });
+        if (action === "get_trip_task_matrix") return Promise.resolve({ timeSlots: [], activeAssignments: [], driverCredits: [], myQuotaProgress: null, confirmedAttendees: [] });
+        if (action === "get_trip_financials") return Promise.resolve({ expenses: [], carpoolReimbursements: [], cabinDeposit: null, settlementRun: null, balances: [], transfers: [], isFinalized: false });
+        if (action === "admin_send_trip_summary_email") {
+          dispatchedPayload = payload;
+          return Promise.resolve({ sent: true, recipientCount: 1 });
+        }
+        return Promise.resolve({});
+      });
+
+      renderPage(tripData, true, apiMock, "/trips/trip-1", "admin", "m1");
+      await screen.findByText("December Camping");
+
+      const briefingBtn = screen.getByRole("button", { name: /📧 Send Briefing Email/i });
+      fireEvent.click(briefingBtn);
+
+      expect(screen.getByText("📧 Send Trip Briefing Email")).toBeInTheDocument();
+      expect(screen.getByText(/Select Sections to Include:/i)).toBeInTheDocument();
+
+      // Check the default checkbox states
+      const whosComingCheckbox = screen.getByRole("checkbox", { name: /Who's Coming/i }) as HTMLInputElement;
+      const carpoolsCheckbox = screen.getByRole("checkbox", { name: /Carpools & Transit/i }) as HTMLInputElement;
+      const activityPairingsCheckbox = screen.getByRole("checkbox", { name: /Activity Pool Vehicle Pairings/i }) as HTMLInputElement;
+      const commitmentsCheckbox = screen.getByRole("checkbox", { name: /Trip Commitments & Supplies/i }) as HTMLInputElement;
+      const vouchersCheckbox = screen.getByRole("checkbox", { name: /Activity Pools & Vouchers/i }) as HTMLInputElement;
+
+      expect(whosComingCheckbox.checked).toBe(true);
+      expect(carpoolsCheckbox.checked).toBe(true);
+      expect(activityPairingsCheckbox.checked).toBe(true);
+      expect(commitmentsCheckbox.checked).toBe(false);
+      expect(vouchersCheckbox.checked).toBe(false);
+
+      // Toggle commitments ON and carpools OFF
+      fireEvent.click(commitmentsCheckbox);
+      fireEvent.click(carpoolsCheckbox);
+
+      expect(commitmentsCheckbox.checked).toBe(true);
+      expect(carpoolsCheckbox.checked).toBe(false);
+
+      // Dispatch test email
+      const sendTestBtn = screen.getByRole("button", { name: /Send Test Email to Admin/i });
+      fireEvent.click(sendTestBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Briefing email successfully dispatched/i)).toBeInTheDocument();
+      });
+
+      expect(dispatchedPayload).toEqual({
+        tripId: "trip-1",
+        recipientType: "admin",
+        sections: {
+          whosComing: true,
+          carpools: false,
+          activityPairings: true,
+          commitments: true,
+          activityVouchers: false,
+        },
+      });
     });
   });
 });

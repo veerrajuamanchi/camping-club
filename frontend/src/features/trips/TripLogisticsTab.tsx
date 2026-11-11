@@ -51,6 +51,8 @@ export type TripCarpool = {
   endingMileage: number | null;
   totalMiles: number | null;
   departureDetails: string | null;
+  meetingTime?: string | null;
+  meetingLocation?: string | null;
   isMyCarpool: boolean;
   riders: Array<{
     id: string;
@@ -141,6 +143,8 @@ export function TripLogisticsTab({
   const [carpoolVehicle, setCarpoolVehicle] = useState("");
   const [carpoolMaxSeats, setCarpoolMaxSeats] = useState(4);
   const [carpoolDeparture, setCarpoolDeparture] = useState("");
+  const [carpoolMeetingTime, setCarpoolMeetingTime] = useState("");
+  const [carpoolMeetingLocation, setCarpoolMeetingLocation] = useState("");
   const [carpoolSelectedRiders, setCarpoolSelectedRiders] = useState<string[]>([]);
 
   // Mileage form state
@@ -289,6 +293,8 @@ export function TripLogisticsTab({
     setCarpoolVehicle("");
     setCarpoolMaxSeats(4);
     setCarpoolDeparture("");
+    setCarpoolMeetingTime("");
+    setCarpoolMeetingLocation("");
     setCarpoolSelectedRiders([]);
     setEditingCarpool(null);
     setShowAddCarpoolModal(true);
@@ -300,6 +306,8 @@ export function TripLogisticsTab({
     setCarpoolVehicle(cp.vehicleDescription);
     setCarpoolMaxSeats(cp.maxSeats);
     setCarpoolDeparture(cp.departureDetails || "");
+    setCarpoolMeetingTime(cp.meetingTime || "");
+    setCarpoolMeetingLocation(cp.meetingLocation || "");
     setCarpoolSelectedRiders(cp.riders.map((r) => r.riderMemberId));
     setShowAddCarpoolModal(true);
   }
@@ -319,6 +327,8 @@ export function TripLogisticsTab({
           vehicleDescription: carpoolVehicle.trim(),
           maxSeats: carpoolMaxSeats,
           departureDetails: carpoolDeparture.trim() || null,
+          meetingTime: carpoolMeetingTime.trim() || null,
+          meetingLocation: carpoolMeetingLocation.trim() || null,
           riderMemberIds: carpoolSelectedRiders,
         });
       } else {
@@ -329,6 +339,8 @@ export function TripLogisticsTab({
           vehicleDescription: carpoolVehicle.trim(),
           maxSeats: carpoolMaxSeats,
           departureDetails: carpoolDeparture.trim() || null,
+          meetingTime: carpoolMeetingTime.trim() || null,
+          meetingLocation: carpoolMeetingLocation.trim() || null,
           riderMemberIds: carpoolSelectedRiders,
         });
       }
@@ -578,8 +590,15 @@ export function TripLogisticsTab({
                     </div>
                   </div>
 
+                  {(cp.meetingTime || cp.meetingLocation) && (
+                    <p style={{ margin: "0.4rem 0 0.2rem", fontSize: "0.85rem", color: "#1e293b" }}>
+                      {cp.meetingTime && <span>⏰ <strong>Meeting Time:</strong> {cp.meetingTime} &nbsp;&nbsp;</span>}
+                      {cp.meetingLocation && <span>📍 <strong>Meeting Location:</strong> {cp.meetingLocation}</span>}
+                    </p>
+                  )}
+
                   {cp.departureDetails && (
-                    <p style={{ margin: "0.5rem 0", fontSize: "0.85rem", color: "#374151" }}>
+                    <p style={{ margin: "0.25rem 0 0.5rem", fontSize: "0.85rem", color: "#475569" }}>
                       <strong>Departure details:</strong> {cp.departureDetails}
                     </p>
                   )}
@@ -1003,12 +1022,32 @@ export function TripLogisticsTab({
               </label>
 
               <label>
-                Departure Details:
+                Meeting Time (Optional):
+                <input
+                  type="text"
+                  value={carpoolMeetingTime}
+                  onChange={(e) => setCarpoolMeetingTime(e.target.value)}
+                  placeholder="e.g., Friday 4:30 PM or 8:00 AM"
+                />
+              </label>
+
+              <label>
+                Meeting Location (Optional):
+                <input
+                  type="text"
+                  value={carpoolMeetingLocation}
+                  onChange={(e) => setCarpoolMeetingLocation(e.target.value)}
+                  placeholder="e.g., Dublin BART or North Gate Park & Ride"
+                />
+              </label>
+
+              <label>
+                Departure Details / Notes:
                 <input
                   type="text"
                   value={carpoolDeparture}
                   onChange={(e) => setCarpoolDeparture(e.target.value)}
-                  placeholder="e.g., Leaving Friday 4:00 PM from North Gate Park & Ride"
+                  placeholder="e.g., Leaving right on time, trunk has space for 2 coolers"
                 />
               </label>
 

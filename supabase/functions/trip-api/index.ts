@@ -137,6 +137,8 @@ const inputSchemas = {
     startingMileage: z.number().nonnegative().nullable().optional(),
     endingMileage: z.number().nonnegative().nullable().optional(),
     departureDetails: z.string().trim().max(1000).nullable().optional(),
+    meetingTime: z.string().trim().max(100).nullable().optional(),
+    meetingLocation: z.string().trim().max(200).nullable().optional(),
     riderMemberIds: z.array(uuid).optional(),
   }).strict(),
   record_carpool_mileage: z.object({
@@ -292,7 +294,17 @@ const inputSchemas = {
   request_withdrawal: z.object({ tripId: uuid, reason }).strict(),
   admin_promote_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason }).strict(),
   admin_remove_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason: reason.optional() }).strict(),
-  admin_send_trip_summary_email: z.object({ tripId: uuid, recipientType: z.enum(["admin", "all"]).default("admin") }).strict(),
+  admin_send_trip_summary_email: z.object({
+    tripId: uuid,
+    recipientType: z.enum(["admin", "all"]).default("admin"),
+    sections: z.object({
+      whosComing: z.boolean().optional(),
+      carpools: z.boolean().optional(),
+      activityPairings: z.boolean().optional(),
+      commitments: z.boolean().optional(),
+      activityVouchers: z.boolean().optional(),
+    }).optional(),
+  }).strict(),
   admin_list_master_responsibilities: z.object({ includeInactive: z.boolean().optional() }).strict(),
   admin_create_master_responsibility: z.object({
     title: z.string().trim().min(3).max(100),
@@ -1221,7 +1233,7 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
     service.from("trip_carpools")
       .select(`
         id, trip_id, driver_member_id, vehicle_description, max_seats,
-        starting_mileage, ending_mileage, departure_details, created_at, updated_at,
+        starting_mileage, ending_mileage, departure_details, meeting_time, meeting_location, created_at, updated_at,
         riders:trip_carpool_riders(id, carpool_id, rider_member_id)
       `)
       .eq("trip_id", tripId)
@@ -1293,6 +1305,8 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
       endingMileage: cp.ending_mileage != null ? Number(cp.ending_mileage) : null,
       totalMiles,
       departureDetails: cp.departure_details,
+      meetingTime: cp.meeting_time ?? null,
+      meetingLocation: cp.meeting_location ?? null,
       isMyCarpool: cp.driver_member_id === member.member_id,
       riders,
     };
@@ -1867,8 +1881,23 @@ async function getConstitution(member: Member, tripId?: string): Promise<Record<
 async function sendTripSummaryEmail(
   authUser: { id: string; email?: string },
   tripId: string,
-  recipientType: "admin" | "all"
+  recipientType: "admin" | "all",
+  sections?: {
+    whosComing?: boolean;
+    carpools?: boolean;
+    activityPairings?: boolean;
+    commitments?: boolean;
+    activityVouchers?: boolean;
+  }
 ): Promise<{ sent: boolean; recipientCount: number; recipients: string[]; provider?: string; reason?: string }> {
+  const selectedSections = {
+    whosComing: sections?.whosComing ?? true,
+    carpools: sections?.carpools ?? true,
+    activityPairings: sections?.activityPairings ?? true,
+    commitments: sections?.commitments ?? false,
+    activityVouchers: sections?.activityVouchers ?? false,
+  };
+
   const { data: trip, error: tripErr } = await service
     .from("camping_trips")
     .select("id, title, month_key, starts_on, ends_on, additional_information, selected_campsite_id")
@@ -1920,7 +1949,7 @@ async function sendTripSummaryEmail(
   // 3. Carpools
   const { data: rawCarpools } = await service
     .from("trip_carpools")
-    .select("id, driver_member_id, vehicle_description, max_seats, departure_details")
+    .select("id, driver_member_id, vehicle_description, max_seats, departure_details, meeting_time, meeting_location")
     .eq("trip_id", tripId);
 
   const carpoolIds = (rawCarpools ?? []).map((c: any) => c.id);
@@ -1941,7 +1970,7 @@ async function sendTripSummaryEmail(
   // 4. Activities & Vouchers
   const { data: rawActivities } = await service
     .from("trip_activities")
-    .select("id, title, activity_date, start_time, location_name")
+    .select("id, title, activity_date, start_time, location_name, address, unit_label")
     .eq("trip_id", tripId);
 
   const activityIds = (rawActivities ?? []).map((a: any) => a.id);
@@ -2009,11 +2038,49 @@ async function sendTripSummaryEmail(
     carpoolsHtml = rawCarpools.map((cp: any, idx: number) => {
       const driverName = nameByMemberId.get(cp.driver_member_id) || "Designated Driver";
       const riderNames = (ridersByCarpool.get(cp.id) ?? []).map((rId: string) => nameByMemberId.get(rId) || "Passenger").join(", ");
+      const meetingDetails: string[] = [];
+      if (cp.meeting_time) meetingDetails.push(`⏰ <strong>Meeting Time:</strong> ${cp.meeting_time}`);
+      if (cp.meeting_location) meetingDetails.push(`📍 <strong>Meeting Location:</strong> ${cp.meeting_location}`);
+      if (cp.departure_details) meetingDetails.push(`📝 <em>${cp.departure_details}</em>`);
+
       return `
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
           <strong style="color: #0f172a;">🚗 Vehicle ${idx + 1}: ${driverName}</strong> (${cp.vehicle_description || "Personal Vehicle"})<br/>
           <span style="font-size: 0.88rem; color: #334155;"><strong>Seats:</strong> ${cp.max_seats} max | <strong>Passengers:</strong> ${riderNames || "None assigned yet"}</span>
-          ${cp.departure_details ? `<br/><span style="font-size: 0.85rem; color: #475569;">📍 <em>Departure: ${cp.departure_details}</em></span>` : ""}
+          ${meetingDetails.length > 0 ? `<br/><span style="font-size: 0.85rem; color: #475569;">${meetingDetails.join(" &nbsp;|&nbsp; ")}</span>` : ""}
+        </div>
+      `;
+    }).join("");
+  }
+
+  let activityPairingsHtml = "";
+  if (!rawActivities || rawActivities.length === 0) {
+    activityPairingsHtml = `<p style="color: #64748b; font-style: italic;">No activities scheduled.</p>`;
+  } else {
+    activityPairingsHtml = rawActivities.map((act: any) => {
+      const actGroups = groupsByActivity.get(act.id) ?? [];
+      const unitLabel = act.unit_label || "Vehicle";
+      const icon = /kayak/i.test(unitLabel) ? "🛶" : /boat/i.test(unitLabel) ? "🚤" : /bike/i.test(unitLabel) ? "🚲" : /car/i.test(unitLabel) || /gocar/i.test(unitLabel) ? "🏎️" : "🚗";
+
+      const pairingsList = actGroups.length === 0
+        ? `<p style="color: #64748b; font-style: italic; margin: 4px 0;">No vehicle pairings formed yet.</p>`
+        : actGroups.map((g: any) => {
+            const memberNames = (g.members ?? []).map((m: any) => nameByMemberId.get(m.member_id) || "Member").join(", ");
+            const vehicleLabel = g.group_name || `${unitLabel} #${g.group_number}`;
+            return `
+              <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-top: 6px; font-size: 0.9rem;">
+                <strong style="color: #0f172a;">${icon} ${vehicleLabel}:</strong> <span style="color: #334155;">${memberNames || "Unassigned"}</span>
+              </div>
+            `;
+          }).join("");
+
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
+          <strong style="color: #0f172a; font-size: 1rem;">🎟️ ${act.title}</strong> — 📅 ${act.activity_date}${act.start_time ? ` at ${act.start_time}` : ""}<br/>
+          ${act.location_name ? `<span style="font-size: 0.85rem; color: #475569;">📍 <strong>Location:</strong> ${act.location_name}${act.address ? ` (${act.address})` : ""}</span><br/>` : ""}
+          <div style="margin-top: 4px;">
+            ${pairingsList}
+          </div>
         </div>
       `;
     }).join("");
@@ -2083,6 +2150,65 @@ async function sendTripSummaryEmail(
     </li>
   `).join("");
 
+  const bodySections: string[] = [];
+
+  if (selectedSections.whosComing) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          👥 Who's Coming (${attendeesList.length} Confirmed)
+        </h3>
+        <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem;">
+          ${attendeesHtml || "<li>No confirmed attendees yet.</li>"}
+        </ul>
+      </div>
+    `);
+  }
+
+  if (selectedSections.carpools) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🚗 Carpools &amp; Transit
+        </h3>
+        ${carpoolsHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.activityPairings) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🏎️ Activity Pool Vehicle Pairings
+        </h3>
+        ${activityPairingsHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.activityVouchers) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎟️ Activity Pools &amp; Vouchers
+        </h3>
+        ${activitiesHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.commitments) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎒 Trip Commitments &amp; Supplies
+        </h3>
+        ${commitmentsHtml}
+      </div>
+    `);
+  }
+
   const emailSubject = `🏕️ Trip Briefing: ${tripTitle} (${datesStr})`;
   const emailHtml = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #ffffff; color: #1e293b;">
@@ -2096,35 +2222,7 @@ async function sendTripSummaryEmail(
         </p>
       </div>
 
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          👥 Who's Coming (${attendeesList.length} Confirmed)
-        </h3>
-        <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem;">
-          ${attendeesHtml || "<li>No confirmed attendees yet.</li>"}
-        </ul>
-      </div>
-
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          🚗 Carpools &amp; Transit
-        </h3>
-        ${carpoolsHtml}
-      </div>
-
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          🎟️ Activity Pools &amp; Vouchers
-        </h3>
-        ${activitiesHtml}
-      </div>
-
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          🎒 Trip Commitments &amp; Supplies
-        </h3>
-        ${commitmentsHtml}
-      </div>
+      ${bodySections.join("")}
 
       <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
         <a href="${webAppUrl.replace(/\/$/, "")}/trips/${tripId}" style="background-color: #16a34a; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
@@ -2626,6 +2724,8 @@ Deno.serve(async (request) => {
         p_starting_mileage: input.startingMileage ?? null,
         p_ending_mileage: input.endingMileage ?? null,
         p_departure_details: input.departureDetails ?? null,
+        p_meeting_time: input.meetingTime ?? null,
+        p_meeting_location: input.meetingLocation ?? null,
         p_rider_member_ids: input.riderMemberIds ?? [],
         p_actor_id: member.member_id,
         p_is_admin: member.member_role === "admin",
@@ -2883,7 +2983,12 @@ Deno.serve(async (request) => {
     case "admin_send_trip_summary_email": {
       if (member.member_role !== "admin") return errorResponse(request, 403, "forbidden", requestId);
       try {
-        const summaryResult = await sendTripSummaryEmail(authUser, input.tripId as string, (input.recipientType as "admin" | "all") || "admin");
+        const summaryResult = await sendTripSummaryEmail(
+          authUser,
+          input.tripId as string,
+          (input.recipientType as "admin" | "all") || "admin",
+          input.sections as any
+        );
         try {
           await finish(authUser.id, action, aggregate, key, input, null);
         } catch {
