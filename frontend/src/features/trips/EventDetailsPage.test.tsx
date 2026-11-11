@@ -1166,20 +1166,24 @@ describe("EventDetailsPage", () => {
       const whosComingCheckbox = screen.getByRole("checkbox", { name: /Who's Coming/i }) as HTMLInputElement;
       const carpoolsCheckbox = screen.getByRole("checkbox", { name: /Carpools & Transit/i }) as HTMLInputElement;
       const activityPairingsCheckbox = screen.getByRole("checkbox", { name: /Activity Pool Vehicle Pairings/i }) as HTMLInputElement;
-      const commitmentsCheckbox = screen.getByRole("checkbox", { name: /Trip Commitments & Supplies/i }) as HTMLInputElement;
+      const sharedGearCheckbox = screen.getByRole("checkbox", { name: /Shared Gear & Supplies/i }) as HTMLInputElement;
+      const dutiesByDayCheckbox = screen.getByRole("checkbox", { name: /Duties & Chores by Day/i }) as HTMLInputElement;
+      const commitmentsTableCheckbox = screen.getByRole("checkbox", { name: /Full Itemized Gear Table/i }) as HTMLInputElement;
       const vouchersCheckbox = screen.getByRole("checkbox", { name: /Activity Pools & Vouchers/i }) as HTMLInputElement;
 
       expect(whosComingCheckbox.checked).toBe(true);
       expect(carpoolsCheckbox.checked).toBe(true);
       expect(activityPairingsCheckbox.checked).toBe(true);
-      expect(commitmentsCheckbox.checked).toBe(false);
+      expect(sharedGearCheckbox.checked).toBe(true);
+      expect(dutiesByDayCheckbox.checked).toBe(true);
+      expect(commitmentsTableCheckbox.checked).toBe(false);
       expect(vouchersCheckbox.checked).toBe(false);
 
-      // Toggle commitments ON and carpools OFF
-      fireEvent.click(commitmentsCheckbox);
+      // Toggle commitmentsTable ON and carpools OFF
+      fireEvent.click(commitmentsTableCheckbox);
       fireEvent.click(carpoolsCheckbox);
 
-      expect(commitmentsCheckbox.checked).toBe(true);
+      expect(commitmentsTableCheckbox.checked).toBe(true);
       expect(carpoolsCheckbox.checked).toBe(false);
 
       // Dispatch test email
@@ -1197,7 +1201,9 @@ describe("EventDetailsPage", () => {
           whosComing: true,
           carpools: false,
           activityPairings: true,
-          commitments: true,
+          sharedGear: true,
+          dutiesByDay: true,
+          commitmentsTable: true,
           activityVouchers: false,
         },
       });

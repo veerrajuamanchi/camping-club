@@ -301,6 +301,9 @@ const inputSchemas = {
       whosComing: z.boolean().optional(),
       carpools: z.boolean().optional(),
       activityPairings: z.boolean().optional(),
+      sharedGear: z.boolean().optional(),
+      dutiesByDay: z.boolean().optional(),
+      commitmentsTable: z.boolean().optional(),
       commitments: z.boolean().optional(),
       activityVouchers: z.boolean().optional(),
     }).optional(),
@@ -1886,6 +1889,9 @@ async function sendTripSummaryEmail(
     whosComing?: boolean;
     carpools?: boolean;
     activityPairings?: boolean;
+    sharedGear?: boolean;
+    dutiesByDay?: boolean;
+    commitmentsTable?: boolean;
     commitments?: boolean;
     activityVouchers?: boolean;
   }
@@ -1894,6 +1900,9 @@ async function sendTripSummaryEmail(
     whosComing: sections?.whosComing ?? true,
     carpools: sections?.carpools ?? true,
     activityPairings: sections?.activityPairings ?? true,
+    sharedGear: sections?.sharedGear ?? true,
+    dutiesByDay: sections?.dutiesByDay ?? true,
+    commitmentsTable: sections?.commitmentsTable ?? false,
     commitments: sections?.commitments ?? false,
     activityVouchers: sections?.activityVouchers ?? false,
   };
@@ -2012,6 +2021,50 @@ async function sendTripSummaryEmail(
     .neq("commitment_type", "individual_pack")
     .order("category")
     .order("item_name");
+
+  // 6. Time Slots and Duty Assignments (for Duties by Day)
+  const { data: rawTimeSlots } = await service
+    .from("trip_time_slots")
+    .select(`
+      id,
+      slot_date,
+      time_block,
+      label,
+      is_enabled,
+      sort_order,
+      duties:trip_slot_duties(
+        id,
+        capacity,
+        workload_weight,
+        is_active,
+        responsibility:master_responsibilities(
+          id,
+          title,
+          category
+        )
+      )
+    `)
+    .eq("trip_id", tripId)
+    .neq("is_enabled", false)
+    .order("slot_date", { ascending: true })
+    .order("sort_order", { ascending: true });
+
+  const slotDutyIds: string[] = [];
+  for (const s of rawTimeSlots ?? []) {
+    for (const d of (s as any).duties ?? []) {
+      if (d.is_active !== false) {
+        slotDutyIds.push(d.id);
+      }
+    }
+  }
+
+  const { data: rawDutyAssignments } = slotDutyIds.length > 0
+    ? await service
+        .from("trip_duty_assignments")
+        .select("id, slot_duty_id, member_id, status")
+        .in("slot_duty_id", slotDutyIds)
+        .in("status", ["claimed", "assigned_by_admin"])
+    : { data: [] };
 
   // Determine recipients
   let toList: string[] = [];
@@ -2144,6 +2197,197 @@ async function sendTripSummaryEmail(
     `;
   }
 
+  // 5b. Shared Gear by Camper
+  const commitmentsByMember = new Map<string, any[]>();
+  const unassignedCommitments: any[] = [];
+  for (const c of commitments ?? []) {
+    if (c.assigned_member_id) {
+      const list = commitmentsByMember.get(c.assigned_member_id) ?? [];
+      list.push(c);
+      commitmentsByMember.set(c.assigned_member_id, list);
+    } else {
+      unassignedCommitments.push(c);
+    }
+  }
+
+  let sharedGearHtml = "";
+  if (!commitments || commitments.length === 0) {
+    sharedGearHtml = `<p style="color: #64748b; font-style: italic;">No shared gear or supplies listed.</p>`;
+  } else {
+    const memberIdsWithItems = Array.from(commitmentsByMember.keys());
+    memberIdsWithItems.sort((a, b) => {
+      const nameA = (nameByMemberId.get(a) || "").toLowerCase();
+      const nameB = (nameByMemberId.get(b) || "").toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    const camperCards = memberIdsWithItems.map((mId) => {
+      const mName = nameByMemberId.get(mId) || "Camper";
+      const mPhone = phoneByMemberId.get(mId);
+      const items = commitmentsByMember.get(mId) ?? [];
+      const itemsList = items.map((it: any) => {
+        const critIcon = it.is_critical ? "🚨 " : "• ";
+        const qty = it.quantity_description ? ` <span style="color: #64748b; font-size: 0.85rem;">(${it.quantity_description})</span>` : "";
+        return `<li style="margin-bottom: 4px;">${critIcon}<strong>${it.item_name}</strong>${qty}</li>`;
+      }).join("");
+
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 6px; font-size: 0.95rem;">
+            👤 ${mName} ${mPhone ? `<span style="font-weight: normal; font-size: 0.82rem; color: #64748b;">(${mPhone})</span>` : ""}
+            <span style="float: right; font-size: 0.78rem; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 600;">${items.length} item${items.length === 1 ? "" : "s"}</span>
+          </div>
+          <ul style="padding-left: 18px; margin: 0; font-size: 0.88rem; color: #334155; list-style-type: none;">
+            ${itemsList}
+          </ul>
+        </div>
+      `;
+    });
+
+    if (unassignedCommitments.length > 0) {
+      const unassignedList = unassignedCommitments.map((it: any) => {
+        const critIcon = it.is_critical ? "🚨 " : "• ";
+        const qty = it.quantity_description ? ` <span style="color: #64748b; font-size: 0.85rem;">(${it.quantity_description})</span>` : "";
+        return `<li style="margin-bottom: 4px;">${critIcon}<strong>${it.item_name}</strong>${qty}</li>`;
+      }).join("");
+
+      camperCards.push(`
+        <div style="background-color: #fffbeb; border: 1px dashed #f59e0b; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;">
+          <div style="font-weight: 700; color: #92400e; margin-bottom: 6px; font-size: 0.95rem;">
+            ⚠️ Unassigned / Needs Volunteer
+            <span style="float: right; font-size: 0.78rem; background: #fef3c7; color: #92400e; padding: 2px 7px; border-radius: 4px; font-weight: 600;">${unassignedCommitments.length} item${unassignedCommitments.length === 1 ? "" : "s"}</span>
+          </div>
+          <ul style="padding-left: 18px; margin: 0; font-size: 0.88rem; color: #78350f; list-style-type: none;">
+            ${unassignedList}
+          </ul>
+        </div>
+      `);
+    }
+
+    sharedGearHtml = camperCards.join("");
+  }
+
+  // 6b. Duties by Day (including Driving)
+  const dateSet = new Set<string>();
+  if (trip?.starts_on && trip?.ends_on) {
+    let curr = new Date(trip.starts_on + "T12:00:00Z");
+    const end = new Date(trip.ends_on + "T12:00:00Z");
+    while (curr <= end) {
+      dateSet.add(curr.toISOString().slice(0, 10));
+      curr.setUTCDate(curr.getUTCDate() + 1);
+    }
+  }
+  for (const s of rawTimeSlots ?? []) {
+    if (s.slot_date) dateSet.add(s.slot_date);
+  }
+
+  const sortedDates = Array.from(dateSet).sort();
+
+  let dutiesByDayHtml = "";
+  if (sortedDates.length === 0) {
+    dutiesByDayHtml = `<p style="color: #64748b; font-style: italic;">No dates or duties scheduled.</p>`;
+  } else {
+    dutiesByDayHtml = sortedDates.map((dStr) => {
+      const dutiesByMember = new Map<string, string[]>();
+      const addMemberDuty = (mId: string, text: string) => {
+        const list = dutiesByMember.get(mId) ?? [];
+        list.push(text);
+        dutiesByMember.set(mId, list);
+      };
+
+      // Carpool Driving on trip.starts_on and trip.ends_on
+      if (trip?.starts_on && dStr === trip.starts_on) {
+        for (const cp of rawCarpools ?? []) {
+          if (cp.driver_member_id) {
+            const desc = cp.vehicle_description ? ` (${cp.vehicle_description})` : "";
+            addMemberDuty(cp.driver_member_id, `🚗 <strong>Carpool Driver</strong> — Inbound to campsite${desc}`);
+          }
+        }
+      }
+      if (trip?.ends_on && dStr === trip.ends_on) {
+        for (const cp of rawCarpools ?? []) {
+          if (cp.driver_member_id) {
+            const desc = cp.vehicle_description ? ` (${cp.vehicle_description})` : "";
+            addMemberDuty(cp.driver_member_id, `🚗 <strong>Carpool Driver</strong> — Return trip${desc}`);
+          }
+        }
+      }
+
+      // Scheduled slot duties on this date
+      const slotsOnDate = (rawTimeSlots ?? []).filter((s: any) => s.slot_date === dStr);
+      const unfilledDuties: string[] = [];
+
+      for (const slot of slotsOnDate) {
+        const slotLabel = slot.label || slot.time_block || "General";
+        for (const duty of slot.duties ?? []) {
+          if (duty.is_active === false) continue;
+          const dutyTitle = duty.responsibility?.title || "Duty";
+          const assignments = (rawDutyAssignments ?? []).filter((a: any) => a.slot_duty_id === duty.id);
+          for (const a of assignments) {
+            addMemberDuty(a.member_id, `📋 <strong>${dutyTitle}</strong> (${slotLabel})`);
+          }
+          const openSpots = (duty.capacity || 1) - assignments.length;
+          if (openSpots > 0) {
+            unfilledDuties.push(`${dutyTitle} (${slotLabel}) [${openSpots} open]`);
+          }
+        }
+      }
+
+      let dateHeader = dStr;
+      try {
+        const dt = new Date(dStr + "T12:00:00Z");
+        dateHeader = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+      } catch {
+        dateHeader = dStr;
+      }
+
+      const activeMemberIds = Array.from(dutiesByMember.keys());
+      activeMemberIds.sort((a, b) => {
+        const nameA = (nameByMemberId.get(a) || "").toLowerCase();
+        const nameB = (nameByMemberId.get(b) || "").toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+
+      let dayBody = "";
+      if (activeMemberIds.length === 0 && unfilledDuties.length === 0) {
+        dayBody = `<p style="color: #64748b; font-style: italic; font-size: 0.88rem; margin: 4px 0;">No duties or driving scheduled for this day.</p>`;
+      } else {
+        const memberRows = activeMemberIds.map((mId) => {
+          const mName = nameByMemberId.get(mId) || "Camper";
+          const mPhone = phoneByMemberId.get(mId);
+          const tasks = dutiesByMember.get(mId) ?? [];
+          return `
+            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-top: 6px;">
+              <strong style="color: #0f172a; font-size: 0.92rem;">👤 ${mName}</strong> ${mPhone ? `<span style="font-size: 0.8rem; color: #64748b;">(${mPhone})</span>` : ""}
+              <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.88rem; color: #334155; list-style-type: none;">
+                ${tasks.map((t) => `<li style="margin-bottom: 2px;">${t}</li>`).join("")}
+              </ul>
+            </div>
+          `;
+        }).join("");
+
+        const unfilledNotice = unfilledDuties.length > 0
+          ? `
+            <div style="margin-top: 8px; padding: 8px 12px; background-color: #fef2f2; border: 1px dashed #f87171; border-radius: 6px; font-size: 0.85rem; color: #991b1b;">
+              <strong>⚠️ Volunteers Needed:</strong> ${unfilledDuties.join(", ")}
+            </div>
+          `
+          : "";
+
+        dayBody = memberRows + unfilledNotice;
+      }
+
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+          <div style="font-weight: 700; color: #0f172a; font-size: 1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+            📅 ${dateHeader}
+          </div>
+          ${dayBody}
+        </div>
+      `;
+    }).join("");
+  }
+
   const attendeesHtml = attendeesList.map((a) => `
     <li style="margin-bottom: 4px;">
       <strong>${a.name}</strong> ${a.phone ? `(${a.phone})` : ""}
@@ -2187,6 +2431,39 @@ async function sendTripSummaryEmail(
     `);
   }
 
+  if (selectedSections.sharedGear) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎒 Shared Gear &amp; Supplies (By Camper)
+        </h3>
+        ${sharedGearHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.dutiesByDay) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          📋 Duties &amp; Chores by Day
+        </h3>
+        ${dutiesByDayHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.commitmentsTable || selectedSections.commitments) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          📦 Full Itemized Gear &amp; Supplies Table
+        </h3>
+        ${commitmentsHtml}
+      </div>
+    `);
+  }
+
   if (selectedSections.activityVouchers) {
     bodySections.push(`
       <div style="margin-bottom: 20px;">
@@ -2194,17 +2471,6 @@ async function sendTripSummaryEmail(
           🎟️ Activity Pools &amp; Vouchers
         </h3>
         ${activitiesHtml}
-      </div>
-    `);
-  }
-
-  if (selectedSections.commitments) {
-    bodySections.push(`
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          🎒 Trip Commitments &amp; Supplies
-        </h3>
-        ${commitmentsHtml}
       </div>
     `);
   }

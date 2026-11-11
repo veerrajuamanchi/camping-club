@@ -340,7 +340,9 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
     whosComing: true,
     carpools: true,
     activityPairings: true,
-    commitments: false,
+    sharedGear: true,
+    dutiesByDay: true,
+    commitmentsTable: false,
     activityVouchers: false,
   });
   const [emailSending, setEmailSending] = useState(false);
@@ -2765,51 +2767,113 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </div>
             </div>
 
-            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
-              <label style={{ display: "block", fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem", color: "#0f172a" }}>
-                Select Sections to Include:
-              </label>
+            <div style={{ background: "#f8fafc", border: "1.5px solid #cbd5e1", borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.65rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                <label style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a", margin: 0 }}>
+                  📋 Select Sections to Include:
+                </label>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  <button
+                    type="button"
+                    style={{ fontSize: "0.75rem", padding: "2px 8px", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: "4px", cursor: "pointer", color: "#334155" }}
+                    onClick={() => setEmailSections({
+                      whosComing: true,
+                      carpools: true,
+                      activityPairings: true,
+                      sharedGear: true,
+                      dutiesByDay: true,
+                      commitmentsTable: true,
+                      activityVouchers: true,
+                    })}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    style={{ fontSize: "0.75rem", padding: "2px 8px", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: "4px", cursor: "pointer", color: "#334155" }}
+                    onClick={() => setEmailSections({
+                      whosComing: true,
+                      carpools: true,
+                      activityPairings: true,
+                      sharedGear: true,
+                      dutiesByDay: true,
+                      commitmentsTable: false,
+                      activityVouchers: false,
+                    })}
+                  >
+                    Reset Defaults
+                  </button>
+                </div>
+              </div>
+
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
                   <input
                     type="checkbox"
                     checked={emailSections.whosComing}
                     onChange={(e) => setEmailSections({ ...emailSections, whosComing: e.target.checked })}
+                    style={{ marginTop: "3px" }}
                   />
-                  <span>👥 <strong>Who's Coming ({details.comingCount} Confirmed)</strong></span>
+                  <span>👥 <strong>Who's Coming ({details.comingCount} Confirmed)</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Attendee roster &amp; contacts</span></span>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
                   <input
                     type="checkbox"
                     checked={emailSections.carpools}
                     onChange={(e) => setEmailSections({ ...emailSections, carpools: e.target.checked })}
+                    style={{ marginTop: "3px" }}
                   />
-                  <span>🚗 <strong>Carpools &amp; Transit</strong> (Vehicles, Drivers, Riders, Meeting Time &amp; Location)</span>
+                  <span>🚗 <strong>Carpools &amp; Transit</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Drivers, riders, vehicle seats, meeting time &amp; location</span></span>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
                   <input
                     type="checkbox"
                     checked={emailSections.activityPairings}
                     onChange={(e) => setEmailSections({ ...emailSections, activityPairings: e.target.checked })}
+                    style={{ marginTop: "3px" }}
                   />
-                  <span>🏎️ <strong>Activity Pool Vehicle Pairings</strong> (Pairings per vehicle/unit &amp; location)</span>
+                  <span>🏎️ <strong>Activity Pool Vehicle Pairings</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Pairings per unit &amp; activity meeting location</span></span>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
                   <input
                     type="checkbox"
-                    checked={emailSections.commitments}
-                    onChange={(e) => setEmailSections({ ...emailSections, commitments: e.target.checked })}
+                    checked={emailSections.sharedGear}
+                    onChange={(e) => setEmailSections({ ...emailSections, sharedGear: e.target.checked })}
+                    style={{ marginTop: "3px" }}
                   />
-                  <span>🎒 <strong>Trip Commitments &amp; Supplies</strong> (Assigned items &amp; critical gear)</span>
+                  <span>🎒 <strong>Shared Gear &amp; Supplies (By Camper)</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Items each camper needs to bring + unassigned items</span></span>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.dutiesByDay}
+                    onChange={(e) => setEmailSections({ ...emailSections, dutiesByDay: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>📋 <strong>Duties &amp; Chores by Day</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Daily schedule with cooking, chores, and drivers</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.commitmentsTable}
+                    onChange={(e) => setEmailSections({ ...emailSections, commitmentsTable: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>📦 <strong>Full Itemized Gear Table</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Complete tabular list of all group supplies</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
                   <input
                     type="checkbox"
                     checked={emailSections.activityVouchers}
                     onChange={(e) => setEmailSections({ ...emailSections, activityVouchers: e.target.checked })}
+                    style={{ marginTop: "3px" }}
                   />
-                  <span>🎟️ <strong>Activity Pools &amp; Vouchers</strong> (Purchasers, order &amp; voucher codes)</span>
+                  <span>🎟️ <strong>Activity Pools &amp; Vouchers</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Purchaser receipts, voucher codes, &amp; order IDs</span></span>
                 </label>
+              </div>
+
+              <div style={{ marginTop: "0.65rem", paddingTop: "0.5rem", borderTop: "1px dashed #cbd5e1", fontSize: "0.8rem", color: "#475569" }}>
+                ✉️ <strong>{Object.values(emailSections).filter(Boolean).length}</strong> of {Object.values(emailSections).length} sections will be included.
               </div>
             </div>
 
