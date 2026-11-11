@@ -302,6 +302,7 @@ const inputSchemas = {
       carpools: z.boolean().optional(),
       activityPairings: z.boolean().optional(),
       sharedGear: z.boolean().optional(),
+      individualGear: z.boolean().optional(),
       dutiesByDay: z.boolean().optional(),
       commitmentsTable: z.boolean().optional(),
       commitments: z.boolean().optional(),
@@ -1890,6 +1891,7 @@ async function sendTripSummaryEmail(
     carpools?: boolean;
     activityPairings?: boolean;
     sharedGear?: boolean;
+    individualGear?: boolean;
     dutiesByDay?: boolean;
     commitmentsTable?: boolean;
     commitments?: boolean;
@@ -1901,6 +1903,7 @@ async function sendTripSummaryEmail(
     carpools: sections?.carpools ?? true,
     activityPairings: sections?.activityPairings ?? true,
     sharedGear: sections?.sharedGear ?? true,
+    individualGear: sections?.individualGear ?? true,
     dutiesByDay: sections?.dutiesByDay ?? true,
     commitmentsTable: sections?.commitmentsTable ?? false,
     commitments: sections?.commitments ?? false,
@@ -2019,6 +2022,16 @@ async function sendTripSummaryEmail(
     .eq("trip_id", tripId)
     .eq("is_active", true)
     .neq("commitment_type", "individual_pack")
+    .order("category")
+    .order("item_name");
+
+  // 5c. Individual Packing Gear
+  const { data: individualCommitments } = await service
+    .from("trip_commitments")
+    .select("id, category, item_name, quantity_description, is_critical, commitment_type, is_active")
+    .eq("trip_id", tripId)
+    .eq("is_active", true)
+    .eq("commitment_type", "individual_pack")
     .order("category")
     .order("item_name");
 
@@ -2267,6 +2280,29 @@ async function sendTripSummaryEmail(
     sharedGearHtml = camperCards.join("");
   }
 
+  // 5c. Individual Packing Gear HTML
+  let individualGearHtml = "";
+  if (!individualCommitments || individualCommitments.length === 0) {
+    individualGearHtml = `<p style="color: #64748b; font-style: italic;">No individual packing items configured for this trip.</p>`;
+  } else {
+    const itemsList = individualCommitments.map((it: any) => {
+      const critIcon = it.is_critical ? "🚨 " : "🎒 ";
+      const qty = it.quantity_description ? ` <span style="color: #64748b; font-size: 0.85rem;">(${it.quantity_description})</span>` : "";
+      return `<li style="margin-bottom: 4px;">${critIcon}<strong>${it.item_name}</strong>${qty}</li>`;
+    }).join("");
+
+    individualGearHtml = `
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
+        <p style="margin: 0 0 8px; font-size: 0.88rem; color: #475569;">
+          <em>Every confirmed attendee should bring their own personal essentials:</em>
+        </p>
+        <ul style="padding-left: 18px; margin: 0; font-size: 0.88rem; color: #334155; list-style-type: none;">
+          ${itemsList}
+        </ul>
+      </div>
+    `;
+  }
+
   // 6b. Duties by Day (including Driving)
   const dateSet = new Set<string>();
   if (trip?.starts_on && trip?.ends_on) {
@@ -2438,6 +2474,17 @@ async function sendTripSummaryEmail(
           🎒 Shared Gear &amp; Supplies (By Camper)
         </h3>
         ${sharedGearHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.individualGear) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎒 Individual Gear (What Each Camper Needs to Bring)
+        </h3>
+        ${individualGearHtml}
       </div>
     `);
   }

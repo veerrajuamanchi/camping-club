@@ -414,9 +414,10 @@ export function TripLogisticsTab({
   const sharedCommitments = commitments.filter(
     (c) => c.commitmentType !== "individual_pack" && c.isActive !== false
   );
-  const individualItemsCount = commitments.filter(
+  const individualItems = commitments.filter(
     (c) => c.commitmentType === "individual_pack" && c.isActive !== false
-  ).length;
+  );
+  const individualItemsCount = individualItems.length;
   const criticalMissing = sharedCommitments.filter((c) => c.isCritical && !c.assignedMemberId);
   const filteredCommitments =
     selectedCategory === "all" ? sharedCommitments : sharedCommitments.filter((c) => c.category === selectedCategory);
@@ -853,6 +854,69 @@ export function TripLogisticsTab({
                     </button>
                   )}
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Individual Gear Card */}
+      <div className="card" data-testid="individual-gear-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+          <div>
+            <h2 style={{ margin: 0 }}>🎒 Individual Gear (What Each Camper Needs to Bring)</h2>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.88rem", color: "#6b7280" }}>
+              Every attendee is responsible for packing their own personal essentials.
+            </p>
+          </div>
+          {onOpenPackingChecklist && (
+            <button
+              type="button"
+              className="primary-button"
+              style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+              onClick={onOpenPackingChecklist}
+            >
+              Open Interactive Checklist ({individualItems.length})
+            </button>
+          )}
+        </div>
+
+        {individualItems.length === 0 ? (
+          <p style={{ color: "#64748b", fontStyle: "italic", fontSize: "0.9rem", margin: 0 }}>
+            No individual packing items configured for this trip.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "0.75rem" }}>
+            {individualItems.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "6px",
+                  padding: "0.6rem 0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "0.5rem",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "#0f172a" }}>
+                    {item.isCritical ? "🚨 " : "🎒 "}
+                    {item.itemName}
+                  </div>
+                  {item.quantityDescription && (
+                    <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                      Qty: {item.quantityDescription}
+                    </div>
+                  )}
+                </div>
+                {item.isCritical && (
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, background: "#fee2e2", color: "#991b1b", padding: "2px 6px", borderRadius: "4px" }}>
+                    Required
+                  </span>
+                )}
               </div>
             ))}
           </div>

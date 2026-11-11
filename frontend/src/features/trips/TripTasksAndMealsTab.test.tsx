@@ -386,6 +386,47 @@ describe("TripTasksAndMealsTab", () => {
     });
   });
 
+  it("allows administrators to reassign a camper's duty to another attendee", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_task_matrix") return mockTaskMatrixData;
+      if (action === "admin_reassign_duty") return { reassigned: true };
+      return {};
+    });
+
+    render(
+      <TripTasksAndMealsTab
+        tripId="trip-1"
+        isConfirmedAttendee={true}
+        isAdmin={true}
+        currentMemberId="member-1"
+        api={api}
+      />
+    );
+
+    await screen.findByText("Main Dish Cook");
+
+    const reassignBtn = screen.getByRole("button", { name: /Reassign Charlie Camper/i });
+    await user.click(reassignBtn);
+
+    expect(screen.getByText(/Reassign: Kitchen Cleanup/i)).toBeInTheDocument();
+    expect(screen.getByText(/Currently assigned to:/i)).toBeInTheDocument();
+
+    const newMemberSelect = screen.getByRole("combobox", { name: /New Camper:/i });
+    await user.selectOptions(newMemberSelect, "member-1");
+
+    const confirmReassignBtn = screen.getByRole("button", { name: /^Confirm Reassignment$/i });
+    await user.click(confirmReassignBtn);
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith("admin_reassign_duty", {
+        assignmentId: "assign-1",
+        newMemberId: "member-1",
+        reason: undefined,
+      });
+    });
+  });
+
   it("disables volunteering for non-confirmed attendees", async () => {
     const api = vi.fn().mockImplementation(async (action: string) => {
       if (action === "get_trip_task_matrix") return mockTaskMatrixData;

@@ -102,6 +102,14 @@ export function TripTasksAndMealsTab({
   const [assigningDuty, setAssigningDuty] = useState<TripSlotDuty | null>(null);
   const [selectedMemberToAssign, setSelectedMemberToAssign] = useState<string>("");
 
+  // Admin reassign modal state
+  const [reassigning, setReassigning] = useState<{
+    duty: TripSlotDuty;
+    assignment: DutyAssignment;
+  } | null>(null);
+  const [selectedMemberToReassign, setSelectedMemberToReassign] = useState<string>("");
+  const [reassignReason, setReassignReason] = useState<string>("");
+
   // Admin driver credit modal state
   const [showDriverModal, setShowDriverModal] = useState(false);
   const [driverMemberId, setDriverMemberId] = useState("");
@@ -238,6 +246,36 @@ export function TripTasksAndMealsTab({
           setErrorMsg("Member already holds this duty.");
         } else {
           setErrorMsg("Failed to assign member.");
+        }
+      }
+    });
+  };
+
+  const handleAdminReassign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reassigning || !selectedMemberToReassign) return;
+
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    startTransition(async () => {
+      try {
+        await api("admin_reassign_duty", {
+          assignmentId: reassigning.assignment.id,
+          newMemberId: selectedMemberToReassign,
+          reason: reassignReason.trim() || undefined,
+        });
+        setReassigning(null);
+        setSelectedMemberToReassign("");
+        setReassignReason("");
+        setSuccessMsg("Responsibility reassigned successfully.");
+        await loadData();
+        void onDutyChanged?.();
+      } catch (err: unknown) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === "23505") {
+          setErrorMsg("Target camper already holds this responsibility.");
+        } else {
+          setErrorMsg("Failed to reassign responsibility: " + (error.message || "Unknown error"));
         }
       }
     });
@@ -703,10 +741,41 @@ export function TripTasksAndMealsTab({
                                     borderRadius: "6px",
                                     fontWeight: a.member_id === currentMemberId ? 600 : 400,
                                     border: a.member_id === currentMemberId ? "1px solid #93c5fd" : "1px solid #e2e8f0",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "0.35rem",
                                   }}
                                 >
-                                  {a.member?.display_name ?? "Member"}
-                                  {a.member_id === currentMemberId && " (You)"}
+                                  <span>
+                                    {a.member?.display_name ?? "Member"}
+                                    {a.member_id === currentMemberId && " (You)"}
+                                  </span>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      aria-label={`Reassign ${a.member?.display_name ?? "Volunteer"}`}
+                                      title={`Reassign ${a.member?.display_name ?? "this volunteer"}`}
+                                      style={{
+                                        border: "1px solid #cbd5e1",
+                                        background: "#ffffff",
+                                        borderRadius: "3px",
+                                        cursor: "pointer",
+                                        fontSize: "0.72rem",
+                                        padding: "1px 5px",
+                                        color: "#0284c7",
+                                        fontWeight: 600,
+                                        lineHeight: 1.2,
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setReassigning({ duty, assignment: a });
+                                        setSelectedMemberToReassign("");
+                                        setReassignReason("");
+                                      }}
+                                    >
+                                      🔄 Reassign
+                                    </button>
+                                  )}
                                 </span>
                               ))
                             )}
@@ -978,6 +1047,81 @@ export function TripTasksAndMealsTab({
                   disabled={isPending || !selectedMemberToAssign}
                 >
                   {isPending ? "Assigning…" : "Assign Camper"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Reassign Modal */}
+      {reassigning && (
+        <div className="modal-overlay" onClick={() => setReassigning(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px" }}>
+            <h3 style={{ margin: "0 0 0.5rem 0" }}>
+              Reassign: {reassigning.duty.responsibility?.title ?? "Duty"}
+            </h3>
+            <p style={{ margin: "0 0 1rem 0", fontSize: "0.875rem", color: "#64748b" }}>
+              Currently assigned to: <strong>{reassigning.assignment.member?.display_name ?? "Member"}</strong>.
+              Select a new confirmed camper to reassign this responsibility to.
+            </p>
+            <form onSubmit={handleAdminReassign}>
+              <label style={{ display: "block", marginBottom: "1rem" }}>
+                New Camper:
+                <select
+                  required
+                  aria-label="New Camper:"
+                  value={selectedMemberToReassign}
+                  onChange={(e) => setSelectedMemberToReassign(e.target.value)}
+                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.35rem" }}
+                >
+                  <option value="">-- Choose confirmed attendee --</option>
+                  {attendees
+                    .filter(
+                      (att) =>
+                        att.memberId !== reassigning.assignment.member_id &&
+                        !assignments.some(
+                          (otherA) =>
+                            otherA.slot_duty_id === reassigning.duty.id &&
+                            otherA.member_id === att.memberId &&
+                            otherA.id !== reassigning.assignment.id
+                        )
+                    )
+                    .map((a) => (
+                      <option key={a.memberId} value={a.memberId}>
+                        {a.displayName}
+                      </option>
+                    ))}
+                </select>
+              </label>
+
+              <label style={{ display: "block", marginBottom: "1.25rem" }}>
+                Reason (Optional):
+                <input
+                  type="text"
+                  placeholder="e.g. Volunteer request, schedule conflict"
+                  value={reassignReason}
+                  onChange={(e) => setReassignReason(e.target.value)}
+                  maxLength={200}
+                  style={{ width: "100%", padding: "0.5rem", marginTop: "0.35rem" }}
+                />
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setReassigning(null)}
+                  disabled={isPending}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={isPending || !selectedMemberToReassign}
+                >
+                  {isPending ? "Reassigning…" : "Confirm Reassignment"}
                 </button>
               </div>
             </form>

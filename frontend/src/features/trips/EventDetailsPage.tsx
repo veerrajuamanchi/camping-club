@@ -341,6 +341,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
     carpools: true,
     activityPairings: true,
     sharedGear: true,
+    individualGear: true,
     dutiesByDay: true,
     commitmentsTable: false,
     activityVouchers: false,
@@ -2781,6 +2782,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                       carpools: true,
                       activityPairings: true,
                       sharedGear: true,
+                      individualGear: true,
                       dutiesByDay: true,
                       commitmentsTable: true,
                       activityVouchers: true,
@@ -2796,6 +2798,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                       carpools: true,
                       activityPairings: true,
                       sharedGear: true,
+                      individualGear: true,
                       dutiesByDay: true,
                       commitmentsTable: false,
                       activityVouchers: false,
@@ -2842,6 +2845,15 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     style={{ marginTop: "3px" }}
                   />
                   <span>🎒 <strong>Shared Gear &amp; Supplies (By Camper)</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Items each camper needs to bring + unassigned items</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.individualGear}
+                    onChange={(e) => setEmailSections({ ...emailSections, individualGear: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>🎒 <strong>Individual Gear (What Each Camper Needs to Bring)</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Personal packing checklist items for all attendees</span></span>
                 </label>
                 <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
                   <input

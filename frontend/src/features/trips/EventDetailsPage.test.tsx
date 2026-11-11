@@ -1167,6 +1167,7 @@ describe("EventDetailsPage", () => {
       const carpoolsCheckbox = screen.getByRole("checkbox", { name: /Carpools & Transit/i }) as HTMLInputElement;
       const activityPairingsCheckbox = screen.getByRole("checkbox", { name: /Activity Pool Vehicle Pairings/i }) as HTMLInputElement;
       const sharedGearCheckbox = screen.getByRole("checkbox", { name: /Shared Gear & Supplies/i }) as HTMLInputElement;
+      const individualGearCheckbox = screen.getByRole("checkbox", { name: /Individual Gear/i }) as HTMLInputElement;
       const dutiesByDayCheckbox = screen.getByRole("checkbox", { name: /Duties & Chores by Day/i }) as HTMLInputElement;
       const commitmentsTableCheckbox = screen.getByRole("checkbox", { name: /Full Itemized Gear Table/i }) as HTMLInputElement;
       const vouchersCheckbox = screen.getByRole("checkbox", { name: /Activity Pools & Vouchers/i }) as HTMLInputElement;
@@ -1175,6 +1176,7 @@ describe("EventDetailsPage", () => {
       expect(carpoolsCheckbox.checked).toBe(true);
       expect(activityPairingsCheckbox.checked).toBe(true);
       expect(sharedGearCheckbox.checked).toBe(true);
+      expect(individualGearCheckbox.checked).toBe(true);
       expect(dutiesByDayCheckbox.checked).toBe(true);
       expect(commitmentsTableCheckbox.checked).toBe(false);
       expect(vouchersCheckbox.checked).toBe(false);
@@ -1202,6 +1204,7 @@ describe("EventDetailsPage", () => {
           carpools: false,
           activityPairings: true,
           sharedGear: true,
+          individualGear: true,
           dutiesByDay: true,
           commitmentsTable: true,
           activityVouchers: false,
