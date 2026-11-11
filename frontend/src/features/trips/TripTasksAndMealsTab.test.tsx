@@ -427,6 +427,33 @@ describe("TripTasksAndMealsTab", () => {
     });
   });
 
+  it("shows active Reassign button on full duties for administrators", async () => {
+    const user = userEvent.setup();
+    const api = vi.fn().mockImplementation(async (action: string) => {
+      if (action === "get_trip_task_matrix") return mockTaskMatrixData;
+      return {};
+    });
+
+    render(
+      <TripTasksAndMealsTab
+        tripId="trip-1"
+        isConfirmedAttendee={true}
+        isAdmin={true}
+        currentMemberId="member-1"
+        api={api}
+      />
+    );
+
+    await screen.findByText("Kitchen Cleanup");
+
+    const rowReassignBtn = screen.getByRole("button", { name: /🔄 Reassign…/i });
+    expect(rowReassignBtn).toBeInTheDocument();
+    expect(rowReassignBtn).not.toBeDisabled();
+
+    await user.click(rowReassignBtn);
+    expect(screen.getByText(/Reassign: Kitchen Cleanup/i)).toBeInTheDocument();
+  });
+
   it("disables volunteering for non-confirmed attendees", async () => {
     const api = vi.fn().mockImplementation(async (action: string) => {
       if (action === "get_trip_task_matrix") return mockTaskMatrixData;
