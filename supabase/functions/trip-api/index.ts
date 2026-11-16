@@ -1409,14 +1409,11 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   const rawExpenses = (expensesResult.data ?? []).filter((exp: any) => {
     if (exp.expense_type === "website_maintenance") {
-      const allocatedMemberId = exp.allocations?.[0]?.member_id;
-      // If member is not an active confirmed attendee (e.g. waitlisted or withdrawn), exclude fee
-      if (allocatedMemberId && !confirmedAttendees.includes(allocatedMemberId)) {
-        if (!isFinalized && !exp.is_locked) {
-          service.from("trip_expenses").delete().eq("id", exp.id).then(() => {});
-        }
+      exp.allocations = (exp.allocations ?? []).filter((a: any) => confirmedAttendees.includes(a.member_id));
+      if (exp.allocations.length === 0) {
         return false;
       }
+      exp.amount_cents = exp.allocations.reduce((sum: number, a: any) => sum + (a.allocated_cents || 0), 0);
     }
     return true;
   });
@@ -3195,20 +3192,11 @@ Deno.serve(async (request) => {
             });
             checkError(waitlistError);
 
-            // Clean up any unfinalized website maintenance fee for this member since they are waitlisted
-            const { data: memberAllocRows } = await service
-              .from("trip_expense_allocations")
-              .select("expense_id")
-              .eq("member_id", member.member_id);
-            if (memberAllocRows && memberAllocRows.length > 0) {
-              const expIds = memberAllocRows.map((r: any) => r.expense_id);
-              await service
-                .from("trip_expenses")
-                .delete()
-                .eq("trip_id", input.tripId)
-                .eq("expense_type", "website_maintenance")
-                .eq("is_locked", false)
-                .in("id", expIds);
+            // Clean up / re-sync website maintenance fee for this member since they are waitlisted
+            try {
+              await service.rpc("sync_trip_website_maintenance_fees", { p_trip_id: input.tripId });
+            } catch (syncErr) {
+              console.warn("Failed to sync website fees on waitlist join:", syncErr);
             }
             try {
               await finish(authUser.id, action, aggregate, key, input, (waitlistResult as { entryId?: string })?.entryId ?? null);
@@ -3271,19 +3259,10 @@ Deno.serve(async (request) => {
         .eq("trip_id", input.tripId)
         .eq("member_id", input.memberId);
 
-      const { data: memberAllocRows } = await service
-        .from("trip_expense_allocations")
-        .select("expense_id")
-        .eq("member_id", input.memberId);
-      if (memberAllocRows && memberAllocRows.length > 0) {
-        const expIds = memberAllocRows.map((r: any) => r.expense_id);
-        await service
-          .from("trip_expenses")
-          .delete()
-          .eq("trip_id", input.tripId)
-          .eq("expense_type", "website_maintenance")
-          .eq("is_locked", false)
-          .in("id", expIds);
+      try {
+        await service.rpc("sync_trip_website_maintenance_fees", { p_trip_id: input.tripId });
+      } catch (syncErr) {
+        console.warn("Failed to sync website fees on admin remove waitlist:", syncErr);
       }
 
       try {

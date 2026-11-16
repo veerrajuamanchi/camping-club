@@ -240,7 +240,12 @@ export function TripFinancialsTab({
   const [editIncurredDate, setEditIncurredDate] = useState("");
 
   // Unified Expense Ledger View Mode: "matrix" (Spreadsheet with frozen panes) vs "cards"
-  const [ledgerView, setLedgerView] = useState<"matrix" | "cards">("matrix");
+  const [ledgerView, setLedgerView] = useState<"matrix" | "cards">(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      return "cards";
+    }
+    return "matrix";
+  });
 
   const handleOpenEditExpense = (exp: TripExpense) => {
     setEditingExpense(exp);
@@ -461,31 +466,35 @@ export function TripFinancialsTab({
 
     // Row 1: Website Build & Maintenance Fee ($5.00 - First Event)
     const firstEventTotalCents = Array.from(firstEventAllocs.values()).reduce((sum, c) => sum + c, 0);
-    rows.push({
-      id: "website-fee-first-event",
-      category: "website",
-      title: "🌐 Website Build & Maintenance Fee ($5.00 - First Event)",
-      tagLabel: "🌐 Website Maintenance ($5.00)",
-      tagStyle: { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
-      payerName: adminPayerName,
-      payerMemberId: adminPayerId,
-      totalCents: firstEventTotalCents,
-      allocationsMap: firstEventAllocs,
-    });
+    if (firstEventTotalCents > 0) {
+      rows.push({
+        id: "website-fee-first-event",
+        category: "website",
+        title: "🌐 Website Build & Maintenance Fee ($5.00 - First Event)",
+        tagLabel: "🌐 Website Maintenance ($5.00)",
+        tagStyle: { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
+        payerName: adminPayerName,
+        payerMemberId: adminPayerId,
+        totalCents: firstEventTotalCents,
+        allocationsMap: firstEventAllocs,
+      });
+    }
 
     // Row 2: Website Build & Maintenance Fee ($2.50 - Returning Member)
     const returningMemberTotalCents = Array.from(returningMemberAllocs.values()).reduce((sum, c) => sum + c, 0);
-    rows.push({
-      id: "website-fee-returning-member",
-      category: "website",
-      title: "🌐 Website Build & Maintenance Fee ($2.50 - Returning Member)",
-      tagLabel: "🌐 Website Maintenance ($2.50)",
-      tagStyle: { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
-      payerName: adminPayerName,
-      payerMemberId: adminPayerId,
-      totalCents: returningMemberTotalCents,
-      allocationsMap: returningMemberAllocs,
-    });
+    if (returningMemberTotalCents > 0) {
+      rows.push({
+        id: "website-fee-returning-member",
+        category: "website",
+        title: "🌐 Website Build & Maintenance Fee ($2.50 - Returning Member)",
+        tagLabel: "🌐 Website Maintenance ($2.50)",
+        tagStyle: { bg: "#e0e7ff", color: "#3730a3", border: "#c7d2fe" },
+        payerName: adminPayerName,
+        payerMemberId: adminPayerId,
+        totalCents: returningMemberTotalCents,
+        allocationsMap: returningMemberAllocs,
+      });
+    }
 
     return rows;
   }, [data, confirmedAttendees, currentMemberId]);
@@ -870,73 +879,7 @@ export function TripFinancialsTab({
         )}
       </div>
 
-      {/* 3. Member Net Balances */}
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
-          <h3 style={{ margin: 0, fontSize: "1.1rem" }}>⚖️ Member Balances</h3>
-          <span style={{ fontSize: "0.8rem", color: "#15803d", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.2rem 0.5rem", borderRadius: "4px", fontWeight: 500 }}>
-            ✓ Verified $50 deposits are credited, reducing your settlement amount
-          </span>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #e2e8f0", textAlign: "left", color: "#475569" }}>
-                <th style={{ padding: "0.5rem" }}>Member</th>
-                <th style={{ padding: "0.5rem", textAlign: "right" }}>Total Paid</th>
-                <th style={{ padding: "0.5rem", textAlign: "right" }}>Fair Share</th>
-                <th style={{ padding: "0.5rem", textAlign: "right" }}>Net Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.balances ?? []).map((b) => {
-                const isMe = b.isMe || b.memberId === currentMemberId;
-                const netCents = b.netBalanceCents;
-                return (
-                  <tr
-                    key={b.memberId}
-                    style={{
-                      borderBottom: "1px solid #f1f5f9",
-                      background: isMe ? "#f8fafc" : "transparent",
-                      fontWeight: isMe ? 600 : 400,
-                    }}
-                  >
-                    <td style={{ padding: "0.6rem 0.5rem" }}>
-                      {b.displayName} {isMe && <span style={{ color: "#2563eb" }}>(You)</span>}
-                    </td>
-                    <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
-                      <div>{formatMoney(b.totalPaidCents)}</div>
-                      {(b.depositPaidCents ?? 0) > 0 && (
-                        <div style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 500 }}>
-                          (incl. {formatMoney(b.depositPaidCents!)} deposit)
-                        </div>
-                      )}
-                      {(b.depositReceivedCents ?? 0) > 0 && (
-                        <div style={{ fontSize: "0.72rem", color: "#64748b", fontWeight: 500 }}>
-                          (less {formatMoney(b.depositReceivedCents!)} deposits rec'd)
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>{formatMoney(b.totalAllocatedCents)}</td>
-                    <td
-                      style={{
-                        padding: "0.6rem 0.5rem",
-                        textAlign: "right",
-                        color: netCents > 0 ? "#16a34a" : netCents < 0 ? "#dc2626" : "#64748b",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {netCents > 0 ? `+${formatMoney(netCents)}` : formatMoney(netCents)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 4. Unified Expense Ledger */}
+      {/* 3. Unified Expense Ledger */}
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
           <div>
@@ -999,21 +942,26 @@ export function TripFinancialsTab({
 
         {ledgerView === "matrix" ? (
           /* Spreadsheet-Style Matrix View with Freeze Panes */
-          <div
-            style={{
-              position: "relative",
-              width: "100%",
-              maxWidth: "100%",
-              overflowX: "auto",
-              overflowY: "auto",
-              maxHeight: "560px",
-              border: "1px solid #cbd5e1",
-              borderRadius: "8px",
-              background: "#ffffff",
-              boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
-              WebkitOverflowScrolling: "touch",
-            }}
-          >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem", fontSize: "0.78rem", color: "#64748b", flexWrap: "wrap", gap: "0.5rem" }}>
+              <span>👈 <em>Swipe horizontally to see all camper columns</em> 👉</span>
+              <span style={{ fontSize: "0.74rem" }}>Tip: Switch to <strong>Itemized Cards</strong> for an easy mobile view</span>
+            </div>
+            <div
+              style={{
+                position: "relative",
+                width: "100%",
+                maxWidth: "100%",
+                overflowX: "auto",
+                overflowY: "auto",
+                maxHeight: "560px",
+                border: "1px solid #cbd5e1",
+                borderRadius: "8px",
+                background: "#ffffff",
+                boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
             <table
               style={{
                 width: "100%",
@@ -1471,52 +1419,77 @@ export function TripFinancialsTab({
               </tfoot>
             </table>
           </div>
-        ) : (
-          /* Itemized Cards View */
-          <div style={{ display: "grid", gap: "1rem" }}>
-            {/* Cabin Deposit Section */}
-            {data?.cabinDeposit ? (
-              <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a" }}>🏡 Cabin Deposit Advance (Prepayments)</h4>
-                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
-                      Collected by <strong>{data.cabinDeposit.payerName}</strong> ({formatMoney(data.cabinDeposit.depositPerPersonCents)} advance deposit received from {data.cabinDeposit.confirmedCount} attendees)
-                    </p>
-                  </div>
-                  <span style={{ fontWeight: 700, fontSize: "1rem", color: "#166534" }}>
-                    -{formatMoney(data.cabinDeposit.amountCents)}
-                  </span>
+        </div>
+      ) : (
+        /* Itemized Cards View */
+        <div style={{ display: "grid", gap: "1rem" }}>
+          {/* Cabin Deposit Section */}
+          {data?.cabinDeposit ? (
+            <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#0f172a" }}>🏡 Cabin Deposit Advance (Prepayments)</h4>
+                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                    Collected by <strong>{data.cabinDeposit.payerName}</strong> ({formatMoney(data.cabinDeposit.depositPerPersonCents)} advance deposit received from {data.cabinDeposit.confirmedCount} attendees)
+                  </p>
                 </div>
+                <span style={{ fontWeight: 700, fontSize: "1rem", color: "#166534" }}>
+                  -{formatMoney(data.cabinDeposit.amountCents)}
+                </span>
               </div>
-            ) : (
-              <div style={{ border: "1px dashed #cbd5e1", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
-                <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#475569" }}>🏡 Cabin Deposit ($50 / Attendee)</h4>
-                <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
-                  No cabin reservation payer is assigned yet. When assigned by an administrator via Edit Event, the $50/attendee deposit will automatically populate here in the ledger and route transfers in the settlement matrix.
-                </p>
-              </div>
-            )}
+              {(data.cabinDeposit.allocations ?? []).length > 0 && (
+                <details style={{ marginTop: "0.5rem" }}>
+                  <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "#166534", fontWeight: 600 }}>
+                    👥 View deposit breakdown ({data.cabinDeposit.allocations.length} campers)
+                  </summary>
+                  <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                    {data.cabinDeposit.allocations.map((a) => (
+                      <span
+                        key={a.memberId}
+                        style={{
+                          fontSize: "0.74rem",
+                          background: a.memberId === currentMemberId ? "#dcfce7" : "#ffffff",
+                          color: a.memberId === currentMemberId ? "#166534" : "#334155",
+                          padding: "0.15rem 0.4rem",
+                          borderRadius: "4px",
+                          border: "1px solid",
+                          borderColor: a.memberId === currentMemberId ? "#86efac" : "#e2e8f0",
+                          fontWeight: a.memberId === currentMemberId ? 600 : 400,
+                        }}
+                      >
+                        {a.memberName}: {formatMoney(a.allocatedCents)}
+                      </span>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          ) : (
+            <div style={{ border: "1px dashed #cbd5e1", borderRadius: "8px", padding: "1rem", background: "#f8fafc" }}>
+              <h4 style={{ margin: 0, fontSize: "0.95rem", color: "#475569" }}>🏡 Cabin Deposit ($50 / Attendee)</h4>
+              <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                No cabin reservation payer is assigned yet. When assigned by an administrator via Edit Event, the $50/attendee deposit will automatically populate here in the ledger and route transfers in the settlement matrix.
+              </p>
+            </div>
+          )}
 
-            {/* Carpool Mileage Reimbursements */}
-            {data?.carpoolReimbursements && data.carpoolReimbursements.length > 0 && (
-              <div style={{ display: "grid", gap: "0.5rem" }}>
-                <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
-                  🚗 Carpool Mileage Reimbursements ({`$${((data.carpoolReimbursements[0]?.rateCentsPerMile ?? 50) / 100).toFixed(2)}/mile`})
-                </h4>
-                {data.carpoolReimbursements.map((cpr) => (
-                  <div
-                    key={cpr.carpoolId}
-                    style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "8px",
-                      padding: "0.85rem 1rem",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      background: "#fff",
-                    }}
-                  >
+          {/* Carpool Mileage Reimbursements */}
+          {data?.carpoolReimbursements && data.carpoolReimbursements.length > 0 && (
+            <div style={{ display: "grid", gap: "0.5rem" }}>
+              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
+                🚗 Carpool Mileage Reimbursements ({`$${((data.carpoolReimbursements[0]?.rateCentsPerMile ?? 50) / 100).toFixed(2)}/mile`})
+              </h4>
+              {data.carpoolReimbursements.map((cpr) => (
+                <div
+                  key={cpr.carpoolId}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "8px",
+                    padding: "0.85rem 1rem",
+                    background: "#fff",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
                     <div>
                       <strong style={{ fontSize: "0.9rem" }}>{cpr.driverName}</strong>
                       <span style={{ color: "#64748b", fontSize: "0.85rem", marginLeft: "0.5rem" }}>
@@ -1530,34 +1503,136 @@ export function TripFinancialsTab({
                       {formatMoney(cpr.amountCents)}
                     </span>
                   </div>
-                ))}
-              </div>
-            )}
+                  {(cpr.allocations ?? []).length > 0 && (
+                    <details style={{ marginTop: "0.45rem" }}>
+                      <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "#2563eb", fontWeight: 600 }}>
+                        👥 View split details ({cpr.allocations.length} occupants)
+                      </summary>
+                      <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                        {cpr.allocations.map((a) => (
+                          <span
+                            key={a.memberId}
+                            style={{
+                              fontSize: "0.74rem",
+                              background: a.memberId === currentMemberId ? "#dbeafe" : "#f8fafc",
+                              color: a.memberId === currentMemberId ? "#1e40af" : "#334155",
+                              padding: "0.15rem 0.4rem",
+                              borderRadius: "4px",
+                              border: "1px solid",
+                              borderColor: a.memberId === currentMemberId ? "#bfdbfe" : "#e2e8f0",
+                              fontWeight: a.memberId === currentMemberId ? 600 : 400,
+                            }}
+                          >
+                            {a.memberName}: {formatMoney(a.allocatedCents)}
+                          </span>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
-            {/* Member Shared Receipts */}
+          {/* Website Build & Maintenance Contribution */}
+          {(data?.expenses ?? []).filter((e) => e.expenseType === "website_maintenance").length > 0 && (
             <div style={{ display: "grid", gap: "0.5rem" }}>
-              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>🧾 Shared Member Receipts</h4>
-              {(!data?.expenses || data.expenses.filter((e) => e.expenseType !== "website_maintenance").length === 0) ? (
-                <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>
-                  No shared receipts submitted yet.
-                </p>
-              ) : (
-                (data.expenses ?? []).filter((e) => e.expenseType !== "website_maintenance").map((exp) => (
-                  <div
-                    key={exp.id}
-                    style={{
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "8px",
-                      padding: "0.85rem 1rem",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      background: "#fff",
-                    }}
-                  >
-                    <div>
+              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
+                🌐 Website Build & Maintenance Contribution
+              </h4>
+              {(data?.expenses ?? [])
+                .filter((e) => e.expenseType === "website_maintenance")
+                .map((we) => {
+                  const isFirstEvent = !we.description.includes("2.50") && !we.description.includes("Returning");
+                  return (
+                    <div
+                      key={we.id}
+                      style={{
+                        border: "1px solid #c7d2fe",
+                        borderRadius: "8px",
+                        padding: "0.85rem 1rem",
+                        background: "#f5f7ff",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: "0.9rem", color: "#1e1b4b" }}>{we.description}</strong>
+                            <span
+                              style={{
+                                background: "#e0e7ff",
+                                color: "#3730a3",
+                                border: "1px solid #c7d2fe",
+                                fontSize: "0.75rem",
+                                padding: "0.15rem 0.5rem",
+                                borderRadius: "9999px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {isFirstEvent ? "$5.00 / First Event" : "$2.50 / Subsequent Event"}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "0.8rem", color: "#475569", marginTop: "0.2rem" }}>
+                            Credited to {we.payerName || "Veerraju Amanchi"} • Fixed contribution across {(we.allocations ?? []).length} campers
+                          </div>
+                        </div>
+                        <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#3730a3", whiteSpace: "nowrap" }}>
+                          {formatMoney(we.amountCents)}
+                        </span>
+                      </div>
+                      {(we.allocations ?? []).length > 0 && (
+                        <details style={{ marginTop: "0.5rem" }}>
+                          <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "#4338ca", fontWeight: 600 }}>
+                            👥 View camper breakdown ({we.allocations.length} campers)
+                          </summary>
+                          <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                            {we.allocations.map((a) => (
+                              <span
+                                key={a.memberId}
+                                style={{
+                                  fontSize: "0.74rem",
+                                  background: a.memberId === currentMemberId ? "#c7d2fe" : "#ffffff",
+                                  color: a.memberId === currentMemberId ? "#1e1b4b" : "#334155",
+                                  padding: "0.15rem 0.4rem",
+                                  borderRadius: "4px",
+                                  border: "1px solid #e0e7ff",
+                                  fontWeight: a.memberId === currentMemberId ? 600 : 400,
+                                }}
+                              >
+                                {a.memberName}: {formatMoney(a.allocatedCents)}
+                              </span>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+
+          {/* Member Shared Receipts */}
+          <div style={{ display: "grid", gap: "0.5rem" }}>
+            <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>🧾 Shared Member Receipts</h4>
+            {(!data?.expenses || data.expenses.filter((e) => e.expenseType !== "website_maintenance").length === 0) ? (
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>
+                No shared receipts submitted yet.
+              </p>
+            ) : (
+              (data.expenses ?? []).filter((e) => e.expenseType !== "website_maintenance").map((exp) => (
+                <div
+                  key={exp.id}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "8px",
+                    padding: "0.85rem 1rem",
+                    background: "#fff",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
+                    <div style={{ flex: "1 1 240px", minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <strong style={{ fontSize: "0.9rem" }}>{exp.description}</strong>
+                        <strong style={{ fontSize: "0.9rem", wordBreak: "break-word" }}>{exp.description}</strong>
                         {exp.expenseType === "website_maintenance" ? (
                           <span
                             style={{
@@ -1628,7 +1703,7 @@ export function TripFinancialsTab({
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
                       {!isFinalized && isAdmin && (
                         <button
                           type="button"
@@ -1683,11 +1758,105 @@ export function TripFinancialsTab({
                       )}
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+
+                  {(exp.allocations ?? []).length > 0 && (
+                    <details style={{ marginTop: "0.45rem" }}>
+                      <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "#2563eb", fontWeight: 600 }}>
+                        👥 View split details ({exp.allocations.length} campers)
+                      </summary>
+                      <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                        {exp.allocations.map((a) => (
+                          <span
+                            key={a.memberId}
+                            style={{
+                              fontSize: "0.74rem",
+                              background: a.memberId === currentMemberId ? "#dbeafe" : "#f8fafc",
+                              color: a.memberId === currentMemberId ? "#1e40af" : "#334155",
+                              padding: "0.15rem 0.4rem",
+                              borderRadius: "4px",
+                              border: "1px solid",
+                              borderColor: a.memberId === currentMemberId ? "#bfdbfe" : "#e2e8f0",
+                              fontWeight: a.memberId === currentMemberId ? 600 : 400,
+                            }}
+                          >
+                            {a.memberName}: {formatMoney(a.allocatedCents)}
+                          </span>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ))
+            )}
           </div>
-        )}
+        </div>
+      )}
+    </div>
+
+      {/* 4. Member Net Balances */}
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+          <h3 style={{ margin: 0, fontSize: "1.1rem" }}>⚖️ Member Balances</h3>
+          <span style={{ fontSize: "0.8rem", color: "#15803d", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.2rem 0.5rem", borderRadius: "4px", fontWeight: 500 }}>
+            ✓ Verified $50 deposits are credited, reducing your settlement amount
+          </span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #e2e8f0", textAlign: "left", color: "#475569" }}>
+                <th style={{ padding: "0.5rem" }}>Member</th>
+                <th style={{ padding: "0.5rem", textAlign: "right" }}>Total Paid</th>
+                <th style={{ padding: "0.5rem", textAlign: "right" }}>Fair Share</th>
+                <th style={{ padding: "0.5rem", textAlign: "right" }}>Net Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.balances ?? []).map((b) => {
+                const isMe = b.isMe || b.memberId === currentMemberId;
+                const netCents = b.netBalanceCents;
+                return (
+                  <tr
+                    key={b.memberId}
+                    style={{
+                      borderBottom: "1px solid #f1f5f9",
+                      background: isMe ? "#f8fafc" : "transparent",
+                      fontWeight: isMe ? 600 : 400,
+                    }}
+                  >
+                    <td style={{ padding: "0.6rem 0.5rem" }}>
+                      {b.displayName} {isMe && <span style={{ color: "#2563eb" }}>(You)</span>}
+                    </td>
+                    <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
+                      <div>{formatMoney(b.totalPaidCents)}</div>
+                      {(b.depositPaidCents ?? 0) > 0 && (
+                        <div style={{ fontSize: "0.72rem", color: "#15803d", fontWeight: 500 }}>
+                          (incl. {formatMoney(b.depositPaidCents!)} deposit)
+                        </div>
+                      )}
+                      {(b.depositReceivedCents ?? 0) > 0 && (
+                        <div style={{ fontSize: "0.72rem", color: "#64748b", fontWeight: 500 }}>
+                          (less {formatMoney(b.depositReceivedCents!)} deposits rec'd)
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>{formatMoney(b.totalAllocatedCents)}</td>
+                    <td
+                      style={{
+                        padding: "0.6rem 0.5rem",
+                        textAlign: "right",
+                        color: netCents > 0 ? "#16a34a" : netCents < 0 ? "#dc2626" : "#64748b",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {netCents > 0 ? `+${formatMoney(netCents)}` : formatMoney(netCents)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* MODAL: Add Shared Expense */}
