@@ -261,6 +261,12 @@ export function TripFinancialsTab({
   const [activeMobileTab, setActiveMobileTab] = useState<"summary" | "receipts" | "campers" | "ledger">("summary");
   const [copySuccess, setCopySuccess] = useState(false);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ left: 0 });
+    }
+  }, [activeMobileTab]);
+
   const handleCopyPaymentDetails = (text: string) => {
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -1561,6 +1567,7 @@ export function TripFinancialsTab({
                 position: "relative",
                 width: "100%",
                 maxWidth: "100%",
+                minWidth: 0,
                 overflowX: "auto",
                 overflowY: "auto",
                 maxHeight: "560px",
@@ -1569,6 +1576,7 @@ export function TripFinancialsTab({
                 background: "#ffffff",
                 boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.05)",
                 WebkitOverflowScrolling: "touch",
+                overscrollBehaviorX: "contain",
               }}
             >
             <table
@@ -1582,22 +1590,22 @@ export function TripFinancialsTab({
             >
               <thead>
                 <tr>
-                  {/* Frozen Top-Left Cell */}
+                  {/* Top-Left Header Cell (Unfrozen on mobile for smooth full-width sliding) */}
                   <th
                     style={{
-                      position: "sticky",
+                      position: !isMobile ? "sticky" : undefined,
                       top: 0,
-                      left: 0,
-                      zIndex: 30,
+                      left: !isMobile ? 0 : undefined,
+                      zIndex: !isMobile ? 30 : 20,
                       background: "#f1f5f9",
                       padding: "0.75rem 0.85rem",
                       fontWeight: 700,
                       color: "#1e293b",
                       borderBottom: "2px solid #cbd5e1",
                       borderRight: "2px solid #cbd5e1",
-                      minWidth: "260px",
-                      maxWidth: "320px",
-                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                      minWidth: isMobile ? "140px" : "260px",
+                      maxWidth: isMobile ? "180px" : "320px",
+                      boxShadow: !isMobile ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                     }}
                   >
                     Expense Item & Payer
@@ -1675,19 +1683,19 @@ export function TripFinancialsTab({
                     const rowBg = isEven ? "#ffffff" : "#f8fafc";
                     return (
                       <tr key={row.id} style={{ background: rowBg }}>
-                        {/* Frozen Left Expense Header Cell */}
+                        {/* Left Expense Header Cell (Unfrozen on mobile for smooth full-width sliding) */}
                         <td
                           style={{
-                            position: "sticky",
-                            left: 0,
-                            zIndex: 10,
+                            position: !isMobile ? "sticky" : undefined,
+                            left: !isMobile ? 0 : undefined,
+                            zIndex: !isMobile ? 10 : undefined,
                             background: rowBg,
                             padding: "0.65rem 0.85rem",
                             borderBottom: "1px solid #e2e8f0",
                             borderRight: "2px solid #cbd5e1",
-                            minWidth: "260px",
-                            maxWidth: "320px",
-                            boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                            minWidth: isMobile ? "140px" : "260px",
+                            maxWidth: isMobile ? "180px" : "320px",
+                            boxShadow: !isMobile ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                           }}
                         >
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
@@ -1866,16 +1874,18 @@ export function TripFinancialsTab({
                 <tr style={{ background: "#f8fafc", borderTop: "2px solid #cbd5e1" }}>
                   <td
                     style={{
-                      position: "sticky",
-                      left: 0,
-                      zIndex: 10,
+                      position: !isMobile ? "sticky" : undefined,
+                      left: !isMobile ? 0 : undefined,
+                      zIndex: !isMobile ? 10 : undefined,
                       background: "#f1f5f9",
                       padding: "0.65rem 0.85rem",
                       fontWeight: 700,
                       color: "#334155",
                       borderRight: "2px solid #cbd5e1",
                       borderBottom: "1px solid #e2e8f0",
-                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                      minWidth: isMobile ? "140px" : "260px",
+                      maxWidth: isMobile ? "180px" : "320px",
+                      boxShadow: !isMobile ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                     }}
                   >
                     Total Share Owed
@@ -1920,16 +1930,18 @@ export function TripFinancialsTab({
                 <tr style={{ background: "#f8fafc" }}>
                   <td
                     style={{
-                      position: "sticky",
-                      left: 0,
-                      zIndex: 10,
+                      position: !isMobile ? "sticky" : undefined,
+                      left: !isMobile ? 0 : undefined,
+                      zIndex: !isMobile ? 10 : undefined,
                       background: "#f1f5f9",
                       padding: "0.65rem 0.85rem",
                       fontWeight: 700,
                       color: "#334155",
                       borderRight: "2px solid #cbd5e1",
                       borderBottom: "1px solid #e2e8f0",
-                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                      minWidth: isMobile ? "140px" : "260px",
+                      maxWidth: isMobile ? "180px" : "320px",
+                      boxShadow: !isMobile ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                     }}
                   >
                     Paid Out-of-Pocket
@@ -1974,15 +1986,17 @@ export function TripFinancialsTab({
                 <tr style={{ background: "#f1f5f9", borderTop: "2px solid #94a3b8" }}>
                   <td
                     style={{
-                      position: "sticky",
-                      left: 0,
-                      zIndex: 10,
+                      position: !isMobile ? "sticky" : undefined,
+                      left: !isMobile ? 0 : undefined,
+                      zIndex: !isMobile ? 10 : undefined,
                       background: "#e2e8f0",
                       padding: "0.75rem 0.85rem",
                       fontWeight: 800,
                       color: "#0f172a",
                       borderRight: "2px solid #cbd5e1",
-                      boxShadow: "2px 0 4px -1px rgba(0,0,0,0.08)",
+                      minWidth: isMobile ? "140px" : "260px",
+                      maxWidth: isMobile ? "180px" : "320px",
+                      boxShadow: !isMobile ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                     }}
                   >
                     Net Settlement Position

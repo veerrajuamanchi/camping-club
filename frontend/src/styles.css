@@ -5,12 +5,22 @@
   font-synthesis: none;
 }
 * { box-sizing: border-box; }
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+}
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
   background-color: #f8faf7;
   color: #1f2937;
+}
+
+.container, .stack, .card {
+  min-width: 0;
+  max-width: 100%;
 }
 
 button, input, select, textarea { font: inherit; }
