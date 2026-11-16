@@ -116,6 +116,17 @@ export function formatMoney(cents: number): string {
   return `${sign}$${(abs / 100).toFixed(2)}`;
 }
 
+function detectIsMobile(): boolean {
+  if (typeof window === "undefined") return false;
+  if (typeof window.screen !== "undefined") {
+    const minDim = Math.min(window.screen.width, window.screen.height);
+    if (minDim > 0 && minDim <= 500) {
+      return true;
+    }
+  }
+  return window.innerWidth < 768;
+}
+
 export function TripFinancialsTab({
   tripId,
   isAdmin,
@@ -127,19 +138,18 @@ export function TripFinancialsTab({
   onStatusChange,
   isMobile: isMobileProp,
 }: Props) {
-  const [internalIsMobile, setInternalIsMobile] = useState(() => {
-    if (typeof window !== "undefined") {
-      return window.innerWidth < 768;
-    }
-    return false;
-  });
+  const [internalIsMobile, setInternalIsMobile] = useState(detectIsMobile);
 
   useEffect(() => {
     const handleResize = () => {
-      setInternalIsMobile(window.innerWidth < 768);
+      setInternalIsMobile(detectIsMobile());
     };
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
   }, []);
 
   const isMobile = isMobileProp ?? internalIsMobile;
