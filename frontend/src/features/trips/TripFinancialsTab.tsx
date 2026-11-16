@@ -107,6 +107,7 @@ type Props = {
   tripStatus?: string;
   api: TripApiType;
   onStatusChange?: () => void;
+  isMobile?: boolean;
 };
 
 export function formatMoney(cents: number): string {
@@ -124,7 +125,24 @@ export function TripFinancialsTab({
   tripStatus,
   api,
   onStatusChange,
+  isMobile: isMobileProp,
 }: Props) {
+  const [internalIsMobile, setInternalIsMobile] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth < 768;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setInternalIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const isMobile = isMobileProp ?? internalIsMobile;
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<TripFinancialsData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -238,6 +256,22 @@ export function TripFinancialsTab({
   const [editPayerId, setEditPayerId] = useState("");
   const [editDollars, setEditDollars] = useState("");
   const [editIncurredDate, setEditIncurredDate] = useState("");
+
+  // Mobile Hub active navigation tab: "summary" | "receipts" | "campers" | "ledger"
+  const [activeMobileTab, setActiveMobileTab] = useState<"summary" | "receipts" | "campers" | "ledger">("summary");
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  const handleCopyPaymentDetails = (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        navigator.clipboard.writeText(text);
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      }
+    } catch (err) {
+      console.warn("Failed to copy payment details:", err);
+    }
+  };
 
   // Unified Expense Ledger View Mode: "matrix" (Spreadsheet with frozen panes) vs "cards"
   const [ledgerView, setLedgerView] = useState<"matrix" | "cards">(() => {
@@ -693,6 +727,14 @@ export function TripFinancialsTab({
   const totalTransfers = data?.transfers?.length ?? 0;
   const completedTransfers = (data?.transfers ?? []).filter((t) => t.status === "confirmed").length;
 
+  const myBalance = (data?.balances ?? []).find((b) => b.isMe || b.memberId === currentMemberId);
+  const myNetCents = myBalance?.netBalanceCents ?? 0;
+  const myTotalPaidCents = myBalance?.totalPaidCents ?? 0;
+  const myTotalAllocatedCents = myBalance?.totalAllocatedCents ?? 0;
+  const myOutgoingTransfer = (data?.transfers ?? []).find(
+    (tx) => (tx.isPayer || tx.payerMemberId === currentMemberId) && tx.status !== "confirmed"
+  );
+
   return (
     <div className="stack" style={{ gap: "1.5rem" }}>
       {errorMsg && (
@@ -701,8 +743,242 @@ export function TripFinancialsTab({
         </div>
       )}
 
-      {/* 1. Settlement Status Header Card */}
-      <div className="card" style={{ background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)", border: "1px solid #cbd5e1" }}>
+      {/* Mobile-Only Hero Snapshot, Add Expense Action & 4-Tab Navigation */}
+      {isMobile && (
+        <>
+          {/* Hero Personal Settlement Snapshot */}
+          <div
+            className="card hero-personal-snapshot"
+            style={{
+              background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+              color: "#ffffff",
+              borderRadius: "12px",
+              padding: "1.25rem",
+              boxShadow: "0 4px 12px rgba(15, 23, 42, 0.15)",
+            }}
+          >
+            <div style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#94a3b8", fontWeight: 700 }}>
+              Your Settlement Position
+            </div>
+            <div
+              style={{
+                fontSize: "1.75rem",
+                fontWeight: 800,
+                margin: "0.35rem 0",
+                display: "flex",
+                alignItems: "baseline",
+                gap: "0.5rem",
+                color: myNetCents < 0 ? "#f87171" : myNetCents > 0 ? "#34d399" : "#cbd5e1",
+              }}
+            >
+              <span>
+                {myNetCents < 0
+                  ? `-${formatMoney(Math.abs(myNetCents))}`
+                  : myNetCents > 0
+                  ? `+${formatMoney(myNetCents)}`
+                  : "$0.00"}
+              </span>
+              <span style={{ fontSize: "0.88rem", fontWeight: 600, color: myNetCents < 0 ? "#fca5a5" : myNetCents > 0 ? "#a7f3d0" : "#94a3b8" }}>
+                {myNetCents < 0 ? "(You Owe)" : myNetCents > 0 ? "(You Receive)" : "(Fully Settled)"}
+              </span>
+            </div>
+            <p style={{ margin: "0.2rem 0 0 0", fontSize: "0.82rem", color: "#cbd5e1" }}>
+              Based on {formatMoney(myTotalPaidCents)} paid vs {formatMoney(myTotalAllocatedCents)} total fair share.
+            </p>
+
+            {myOutgoingTransfer && (
+              <div
+                style={{
+                  marginTop: "0.85rem",
+                  background: "rgba(255, 255, 255, 0.08)",
+                  border: "1px solid rgba(255, 255, 255, 0.14)",
+                  borderRadius: "8px",
+                  padding: "0.75rem 0.85rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.5rem",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ fontSize: "0.82rem", color: "#e2e8f0" }}>
+                  Send {formatMoney(myOutgoingTransfer.amountCents)} to <strong>{myOutgoingTransfer.recipientName}</strong> via{" "}
+                  <strong>{myOutgoingTransfer.recipientPreferredMethod}</strong>
+                  {myOutgoingTransfer.notes && (
+                    <div style={{ fontSize: "0.74rem", color: "#94a3b8", marginTop: "0.15rem" }}>
+                      Note / ID: {myOutgoingTransfer.notes}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", width: "100%", justifyContent: "flex-start" }}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopyPaymentDetails(
+                        `${myOutgoingTransfer.recipientName} (${myOutgoingTransfer.recipientPreferredMethod}): ${myOutgoingTransfer.notes || ""}`
+                      )
+                    }
+                    style={{
+                      background: "#334155",
+                      color: "#ffffff",
+                      border: "none",
+                      padding: "0.4rem 0.75rem",
+                      borderRadius: "6px",
+                      fontSize: "0.78rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {copySuccess ? "✓ Copied!" : "📋 Copy Details"}
+                  </button>
+                  {isFinalized && myOutgoingTransfer.status === "outstanding" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedTransfer(myOutgoingTransfer);
+                        setShowMarkSentModal(true);
+                      }}
+                      style={{
+                        background: "#10b981",
+                        color: "#ffffff",
+                        border: "none",
+                        padding: "0.4rem 0.75rem",
+                        borderRadius: "6px",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✓ Mark as Sent
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Prominent First-Screen Add Expense Action */}
+          {!isFinalized && (isAdmin || isConfirmedAttendee) && (
+            <button
+              type="button"
+              className="btn-primary primary-add-expense-btn"
+              onClick={openAddExpenseModal}
+              style={{
+                width: "100%",
+                background: "#2563eb",
+                color: "#ffffff",
+                border: "none",
+                padding: "0.75rem 1rem",
+                borderRadius: "8px",
+                fontSize: "0.92rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "0.5rem",
+                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)",
+              }}
+            >
+              <span>📸</span> + Add Shared Expense
+            </button>
+          )}
+
+          {/* 4-Tab Segmented Mobile Navigation */}
+          <div
+            className="mobile-nav-pills"
+            style={{
+              display: "flex",
+              background: "#e2e8f0",
+              borderRadius: "8px",
+              padding: "3px",
+              gap: "2px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveMobileTab("summary")}
+              style={{
+                flex: 1,
+                border: "none",
+                background: activeMobileTab === "summary" ? "#ffffff" : "transparent",
+                color: activeMobileTab === "summary" ? "#0f172a" : "#475569",
+                padding: "0.5rem 0.15rem",
+                borderRadius: "6px",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: activeMobileTab === "summary" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              ⚡ Summary
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMobileTab("receipts")}
+              style={{
+                flex: 1,
+                border: "none",
+                background: activeMobileTab === "receipts" ? "#ffffff" : "transparent",
+                color: activeMobileTab === "receipts" ? "#0f172a" : "#475569",
+                padding: "0.5rem 0.15rem",
+                borderRadius: "6px",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: activeMobileTab === "receipts" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              🧾 Receipts
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMobileTab("campers")}
+              style={{
+                flex: 1,
+                border: "none",
+                background: activeMobileTab === "campers" ? "#ffffff" : "transparent",
+                color: activeMobileTab === "campers" ? "#0f172a" : "#475569",
+                padding: "0.5rem 0.15rem",
+                borderRadius: "6px",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: activeMobileTab === "campers" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              👥 Campers
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMobileTab("ledger")}
+              style={{
+                flex: 1,
+                border: "none",
+                background: activeMobileTab === "ledger" ? "#ffffff" : "transparent",
+                color: activeMobileTab === "ledger" ? "#0f172a" : "#475569",
+                padding: "0.5rem 0.15rem",
+                borderRadius: "6px",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: activeMobileTab === "ledger" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              📊 Full Ledger
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* TAB PANEL 1: SUMMARY / SETTLEMENT STATUS & TRANSFERS */}
+      {(!isMobile || activeMobileTab === "summary") && (
+        <>
+          {/* 1. Settlement Status Header Card */}
+          <div className="card" style={{ background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)", border: "1px solid #cbd5e1" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
@@ -825,7 +1101,7 @@ export function TripFinancialsTab({
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
                     {isConfirmed ? (
                       <span style={{ background: "#dcfce7", color: "#166534", fontSize: "0.8rem", padding: "0.25rem 0.6rem", borderRadius: "6px", fontWeight: 600 }}>
                         ✅ Confirmed Received
@@ -842,7 +1118,7 @@ export function TripFinancialsTab({
 
                     {/* Action buttons */}
                     {isFinalized && !isConfirmed && (
-                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
                         {/* Payer button: Mark Sent */}
                         {(isPayer || isAdmin) && !isSent && (
                           <button
@@ -878,9 +1154,342 @@ export function TripFinancialsTab({
           </div>
         )}
       </div>
+        </>
+      )}
 
-      {/* 3. Unified Expense Ledger */}
-      <div className="card">
+      {/* TAB PANEL 2: RECEIPTS & EXPENSES (Mobile Tab) */}
+      {isMobile && activeMobileTab === "receipts" && (
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "1.1rem" }}>🧾 Receipts & Shared Expenses</h3>
+              <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                Itemized breakdown across shared groceries, website maintenance fee, and carpool reimbursements.
+              </p>
+            </div>
+            {!isFinalized && (isAdmin || isConfirmedAttendee) && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={openAddExpenseModal}
+                style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", padding: "0.4rem 0.8rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}
+              >
+                + Add Shared Expense
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gap: "1rem" }}>
+            {/* Shared Member Receipts */}
+            <div style={{ display: "grid", gap: "0.5rem" }}>
+              <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>🧾 Shared Member Receipts</h4>
+              {(!data?.expenses || data.expenses.filter((e) => e.expenseType !== "website_maintenance").length === 0) ? (
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>
+                  No shared receipts submitted yet.
+                </p>
+              ) : (
+                (data.expenses ?? []).filter((e) => e.expenseType !== "website_maintenance").map((exp) => (
+                  <div
+                    key={exp.id}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      padding: "0.85rem 1rem",
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
+                      <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                          <strong style={{ fontSize: "0.9rem", wordBreak: "break-word" }}>{exp.description}</strong>
+                          {exp.splitMode === "all_attendees" ? (
+                            <span
+                              style={{
+                                background: "#dcfce7",
+                                color: "#166534",
+                                border: "1px solid #86efac",
+                                fontSize: "0.75rem",
+                                padding: "0.15rem 0.5rem",
+                                borderRadius: "9999px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              🌐 All Attendees (Dynamic)
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                background: "#fef3c7",
+                                color: "#92400e",
+                                border: "1px solid #fde68a",
+                                fontSize: "0.75rem",
+                                padding: "0.15rem 0.5rem",
+                                borderRadius: "9999px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              👥 Custom Split ({(exp.allocations ?? []).length} campers)
+                            </span>
+                          )}
+                          {(exp.receiptStoragePath || exp.receiptUrl) && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReceiptViewer(exp)}
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                padding: 0,
+                                fontSize: "0.75rem",
+                                color: "#2563eb",
+                                textDecoration: "underline",
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.2rem",
+                              }}
+                            >
+                              📄 View Receipt
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
+                          Paid by {exp.payerName} on {exp.incurredDate} • Split among {(exp.allocations ?? []).length} members
+                          {exp.splitMode === "all_attendees" && " (auto-includes new attendees)"}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
+                        {!isFinalized && isAdmin && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={actionBusy}
+                            onClick={() => handleOpenEditExpense(exp)}
+                            style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                            title="Edit expense details and who paid"
+                            aria-label={`Edit ${exp.description}`}
+                          >
+                            ✏️ Edit
+                          </button>
+                        )}
+                        {!isFinalized && isAdmin && (
+                          exp.splitMode === "all_attendees" ? (
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              disabled={actionBusy}
+                              onClick={() => handleToggleExpenseSplitMode(exp.id, "custom")}
+                              style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                              title="Convert to fixed static allocations for current attendees"
+                            >
+                              Make Custom 🎯
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              disabled={actionBusy}
+                              onClick={() => handleToggleExpenseSplitMode(exp.id, "all_attendees")}
+                              style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
+                              title="Convert to dynamic split across all confirmed attendees"
+                            >
+                              Make Dynamic 🌐
+                            </button>
+                          )
+                        )}
+                        <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f172a" }}>
+                          {formatMoney(exp.amountCents)}
+                        </span>
+                        {!isFinalized && (isAdmin || exp.payerMemberId === currentMemberId) && (
+                          <button
+                            type="button"
+                            disabled={actionBusy}
+                            onClick={() => handleDeleteExpense(exp.id)}
+                            style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "0.85rem", padding: "0.25rem" }}
+                            aria-label={`Delete ${exp.description}`}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {(exp.allocations ?? []).length > 0 && (
+                      <details style={{ marginTop: "0.45rem" }}>
+                        <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "#2563eb", fontWeight: 600 }}>
+                          👥 View split details ({exp.allocations.length} campers)
+                        </summary>
+                        <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                          {exp.allocations.map((a) => (
+                            <span
+                              key={a.memberId}
+                              style={{
+                                fontSize: "0.74rem",
+                                background: a.memberId === currentMemberId ? "#dbeafe" : "#f8fafc",
+                                color: a.memberId === currentMemberId ? "#1e40af" : "#334155",
+                                padding: "0.15rem 0.4rem",
+                                borderRadius: "4px",
+                                border: "1px solid",
+                                borderColor: a.memberId === currentMemberId ? "#bfdbfe" : "#e2e8f0",
+                                fontWeight: a.memberId === currentMemberId ? 600 : 400,
+                              }}
+                            >
+                              {a.memberName}: {formatMoney(a.allocatedCents)}
+                            </span>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Website Build & Maintenance Contribution */}
+            {(data?.expenses ?? []).filter((e) => e.expenseType === "website_maintenance").length > 0 && (
+              <div style={{ display: "grid", gap: "0.5rem" }}>
+                <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
+                  🌐 Website Build & Maintenance Contribution
+                </h4>
+                {(data?.expenses ?? [])
+                  .filter((e) => e.expenseType === "website_maintenance")
+                  .map((we) => {
+                    const isFirstEvent = !we.description.includes("2.50") && !we.description.includes("Returning");
+                    return (
+                      <div
+                        key={we.id}
+                        style={{
+                          border: "1px solid #c7d2fe",
+                          borderRadius: "8px",
+                          padding: "0.85rem 1rem",
+                          background: "#f5f7ff",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                              <strong style={{ fontSize: "0.9rem", color: "#1e1b4b" }}>{we.description}</strong>
+                              <span
+                                style={{
+                                  background: "#e0e7ff",
+                                  color: "#3730a3",
+                                  border: "1px solid #c7d2fe",
+                                  fontSize: "0.75rem",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "9999px",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {isFirstEvent ? "$5.00 / First Event" : "$2.50 / Subsequent Event"}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "0.8rem", color: "#475569", marginTop: "0.2rem" }}>
+                              Credited to {we.payerName || "Veerraju Amanchi"} • Fixed contribution across {(we.allocations ?? []).length} campers
+                            </div>
+                          </div>
+                          <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#3730a3", whiteSpace: "nowrap" }}>
+                            {formatMoney(we.amountCents)}
+                          </span>
+                        </div>
+                        {(we.allocations ?? []).length > 0 && (
+                          <details style={{ marginTop: "0.5rem" }}>
+                            <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "#4338ca", fontWeight: 600 }}>
+                              👥 View camper breakdown ({we.allocations.length} campers)
+                            </summary>
+                            <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                              {we.allocations.map((a) => (
+                                <span
+                                  key={a.memberId}
+                                  style={{
+                                    fontSize: "0.74rem",
+                                    background: a.memberId === currentMemberId ? "#c7d2fe" : "#ffffff",
+                                    color: a.memberId === currentMemberId ? "#1e1b4b" : "#334155",
+                                    padding: "0.15rem 0.4rem",
+                                    borderRadius: "4px",
+                                    border: "1px solid #e0e7ff",
+                                    fontWeight: a.memberId === currentMemberId ? 600 : 400,
+                                  }}
+                                >
+                                  {a.memberName}: {formatMoney(a.allocatedCents)}
+                                </span>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* Carpool Mileage Reimbursements */}
+            {data?.carpoolReimbursements && data.carpoolReimbursements.length > 0 && (
+              <div style={{ display: "grid", gap: "0.5rem" }}>
+                <h4 style={{ margin: "0.5rem 0 0 0", fontSize: "0.95rem", color: "#334155" }}>
+                  🚗 Carpool Mileage Reimbursements ({`$${((data.carpoolReimbursements[0]?.rateCentsPerMile ?? 50) / 100).toFixed(2)}/mile`})
+                </h4>
+                {data.carpoolReimbursements.map((cpr) => (
+                  <div
+                    key={cpr.carpoolId}
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      padding: "0.85rem 1rem",
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" }}>
+                      <div>
+                        <strong style={{ fontSize: "0.9rem" }}>{cpr.driverName}</strong>
+                        <span style={{ color: "#64748b", fontSize: "0.85rem", marginLeft: "0.5rem" }}>
+                          ({cpr.vehicleDescription}) • {cpr.milesDriven.toLocaleString()} mi
+                        </span>
+                        <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.2rem" }}>
+                          Split equally among {cpr.occupantCount} occupants: {cpr.occupantNames.join(", ")}
+                        </div>
+                      </div>
+                      <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f172a" }}>
+                        {formatMoney(cpr.amountCents)}
+                      </span>
+                    </div>
+                    {(cpr.allocations ?? []).length > 0 && (
+                      <details style={{ marginTop: "0.45rem" }}>
+                        <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: "#2563eb", fontWeight: 600 }}>
+                          👥 View split details ({cpr.allocations.length} occupants)
+                        </summary>
+                        <div style={{ marginTop: "0.35rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                          {cpr.allocations.map((a) => (
+                            <span
+                              key={a.memberId}
+                              style={{
+                                fontSize: "0.74rem",
+                                background: a.memberId === currentMemberId ? "#dbeafe" : "#f8fafc",
+                                color: a.memberId === currentMemberId ? "#1e40af" : "#334155",
+                                padding: "0.15rem 0.4rem",
+                                borderRadius: "4px",
+                                border: "1px solid",
+                                borderColor: a.memberId === currentMemberId ? "#bfdbfe" : "#e2e8f0",
+                                fontWeight: a.memberId === currentMemberId ? 600 : 400,
+                              }}
+                            >
+                              {a.memberName}: {formatMoney(a.allocatedCents)}
+                            </span>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB PANEL 4: FULL LEDGER (MATHEMATICAL AUDIT) */}
+      {(!isMobile || activeMobileTab === "ledger") && (
+        /* 3. Unified Expense Ledger */
+        <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
           <div>
             <h3 style={{ margin: 0, fontSize: "1.1rem" }}>📋 Unified Expense Ledger</h3>
@@ -1703,7 +2312,7 @@ export function TripFinancialsTab({
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
                       {!isFinalized && isAdmin && (
                         <button
                           type="button"
@@ -1792,16 +2401,83 @@ export function TripFinancialsTab({
         </div>
       )}
     </div>
+    )}
 
-      {/* 4. Member Net Balances */}
+      {/* TAB PANEL 3: CAMPERS & BALANCES */}
+      {(!isMobile || activeMobileTab === "campers") && (
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
-          <h3 style={{ margin: 0, fontSize: "1.1rem" }}>⚖️ Member Balances</h3>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1.1rem" }}>👥 Campers & Balances</h3>
+            <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+              Individual breakdown of expenses paid, fair share owed, and final net settlement.
+            </p>
+          </div>
           <span style={{ fontSize: "0.8rem", color: "#15803d", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.2rem 0.5rem", borderRadius: "4px", fontWeight: 500 }}>
             ✓ Verified $50 deposits are credited, reducing your settlement amount
           </span>
         </div>
-        <div style={{ overflowX: "auto" }}>
+
+        {/* Quick Camper Balance Cards (Mobile-first vertical stack) */}
+        <div style={{ display: "grid", gap: "0.6rem", marginBottom: "1.25rem" }}>
+          {(data?.balances ?? []).map((b) => {
+            const isMe = b.isMe || b.memberId === currentMemberId;
+            const netCents = b.netBalanceCents;
+            const owes = netCents < 0;
+            const gets = netCents > 0;
+            return (
+              <div
+                key={`camper-card-${b.memberId}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "0.75rem 0.85rem",
+                  borderRadius: "8px",
+                  border: isMe ? "1.5px solid #93c5fd" : "1px solid #e2e8f0",
+                  background: isMe ? "#f0f7ff" : "#ffffff",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.95rem", color: isMe ? "#1e40af" : "#1e293b" }}>
+                    <span>{b.displayName}</span> {isMe && <span style={{ color: "#2563eb", fontSize: "0.8rem", fontWeight: 700 }}>• You</span>}
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "0.15rem" }}>
+                    Paid: <strong style={{ color: "#334155" }}>{formatMoney(b.totalPaidCents)}</strong> • Fair Share: <strong style={{ color: "#334155" }}>{formatMoney(b.totalAllocatedCents)}</strong>
+                  </div>
+                  {(b.depositPaidCents ?? 0) > 0 && (
+                    <div style={{ fontSize: "0.72rem", color: "#166534" }}>
+                      Incl. {formatMoney(b.depositPaidCents!)} advance deposit
+                    </div>
+                  )}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "0.25rem 0.6rem",
+                      borderRadius: "9999px",
+                      fontWeight: 700,
+                      fontSize: "0.85rem",
+                      background: owes ? "#fee2e2" : gets ? "#dcfce7" : "#f1f5f9",
+                      color: owes ? "#991b1b" : gets ? "#166534" : "#475569",
+                      border: owes ? "1px solid #fecaca" : gets ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                    }}
+                  >
+                    {gets ? `+${formatMoney(netCents)}` : owes ? `Owes ${formatMoney(Math.abs(netCents))}` : "$0.00 Settled"}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Detailed Table Breakdown */}
+        <div style={{ overflowX: "auto", borderTop: "1px solid #e2e8f0", paddingTop: "0.75rem" }}>
+          <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.85rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+            Detailed Table Breakdown
+          </h4>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
             <thead>
               <tr style={{ borderBottom: "2px solid #e2e8f0", textAlign: "left", color: "#475569" }}>
@@ -1858,6 +2534,7 @@ export function TripFinancialsTab({
           </table>
         </div>
       </div>
+      )}
 
       {/* MODAL: Add Shared Expense */}
       {showAddExpenseModal && (
@@ -1894,6 +2571,7 @@ export function TripFinancialsTab({
                     type="number"
                     step="0.01"
                     min="0.01"
+                    inputMode="decimal"
                     required
                     placeholder="25.00"
                     value={amountStr}
@@ -1920,6 +2598,7 @@ export function TripFinancialsTab({
                   data-testid="receipt-file-input"
                   type="file"
                   accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                  capture="environment"
                   onChange={handleFileChange}
                   style={{ fontSize: "0.85rem" }}
                 />

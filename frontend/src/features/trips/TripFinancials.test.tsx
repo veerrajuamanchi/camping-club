@@ -979,4 +979,74 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     expect(screen.getAllByText("Veerraju Amanchi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Dave K.").length).toBeGreaterThan(0);
   });
+
+  describe("Mobile Financials Hub & Tab Navigation", () => {
+    it("renders Hero personal settlement snapshot and prominent Add Expense button on mobile view", async () => {
+      const mockApi = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+        return Promise.resolve({});
+      });
+
+      render(
+        <TripFinancialsTab
+          tripId="trip-1"
+          isAdmin={false}
+          isConfirmedAttendee={true}
+          currentMemberId="member-1"
+          confirmedAttendees={[
+            { memberId: "member-admin", displayName: "Alice Admin" },
+            { memberId: "member-1", displayName: "Dave K." },
+            { memberId: "member-2", displayName: "Sarah M." },
+          ]}
+          api={mockApi}
+          isMobile={true}
+        />
+      );
+
+      // Hero personal snapshot
+      expect(await screen.findByText(/Your Settlement Position/i)).toBeInTheDocument();
+      // Prominent "+ Add Shared Expense" on first screen
+      expect(screen.getByRole("button", { name: /\+ Add Shared Expense/i })).toBeInTheDocument();
+      // Navigation pills exist
+      expect(screen.getByRole("button", { name: /⚡ Summary/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /🧾 Receipts/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /👥 Campers/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /📊 Full Ledger/i })).toBeInTheDocument();
+    });
+
+    it("allows switching between Summary, Receipts, Campers, and Full Ledger tabs", async () => {
+      const user = userEvent.setup();
+      const mockApi = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+        return Promise.resolve({});
+      });
+
+      render(
+        <TripFinancialsTab
+          tripId="trip-1"
+          isAdmin={true}
+          isConfirmedAttendee={true}
+          currentMemberId="member-1"
+          api={mockApi}
+          isMobile={true}
+        />
+      );
+
+      await screen.findByText(/Your Settlement Position/i);
+
+      // Switch to Receipts
+      await user.click(screen.getByRole("button", { name: /🧾 Receipts/i }));
+      expect(screen.getByText("Campfire S'mores and firewood")).toBeInTheDocument();
+
+      // Switch to Campers
+      await user.click(screen.getByRole("button", { name: /👥 Campers/i }));
+      expect(screen.getAllByText(/Dave K\./i)[0]).toBeInTheDocument();
+
+      // Switch to Full Ledger
+      await user.click(screen.getByRole("button", { name: /📊 Full Ledger/i }));
+      expect(screen.getByText("Total Share Owed")).toBeInTheDocument();
+      expect(screen.getByText("Paid Out-of-Pocket")).toBeInTheDocument();
+      expect(screen.getByText("Net Settlement Position")).toBeInTheDocument();
+    });
+  });
 });

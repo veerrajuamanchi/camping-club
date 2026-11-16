@@ -796,3 +796,30 @@ label { display: grid; gap: 0.35rem; font-size: 0.88rem; font-weight: 600; color
   border-color: #94a3b8;
 }
 
+/* Mobile Financials Hub & Responsive Settlement Layout */
+.financials-tab-panel {
+  display: block;
+}
+
+@media (max-width: 767px) {
+  .financials-tab-panel {
+    display: none;
+  }
+  .financials-tab-panel.active {
+    display: block;
+  }
+  .mobile-nav-pills {
+    display: flex !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .mobile-nav-pills {
+    display: none !important;
+  }
+  .financials-tab-panel {
+    display: block !important;
+  }
+}
+
+
