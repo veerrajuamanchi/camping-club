@@ -840,7 +840,6 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
   });
 
   it("renders spreadsheet matrix view with frozen columns, member shares, and N/A for non-participants", async () => {
-    const user = userEvent.setup();
     const mockFinancialsWithCustomSplit: TripFinancialsData = {
       ...mockDraftFinancials,
       expenses: [
@@ -885,12 +884,8 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
       />
     );
 
-    // Verify matrix toggle is present and active
-    const matrixToggle = await screen.findByRole("button", { name: /📊 Spreadsheet Matrix/i });
-    expect(matrixToggle).toBeInTheDocument();
-
-    // Verify column headers
-    expect(screen.getByText("Expense Item & Payer")).toBeInTheDocument();
+    // Verify column headers are directly rendered without needing view toggle
+    expect(await screen.findByText("Expense Item & Payer")).toBeInTheDocument();
     expect(screen.getAllByText("Dave K.").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Alice Admin").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Sarah M.").length).toBeGreaterThan(0);
@@ -906,16 +901,6 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     expect(screen.getByText("Total Share Owed")).toBeInTheDocument();
     expect(screen.getByText("Paid Out-of-Pocket")).toBeInTheDocument();
     expect(screen.getByText("Net Settlement Position")).toBeInTheDocument();
-
-    // Toggle to Itemized Cards view
-    const cardsToggle = screen.getByRole("button", { name: /📋 Itemized Cards/i });
-    await user.click(cardsToggle);
-    expect(screen.getByText("🧾 Shared Member Receipts")).toBeInTheDocument();
-    expect(screen.getByText("Wine and Cheese Night")).toBeInTheDocument();
-
-    // Switch back to Spreadsheet Matrix
-    await user.click(matrixToggle);
-    expect(screen.getByText("Expense Item & Payer")).toBeInTheDocument();
   });
 
   it("renders without blank screen when cabinDeposit has no allocations array (production API format)", async () => {
@@ -978,5 +963,79 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     expect(screen.getByText("Expense Item & Payer")).toBeInTheDocument();
     expect(screen.getAllByText("Veerraju Amanchi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Dave K.").length).toBeGreaterThan(0);
+  });
+
+  describe("Mobile Financials Hub & Tab Navigation", () => {
+    it("renders Hero personal settlement snapshot with trip total badge and prominent Add Expense button on mobile view", async () => {
+      const mockApi = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+        return Promise.resolve({});
+      });
+
+      render(
+        <TripFinancialsTab
+          tripId="trip-1"
+          isAdmin={false}
+          isConfirmedAttendee={true}
+          currentMemberId="member-1"
+          confirmedAttendees={[
+            { memberId: "member-admin", displayName: "Alice Admin" },
+            { memberId: "member-1", displayName: "Dave K." },
+            { memberId: "member-2", displayName: "Sarah M." },
+          ]}
+          api={mockApi}
+          isMobile={true}
+        />
+      );
+
+      // Hero personal snapshot & Trip Total Badge
+      expect(await screen.findByText(/Your Settlement Position/i)).toBeInTheDocument();
+      const tripTotalBadge = screen.getByTestId("hero-trip-total-badge");
+      expect(tripTotalBadge).toBeInTheDocument();
+      expect(tripTotalBadge).toHaveTextContent("💰 Trip Total: $271.00 • 3 Campers");
+      // Prominent "+ Add Shared Expense" on first screen
+      expect(screen.getByRole("button", { name: /\+ Add Shared Expense/i })).toBeInTheDocument();
+      // 3 Navigation pills exist (Summary tab removed in favor of direct Hero & Campers)
+      expect(screen.queryByRole("button", { name: /⚡ Summary/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /🧾 Receipts/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /👥 Campers/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /📊 Full Ledger/i })).toBeInTheDocument();
+    });
+
+    it("allows switching between Receipts, Campers (with transfers), and Full Ledger (direct matrix) tabs", async () => {
+      const user = userEvent.setup();
+      const mockApi = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+        return Promise.resolve({});
+      });
+
+      render(
+        <TripFinancialsTab
+          tripId="trip-1"
+          isAdmin={true}
+          isConfirmedAttendee={true}
+          currentMemberId="member-1"
+          api={mockApi}
+          isMobile={true}
+        />
+      );
+
+      await screen.findByText(/Your Settlement Position/i);
+
+      // Default tab on mobile is Receipts
+      expect(screen.getByText("Campfire S'mores and firewood")).toBeInTheDocument();
+
+      // Switch to Campers - displays both peer transfers and member balances
+      await user.click(screen.getByRole("button", { name: /👥 Campers/i }));
+      expect(screen.getByText("💸 Settlement Transfers")).toBeInTheDocument();
+      expect(screen.getAllByText("Alice Admin").length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Dave K\./i)[0]).toBeInTheDocument();
+
+      // Switch to Full Ledger - takes directly to spreadsheet matrix
+      await user.click(screen.getByRole("button", { name: /📊 Full Ledger/i }));
+      expect(screen.getByText("Total Share Owed")).toBeInTheDocument();
+      expect(screen.getByText("Paid Out-of-Pocket")).toBeInTheDocument();
+      expect(screen.getByText("Net Settlement Position")).toBeInTheDocument();
+    });
   });
 });
