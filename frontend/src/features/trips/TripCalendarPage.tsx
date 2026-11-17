@@ -8,7 +8,25 @@ import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 type Rule = { stable_key: string; text: string; structured_values: Record<string, unknown> };
 type Bundle = { id: string; version: number; contentHash: string; rules: Rule[]; createdAt: string };
 export type CabinBookingStatus = "booked" | "pending" | "sites_available" | "no_vacancy";
-export type EventStatus = "tentative" | "confirmed" | "cancelled";
+export type EventStatus =
+  | "tentative"
+  | "confirmed"
+  | "cancelled"
+  | "rsvp_open"
+  | "in_progress"
+  | "completed"
+  | "financially_finalized"
+  | "financially_settled"
+  | "archived";
+export type TripStatus =
+  | "rsvp_open"
+  | "confirmed"
+  | "in_progress"
+  | "completed"
+  | "financially_finalized"
+  | "financially_settled"
+  | "archived"
+  | "cancelled";
 export type CampingType = "cabin" | "tent" | "rv" | "boat";
 
 type Campsite = {
@@ -28,7 +46,7 @@ export type Trip = {
   effectiveCapacity: number | null; spotsRemaining: number | null;
   waitlistCount: number; myWaitlistPosition: number | null;
   pollStatus: "draft" | "open" | "closed";
-  title?: string | null; eventStatus?: EventStatus; campingType?: CampingType;
+  title?: string | null; eventStatus?: EventStatus; tripStatus?: TripStatus; campingType?: CampingType;
   taskQuotaTarget?: number; myDutyCount?: number; myDailyWorkload?: DailyWorkload | null;
   cabinPayerMemberId?: string | null; depositStatus?: string | null;
   additionalInformation: string; cabinBookingStatus: CabinBookingStatus | null;
@@ -82,6 +100,30 @@ function datePlusDays(date: string, days: number): string {
 
 function ErrorText({ value }: { value: string | null }) {
   return value ? <p role="alert" className="form-error">{value}</p> : null;
+}
+
+export function isTripPast(trip: Trip, todayStr?: string): boolean {
+  if (
+    trip.eventStatus === "completed" ||
+    trip.eventStatus === "financially_finalized" ||
+    trip.eventStatus === "financially_settled" ||
+    trip.eventStatus === "archived"
+  ) {
+    return true;
+  }
+  if (
+    (trip as any).tripStatus === "completed" ||
+    (trip as any).tripStatus === "financially_finalized" ||
+    (trip as any).tripStatus === "financially_settled" ||
+    (trip as any).tripStatus === "archived"
+  ) {
+    return true;
+  }
+  if (!trip.endsOn) {
+    return false;
+  }
+  const today = todayStr || new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+  return trip.endsOn < today;
 }
 
 function TripEditModal({
@@ -173,11 +215,12 @@ function TripEditModal({
 
       await onRefresh();
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       if (err instanceof TripApiError && err.status === 409) {
         setMsg("This trip changed while you were editing. Refresh and try again.");
       } else {
-        setMsg("Could not save trip configuration. Please verify all inputs.");
+        const errorDetail = err?.message || err?.error;
+        setMsg(errorDetail ? `Could not save trip configuration: ${errorDetail}` : "Could not save trip configuration. Please verify all inputs.");
       }
     } finally {
       setBusy(false);
@@ -235,6 +278,9 @@ function TripEditModal({
             </label>
             <label>Max capacity (optional)
               <input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+              <small style={{ color: "#64748b", display: "block", marginTop: "0.25rem", fontSize: "0.78rem" }}>
+                Optional cap. Leave blank to automatically use Sites Count × Site Capacity.
+              </small>
             </label>
           </div>
           <label>Selected campsite
@@ -385,18 +431,26 @@ function EventCard({
 
 
   const [showEditModal, setShowEditModal] = useState(false);
+  const navigate = useNavigate();
+  const isPast = isTripPast(trip);
 
   const eventStatusLabel = trip.eventStatus === "confirmed"
     ? "Confirmed"
     : trip.eventStatus === "cancelled"
       ? "Cancelled"
-      : trip.eventStatus === "tentative"
-        ? "Tentative"
-        : (isDraft
-          ? "Pending"
-          : trip.pollStatus === "open"
-            ? (trip.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
-            : (trip.pollStatus === "closed" ? "Confirmed" : "Pending"));
+      : trip.eventStatus === "completed"
+        ? "Completed"
+        : trip.eventStatus === "financially_finalized"
+          ? "Finalized"
+          : trip.eventStatus === "financially_settled"
+            ? "Settled"
+            : trip.eventStatus === "tentative"
+              ? "Tentative"
+              : (isDraft
+                ? "Pending"
+                : trip.pollStatus === "open"
+                  ? (trip.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
+                  : (trip.pollStatus === "closed" ? "Confirmed" : "Pending"));
 
   const formattedDeadlinePST = trip.pollDeadlineAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -503,7 +557,72 @@ function EventCard({
         </div>
       </div>
 
-      {!isDraft && (
+      {isPast ? (
+        <div
+          className="past-event-financials-section"
+          style={{
+            marginTop: "1rem",
+            padding: "0.85rem",
+            background: "#f8fafc",
+            borderRadius: "8px",
+            border: "1px solid #cbd5e1",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#334155" }}>
+                🏁 Completed Event
+              </span>
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  padding: "0.2rem 0.5rem",
+                  borderRadius: "6px",
+                  fontWeight: 600,
+                  background:
+                    trip.eventStatus === "financially_settled" || (trip as any).tripStatus === "financially_settled"
+                      ? "#10b981"
+                      : trip.eventStatus === "financially_finalized" || (trip as any).tripStatus === "financially_finalized"
+                      ? "#3b82f6"
+                      : "#f59e0b",
+                  color: "#ffffff",
+                }}
+              >
+                {trip.eventStatus === "financially_settled" || (trip as any).tripStatus === "financially_settled"
+                  ? "✅ Fully Settled"
+                  : trip.eventStatus === "financially_finalized" || (trip as any).tripStatus === "financially_finalized"
+                  ? "🔒 Finalized"
+                  : "⏳ Settlement Draft"}
+              </span>
+            </div>
+            <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.82rem", color: "#64748b" }}>
+              Event completed. View unified expense ledger and camper settlement transfers.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => navigate(`/trips/${trip.tripId}?tab=financials`)}
+            style={{
+              background: "#2563eb",
+              color: "#ffffff",
+              border: "none",
+              padding: "0.45rem 0.85rem",
+              borderRadius: "6px",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+            }}
+          >
+            💰 View Financials & Settlement ➔
+          </button>
+        </div>
+      ) : !isDraft ? (
         <div className="rsvp-section">
           <p className="rsvp-label">Your RSVP</p>
           <div className="rsvp-pills">
@@ -586,7 +705,7 @@ function EventCard({
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       {isDraft && (
         <p style={{ margin: 0, fontSize: "0.88rem", color: "#6b7280" }}>
@@ -594,7 +713,7 @@ function EventCard({
         </p>
       )}
 
-      {isComing && (
+      {isComing && !isPast && (
         <div
           className="trip-readiness-scorecard"
           style={{
@@ -723,7 +842,7 @@ function EventCard({
           )}
         </div>
         <Link to={`/trips/${trip.tripId}`} className="view-details-link">
-          View details &gt;
+          {isPast ? "View event & finances >" : "View details >"}
         </Link>
       </div>
 
@@ -812,7 +931,7 @@ function EventCard({
         </details>
       )}
 
-      {!isDraft && !isOpen && <p role="status">RSVP changes are unavailable for cancelled or ended events.</p>}
+      {!isDraft && !isOpen && !isPast && <p role="status">RSVP changes are unavailable for cancelled or ended events.</p>}
 
       {waitlistedPosition !== null && (
         <p role="status">
@@ -1047,6 +1166,7 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
   const [loading, setLoading] = useState(true);
   const [showAddCustomModal, setShowAddCustomModal] = useState(false);
   const [dutyPromptTrip, setDutyPromptTrip] = useState<Trip | null>(null);
+  const [activeTab, setActiveTab] = useState<"upcoming" | "past">("upcoming");
 
   async function refresh() {
     setError(null);
@@ -1064,11 +1184,23 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
     void refresh();
   }, []);
 
+  const todayPST = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+  const upcomingTrips = (calendar?.trips ?? []).filter((t) => !isTripPast(t, todayPST)).sort(sortTrips);
+  const pastTrips = (calendar?.trips ?? []).filter((t) => isTripPast(t, todayPST)).sort((a, b) => {
+    if (a.endsOn && b.endsOn) return b.endsOn.localeCompare(a.endsOn);
+    return b.monthKey.localeCompare(a.monthKey);
+  });
+  const currentTrips = activeTab === "upcoming" ? upcomingTrips : pastTrips;
+
+  const unsettledPastTrips = pastTrips.filter(
+    (t) => t.eventStatus !== "financially_settled" && (t as any).tripStatus !== "financially_settled"
+  );
+
   return (
     <section className="trip-page">
       <div className="feed-header">
         <div>
-          <h1 className="feed-title">Upcoming Camping Events</h1>
+          <h1 className="feed-title">{activeTab === "upcoming" ? "Upcoming Camping Events" : "Past Camping Events"}</h1>
         </div>
         {isAdmin && (
           <button
@@ -1081,6 +1213,110 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
         )}
       </div>
 
+      {/* 2-Segment Tab Switcher: Upcoming (N) vs Past Trips (N) */}
+      {calendar && (
+        <div
+          role="tablist"
+          aria-label="Events View"
+          style={{
+            display: "inline-flex",
+            background: "#e2e8f0",
+            padding: "0.25rem",
+            borderRadius: "8px",
+            marginBottom: "1.25rem",
+            gap: "0.25rem",
+          }}
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "upcoming"}
+            onClick={() => setActiveTab("upcoming")}
+            style={{
+              background: activeTab === "upcoming" ? "#ffffff" : "transparent",
+              color: activeTab === "upcoming" ? "#0f172a" : "#475569",
+              border: "none",
+              padding: "0.45rem 1rem",
+              borderRadius: "6px",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              cursor: "pointer",
+              boxShadow: activeTab === "upcoming" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            🏕️ Upcoming ({upcomingTrips.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "past"}
+            onClick={() => setActiveTab("past")}
+            style={{
+              background: activeTab === "past" ? "#ffffff" : "transparent",
+              color: activeTab === "past" ? "#0f172a" : "#475569",
+              border: "none",
+              padding: "0.45rem 1rem",
+              borderRadius: "6px",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              cursor: "pointer",
+              boxShadow: activeTab === "past" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            🏁 Past Trips ({pastTrips.length})
+          </button>
+        </div>
+      )}
+
+      {/* Unsettled Past Trips Alert Banner on Upcoming View */}
+      {activeTab === "upcoming" && unsettledPastTrips.length > 0 && (
+        <div
+          className="card"
+          data-testid="pending-settlement-banner"
+          style={{
+            background: "linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%)",
+            border: "1.5px solid #f59e0b",
+            color: "#92400e",
+            padding: "0.85rem 1rem",
+            marginBottom: "1rem",
+            borderRadius: "8px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+          }}
+        >
+          <div>
+            <strong style={{ fontSize: "0.95rem" }}>
+              ⚠️ {unsettledPastTrips.length === 1 ? (unsettledPastTrips[0].title || `${monthName(unsettledPastTrips[0].monthKey)} Camping`) : `${unsettledPastTrips.length} Past Trips`} — Financial Settlement Pending
+            </strong>
+            <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#78350f" }}>
+              Trip completed on {unsettledPastTrips[0].endsOn}. Financial settlement is pending review/reconciliation.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => navigate(`/trips/${unsettledPastTrips[0].tripId}?tab=financials`)}
+            style={{
+              background: "#b45309",
+              color: "#ffffff",
+              border: "none",
+              padding: "0.45rem 0.85rem",
+              borderRadius: "6px",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+            }}
+          >
+            View Settlement ➔
+          </button>
+        </div>
+      )}
+
       {loading && <p role="status">Loading camping calendar…</p>}
       {error && (
         <div className="card">
@@ -1091,22 +1327,31 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
         </div>
       )}
 
-      {calendar && (
+      {calendar && currentTrips.length === 0 && (
+        <div className="card" style={{ textAlign: "center", padding: "2.5rem 1rem", color: "#64748b" }}>
+          <p style={{ fontSize: "1.1rem", fontWeight: 600, margin: "0 0 0.5rem 0" }}>
+            {activeTab === "upcoming" ? "No upcoming trips scheduled." : "No past trips found."}
+          </p>
+          <p style={{ fontSize: "0.9rem", margin: 0 }}>
+            {activeTab === "upcoming" ? "Check back later or click + Add Custom Camping to plan an event." : "Completed events will be archived here."}
+          </p>
+        </div>
+      )}
+
+      {calendar && currentTrips.length > 0 && (
         <div className="stack">
-          {[...calendar.trips]
-            .sort(sortTrips)
-            .map((trip) => (
-              <EventCard
-                key={trip.tripId}
-                trip={trip}
-                campsite={calendar.campsites.find((s) => s.campsiteId === trip.selectedCampsiteId)}
-                calendar={calendar}
-                isAdmin={isAdmin}
-                api={api}
-                onRefresh={refresh}
-                onRsvpConfirmed={(confirmedTrip) => setDutyPromptTrip(confirmedTrip)}
-              />
-            ))}
+          {currentTrips.map((trip) => (
+            <EventCard
+              key={trip.tripId}
+              trip={trip}
+              campsite={calendar.campsites.find((s) => s.campsiteId === trip.selectedCampsiteId)}
+              calendar={calendar}
+              isAdmin={isAdmin}
+              api={api}
+              onRefresh={refresh}
+              onRsvpConfirmed={(confirmedTrip) => setDutyPromptTrip(confirmedTrip)}
+            />
+          ))}
         </div>
       )}
 

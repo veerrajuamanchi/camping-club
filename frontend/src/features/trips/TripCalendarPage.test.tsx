@@ -529,5 +529,126 @@ describe("TripCalendarPage", () => {
     expect(await screen.findByText("✓ Cabin Payer")).toBeInTheDocument();
     expect(screen.getByText("Deposit Exempt")).toBeInTheDocument();
   });
+
+  describe("Past vs Upcoming Events & Settlement Tabs (Proposal B)", () => {
+    it("partitions trips into Upcoming and Past Trips tabs based on trip dates", async () => {
+      const calendar = makeCalendar();
+      // Upcoming trip (starts in 2027)
+      calendar.trips = [
+        {
+          ...calendar.trips[0],
+          tripId: "trip-future",
+          title: "January 2027 Future Camping",
+          startsOn: "2027-01-15",
+          endsOn: "2027-01-17",
+          eventStatus: "confirmed",
+        },
+        {
+          ...calendar.trips[0],
+          tripId: "trip-past",
+          title: "November 2026 Completed Trip",
+          startsOn: "2026-11-13",
+          endsOn: "2026-11-15",
+          eventStatus: "completed",
+        },
+      ];
+
+      render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => calendar) as unknown as TripApi} />);
+
+      // Top segment switcher should show counts
+      expect(await screen.findByRole("tab", { name: /Upcoming \(1\)/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /Past Trips \(1\)/i })).toBeInTheDocument();
+
+      // On Upcoming tab (default), only the future trip is displayed in the list
+      expect(screen.getByText("January 2027 Future Camping")).toBeInTheDocument();
+      expect(screen.queryByText("November 2026 Completed Trip")).not.toBeInTheDocument();
+
+      // Switch to Past Trips tab
+      fireEvent.click(screen.getByRole("tab", { name: /Past Trips \(1\)/i }));
+
+      // Now past trip is visible and upcoming trip is not
+      expect(await screen.findByText("November 2026 Completed Trip")).toBeInTheDocument();
+      expect(screen.queryByText("January 2027 Future Camping")).not.toBeInTheDocument();
+    });
+
+    it("shows pending settlement alert banner on Upcoming tab when a past trip is unsettled", async () => {
+      const calendar = makeCalendar();
+      calendar.trips = [
+        {
+          ...calendar.trips[0],
+          tripId: "trip-future",
+          title: "January 2027 Future Camping",
+          startsOn: "2027-01-15",
+          endsOn: "2027-01-17",
+        },
+        {
+          ...calendar.trips[0],
+          tripId: "trip-past",
+          title: "November 2026 Completed Trip",
+          startsOn: "2026-11-13",
+          endsOn: "2026-11-15",
+          eventStatus: "completed",
+        },
+      ];
+
+      render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => calendar) as unknown as TripApi} />);
+
+      // Should show the settlement banner on Upcoming tab
+      const banner = await screen.findByTestId("pending-settlement-banner");
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent(/Financial Settlement Pending/i);
+      expect(banner).toHaveTextContent(/November 2026 Completed Trip/i);
+    });
+
+    it("renders completed badge and View Financials button instead of RSVP pills for past events", async () => {
+      const calendar = makeCalendar();
+      calendar.trips = [
+        {
+          ...calendar.trips[0],
+          tripId: "trip-past",
+          title: "November 2026 Completed Trip",
+          startsOn: "2026-11-13",
+          endsOn: "2026-11-15",
+          eventStatus: "completed",
+        },
+      ];
+
+      render(<TripCalendarPage isAdmin={false} api={vi.fn(async () => calendar) as unknown as TripApi} />);
+
+      // Switch to Past Trips
+      fireEvent.click(await screen.findByRole("tab", { name: /Past Trips \(1\)/i }));
+
+      expect(await screen.findByText("🏁 Completed Event")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /💰 View Financials & Settlement ➔/i })).toBeInTheDocument();
+
+      // RSVP pills should NOT be rendered
+      expect(screen.queryByRole("button", { name: "Yes, Going" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "No, Not Going" })).not.toBeInTheDocument();
+    });
+
+    it("surfaces server error message when trip editing fails", async () => {
+      const calendar = makeCalendar();
+      const mockApi = vi.fn().mockImplementation((action: string) => {
+        if (action === "get_calendar") return Promise.resolve(calendar);
+        if (action === "admin_configure_trip") {
+          return Promise.reject(new TripApiError("invalid_trip_configuration", 400, "max capacity cannot be less than minimum participants"));
+        }
+        return Promise.resolve({});
+      });
+
+      render(<TripCalendarPage isAdmin={true} api={mockApi as unknown as TripApi} />);
+      await screen.findByText("January 2027 Camping");
+
+      fireEvent.click(screen.getByRole("button", { name: /✏️ Edit/i }));
+
+      // Fill form and save
+      fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+      // The exact error from backend must be surfaced
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        /max capacity cannot be less than minimum participants/i
+      );
+    });
+  });
 });
 
