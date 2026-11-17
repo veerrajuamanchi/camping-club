@@ -3536,8 +3536,13 @@ function EditTripDetailsModal({
       });
       await onRefresh();
       onClose();
-    } catch {
-      setMsg("Could not save trip configuration. Please check all inputs.");
+    } catch (err: any) {
+      if (err instanceof TripApiError && err.status === 409) {
+        setMsg("This trip changed while you were editing. Refresh and try again.");
+      } else {
+        const errorDetail = err?.message || err?.error;
+        setMsg(errorDetail ? `Could not save trip configuration: ${errorDetail}` : "Could not save trip configuration. Please check all inputs.");
+      }
     } finally {
       setBusy(false);
     }
@@ -3605,6 +3610,9 @@ function EditTripDetailsModal({
             <label>
               Max capacity (optional)
               <input type="number" min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+              <small style={{ color: "#64748b", display: "block", marginTop: "0.25rem", fontSize: "0.78rem" }}>
+                Optional cap. Leave blank to automatically use Sites Count × Site Capacity.
+              </small>
             </label>
           </div>
           <label>

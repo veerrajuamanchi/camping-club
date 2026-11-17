@@ -102,7 +102,7 @@ export function AdminOperationsPage({
         tripId: trip.tripId,
         title: trip.title || `${trip.monthKey} Camping`,
         monthKey: trip.monthKey,
-        eventStatus: trip.eventStatus ?? "tentative",
+        eventStatus: (trip.eventStatus === "confirmed" || trip.eventStatus === "cancelled") ? trip.eventStatus : "tentative",
         startsOn: trip.startsOn,
         endsOn: trip.endsOn,
         pollDeadlineAt: trip.pollDeadlineAt,
