@@ -1216,20 +1216,20 @@ export function TripFinancialsTab({
                       </div>
 
                       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", justifyContent: "flex-start" }}>
-                        {!isFinalized && isAdmin && (
+                        {!isFinalized && (isAdmin || exp.payerMemberId === currentMemberId) && (
                           <button
                             type="button"
                             className="btn-secondary"
                             disabled={actionBusy}
                             onClick={() => handleOpenEditExpense(exp)}
                             style={{ fontSize: "0.75rem", padding: "0.2rem 0.5rem", borderRadius: "6px" }}
-                            title="Edit expense details and who paid"
+                            title="Edit expense details and participant split"
                             aria-label={`Edit ${exp.description}`}
                           >
                             ✏️ Edit
                           </button>
                         )}
-                        {!isFinalized && isAdmin && (
+                        {!isFinalized && (isAdmin || exp.payerMemberId === currentMemberId) && (
                           exp.splitMode === "all_attendees" ? (
                             <button
                               type="button"
@@ -1260,12 +1260,21 @@ export function TripFinancialsTab({
                         {!isFinalized && (isAdmin || exp.payerMemberId === currentMemberId) && (
                           <button
                             type="button"
+                            className="btn-secondary"
                             disabled={actionBusy}
                             onClick={() => handleDeleteExpense(exp.id)}
-                            style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "0.85rem", padding: "0.25rem" }}
+                            style={{
+                              fontSize: "0.75rem",
+                              padding: "0.2rem 0.5rem",
+                              borderRadius: "6px",
+                              color: "#dc2626",
+                              borderColor: "#fecaca",
+                              background: "#fef2f2",
+                            }}
+                            title="Delete this expense"
                             aria-label={`Delete ${exp.description}`}
                           >
-                            ✕
+                            🗑️ Delete
                           </button>
                         )}
                       </div>
@@ -1655,7 +1664,7 @@ export function TripFinancialsTab({
                                     📄 View Receipt
                                   </button>
                                 )}
-                                {!isFinalized && isAdmin && (
+                                {!isFinalized && (isAdmin || row.rawExpense.payerMemberId === currentMemberId) && (
                                   <button
                                     type="button"
                                     disabled={actionBusy}
@@ -1668,12 +1677,13 @@ export function TripFinancialsTab({
                                       fontSize: "0.72rem",
                                       cursor: "pointer",
                                     }}
+                                    title="Edit expense details and participant split"
                                     aria-label={`Edit ${row.rawExpense.description}`}
                                   >
                                     ✏️ Edit
                                   </button>
                                 )}
-                                {!isFinalized && isAdmin && row.rawExpense.expenseType !== "website_maintenance" && (
+                                {!isFinalized && (isAdmin || row.rawExpense.payerMemberId === currentMemberId) && row.rawExpense.expenseType !== "website_maintenance" && (
                                   row.rawExpense.splitMode === "all_attendees" ? (
                                     <button
                                       type="button"
@@ -1704,16 +1714,18 @@ export function TripFinancialsTab({
                                     disabled={actionBusy}
                                     onClick={() => handleDeleteExpense(row.rawExpense!.id)}
                                     style={{
-                                      background: "transparent",
-                                      border: "none",
-                                      color: "#ef4444",
+                                      background: "#fef2f2",
+                                      border: "1px solid #fecaca",
+                                      color: "#dc2626",
+                                      borderRadius: "4px",
+                                      padding: "0.15rem 0.4rem",
+                                      fontSize: "0.72rem",
                                       cursor: "pointer",
-                                      fontSize: "0.8rem",
-                                      padding: "0.1rem 0.25rem",
                                     }}
+                                    title="Delete this expense"
                                     aria-label={`Delete ${row.rawExpense.description}`}
                                   >
-                                    ✕
+                                    🗑️ Delete
                                   </button>
                                 )}
                               </div>
@@ -2552,13 +2564,26 @@ export function TripFinancialsTab({
 
               <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
                 <span>Who Paid?</span>
-                <select value={editPayerId} onChange={(e) => setEditPayerId(e.target.value)}>
-                  {attendeesList.map((att) => (
-                    <option key={att.memberId} value={att.memberId}>
-                      {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
-                    </option>
-                  ))}
-                </select>
+                {isAdmin ? (
+                  <select value={editPayerId} onChange={(e) => setEditPayerId(e.target.value)}>
+                    {attendeesList.map((att) => (
+                      <option key={att.memberId} value={att.memberId}>
+                        {att.displayName} {att.memberId === currentMemberId ? "(You)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    disabled
+                    readOnly
+                    value={
+                      attendeesList.find((a) => a.memberId === (editPayerId || editingExpense.payerMemberId))?.displayName ||
+                      (editingExpense.payerMemberId === currentMemberId ? "You" : "Camper")
+                    }
+                    style={{ background: "#f8fafc", color: "#64748b", cursor: "not-allowed" }}
+                  />
+                )}
               </label>
 
               <label style={{ display: "grid", gap: "0.25rem", fontSize: "0.9rem" }}>
