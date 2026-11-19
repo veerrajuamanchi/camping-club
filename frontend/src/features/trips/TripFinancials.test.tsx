@@ -905,6 +905,69 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
     expect(callArgs.allocations).toHaveLength(2);
   });
 
+  it("allows non-admin paying participant to edit custom split participants and delete their expense", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+      if (action === "admin_manage_trip_expense") return Promise.resolve({ success: true });
+      return Promise.resolve({});
+    });
+
+    // In mockDraftFinancials, exp-1 is paid by member-1 (Dave K.).
+    // If currentMemberId is "member-1" and isAdmin is false:
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={false}
+        isConfirmedAttendee={true}
+        currentMemberId="member-1"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    // Verify non-admin participant can see Edit and Delete on their own expense
+    const editBtn = await screen.findByRole("button", { name: /Edit Campfire S'mores and firewood/i });
+    expect(editBtn).toBeInTheDocument();
+
+    const deleteBtn = screen.getByRole("button", { name: /Delete Campfire S'mores and firewood/i });
+    expect(deleteBtn).toBeInTheDocument();
+
+    // Click Edit
+    await user.click(editBtn);
+    expect(screen.getByText("✏️ Edit Expense")).toBeInTheDocument();
+
+    // Switch to Custom Subset
+    const customRadio = screen.getByLabelText(/Custom Subset \(Select Campers\)/i);
+    await user.click(customRadio);
+
+    // Split list appears
+    const splitList = screen.getByTestId("edit-expense-split-list");
+    expect(splitList).toBeInTheDocument();
+
+    // Uncheck Sarah M.
+    const sarahCheckbox = within(splitList).getByLabelText(/Sarah M\./i);
+    await user.click(sarahCheckbox);
+
+    // Save Changes
+    const saveBtn = screen.getByRole("button", { name: /Save Changes/i });
+    fireEvent.submit(saveBtn.closest("form")!);
+
+    expect(mockApi).toHaveBeenCalledWith(
+      "admin_manage_trip_expense",
+      expect.objectContaining({
+        tripId: "trip-1",
+        action: "update",
+        expenseId: "exp-1",
+        splitMode: "custom",
+      })
+    );
+  });
+
   it("renders spreadsheet matrix view with frozen columns, member shares, and N/A for non-participants", async () => {
     const mockFinancialsWithCustomSplit: TripFinancialsData = {
       ...mockDraftFinancials,
