@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   TripFinancialsTab,
@@ -837,6 +837,72 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
         amountCents: 4500,
       })
     );
+  });
+
+  it("allows administrator to edit expense split mode and exclude a participant in custom split", async () => {
+    const user = userEvent.setup();
+    const mockApi = vi.fn().mockImplementation((action: string) => {
+      if (action === "get_trip_financials") return Promise.resolve(mockDraftFinancials);
+      if (action === "admin_manage_trip_expense") return Promise.resolve({ success: true });
+      return Promise.resolve({});
+    });
+
+    render(
+      <TripFinancialsTab
+        tripId="trip-1"
+        isAdmin={true}
+        isConfirmedAttendee={true}
+        currentMemberId="member-admin"
+        confirmedAttendees={[
+          { memberId: "member-admin", displayName: "Alice Admin" },
+          { memberId: "member-1", displayName: "Dave K." },
+          { memberId: "member-2", displayName: "Sarah M." },
+        ]}
+        api={mockApi}
+      />
+    );
+
+    const editBtn = await screen.findByRole("button", { name: /Edit Campfire S'mores and firewood/i });
+    await user.click(editBtn);
+
+    expect(screen.getByText("✏️ Edit Expense")).toBeInTheDocument();
+
+    // Switch to Custom Subset
+    const customRadio = screen.getByLabelText(/Custom Subset \(Select Campers\)/i);
+    await user.click(customRadio);
+
+    // Verify split list appears
+    const splitList = screen.getByTestId("edit-expense-split-list");
+    expect(splitList).toBeInTheDocument();
+
+    // Uncheck Sarah M.
+    const sarahCheckbox = within(splitList).getByLabelText(/Sarah M\./i);
+    expect(sarahCheckbox).toBeChecked();
+    await user.click(sarahCheckbox);
+    expect(sarahCheckbox).not.toBeChecked();
+
+    // Submit form
+    const saveBtn = screen.getByRole("button", { name: /Save Changes/i });
+    fireEvent.submit(saveBtn.closest("form")!);
+
+    expect(mockApi).toHaveBeenCalledWith(
+      "admin_manage_trip_expense",
+      expect.objectContaining({
+        tripId: "trip-1",
+        action: "update",
+        expenseId: "exp-1",
+        splitMode: "custom",
+        allocations: expect.arrayContaining([
+          expect.objectContaining({ memberId: "member-admin" }),
+          expect.objectContaining({ memberId: "member-1" }),
+        ]),
+      })
+    );
+
+    // Verify Sarah is not in the submitted allocations
+    const callArgs = mockApi.mock.calls.find((call) => call[0] === "admin_manage_trip_expense" && call[1].action === "update")?.[1];
+    expect(callArgs.allocations.some((a: any) => a.memberId === "member-2")).toBe(false);
+    expect(callArgs.allocations).toHaveLength(2);
   });
 
   it("renders spreadsheet matrix view with frozen columns, member shares, and N/A for non-participants", async () => {

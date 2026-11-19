@@ -1455,7 +1455,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     let expAllocs: Array<{ id?: string; memberId: string; memberName: string; allocatedCents: number; isMe: boolean }>;
     const isDynamic = !isFinalized && exp.expense_type !== "website_maintenance" && (
       exp.split_mode === "all_attendees" ||
-      (!exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
+      (!exp.split_mode && !exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
     );
     if (isDynamic) {
       const dynamicAllocs = confirmedAttendees.length > 0
@@ -1626,7 +1626,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       let expAllocations: Array<{ memberId: string; allocatedCents: number }>;
       const isDynamic = !isFinalized && (
         exp.split_mode === "all_attendees" ||
-        (!exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
+        (!exp.split_mode && !exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
       );
       if (isDynamic) {
         const dynamicAllocs = confirmedAttendees.length > 0
