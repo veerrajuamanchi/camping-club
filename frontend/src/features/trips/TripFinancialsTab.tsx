@@ -1108,7 +1108,10 @@ export function TripFinancialsTab({
               <p className="metric-value">
                 {completedTransfers} / {totalTransfers}
               </p>
-              <p className="metric-label">Transfers Reconciled</p>
+              <p className="metric-label">Payment Transfers Settled</p>
+              <p style={{ margin: "0.2rem 0 0 0", fontSize: "0.75rem", color: "#64748b" }}>
+                ({attendeesList.length} campers participating)
+              </p>
             </div>
           </div>
         </div>
@@ -1975,13 +1978,28 @@ export function TripFinancialsTab({
         <>
           {/* 1. Settlement Transfers */}
           <div className="card">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: "1.1rem" }}>💸 Settlement Transfers</h3>
                 <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
                   External peer payments (Zelle, Venmo, PayPal, Apple Cash). Mark sent when paid, and recipient confirms receipt.
                 </p>
               </div>
+              {totalTransfers > 0 && (
+                <span
+                  style={{
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    color: completedTransfers === totalTransfers ? "#166534" : "#0369a1",
+                    background: completedTransfers === totalTransfers ? "#f0fdf4" : "#f0f9ff",
+                    padding: "0.25rem 0.65rem",
+                    borderRadius: "9999px",
+                    border: completedTransfers === totalTransfers ? "1px solid #bbf7d0" : "1px solid #bae6fd",
+                  }}
+                >
+                  {completedTransfers} of {totalTransfers} payments settled ({attendeesList.length} campers)
+                </span>
+              )}
             </div>
 
             {(!data?.transfers || data.transfers.length === 0) ? (
