@@ -137,6 +137,8 @@ const inputSchemas = {
     startingMileage: z.number().nonnegative().nullable().optional(),
     endingMileage: z.number().nonnegative().nullable().optional(),
     departureDetails: z.string().trim().max(1000).nullable().optional(),
+    meetingTime: z.string().trim().max(100).nullable().optional(),
+    meetingLocation: z.string().trim().max(200).nullable().optional(),
     riderMemberIds: z.array(uuid).optional(),
   }).strict(),
   record_carpool_mileage: z.object({
@@ -292,7 +294,21 @@ const inputSchemas = {
   request_withdrawal: z.object({ tripId: uuid, reason }).strict(),
   admin_promote_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason }).strict(),
   admin_remove_from_waitlist: z.object({ tripId: uuid, memberId: uuid, reason: reason.optional() }).strict(),
-  admin_send_trip_summary_email: z.object({ tripId: uuid, recipientType: z.enum(["admin", "all"]).default("admin") }).strict(),
+  admin_send_trip_summary_email: z.object({
+    tripId: uuid,
+    recipientType: z.enum(["admin", "all"]).default("admin"),
+    sections: z.object({
+      whosComing: z.boolean().optional(),
+      carpools: z.boolean().optional(),
+      activityPairings: z.boolean().optional(),
+      sharedGear: z.boolean().optional(),
+      individualGear: z.boolean().optional(),
+      dutiesByDay: z.boolean().optional(),
+      commitmentsTable: z.boolean().optional(),
+      commitments: z.boolean().optional(),
+      activityVouchers: z.boolean().optional(),
+    }).optional(),
+  }).strict(),
   admin_list_master_responsibilities: z.object({ includeInactive: z.boolean().optional() }).strict(),
   admin_create_master_responsibility: z.object({
     title: z.string().trim().min(3).max(100),
@@ -1221,7 +1237,7 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
     service.from("trip_carpools")
       .select(`
         id, trip_id, driver_member_id, vehicle_description, max_seats,
-        starting_mileage, ending_mileage, departure_details, created_at, updated_at,
+        starting_mileage, ending_mileage, departure_details, meeting_time, meeting_location, created_at, updated_at,
         riders:trip_carpool_riders(id, carpool_id, rider_member_id)
       `)
       .eq("trip_id", tripId)
@@ -1293,6 +1309,8 @@ async function getTripLogistics(member: Member, tripId: string): Promise<Record<
       endingMileage: cp.ending_mileage != null ? Number(cp.ending_mileage) : null,
       totalMiles,
       departureDetails: cp.departure_details,
+      meetingTime: cp.meeting_time ?? null,
+      meetingLocation: cp.meeting_location ?? null,
       isMyCarpool: cp.driver_member_id === member.member_id,
       riders,
     };
@@ -1391,14 +1409,11 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   const rawExpenses = (expensesResult.data ?? []).filter((exp: any) => {
     if (exp.expense_type === "website_maintenance") {
-      const allocatedMemberId = exp.allocations?.[0]?.member_id;
-      // If member is not an active confirmed attendee (e.g. waitlisted or withdrawn), exclude fee
-      if (allocatedMemberId && !confirmedAttendees.includes(allocatedMemberId)) {
-        if (!isFinalized && !exp.is_locked) {
-          service.from("trip_expenses").delete().eq("id", exp.id).then(() => {});
-        }
+      exp.allocations = (exp.allocations ?? []).filter((a: any) => confirmedAttendees.includes(a.member_id));
+      if (exp.allocations.length === 0) {
         return false;
       }
+      exp.amount_cents = exp.allocations.reduce((sum: number, a: any) => sum + (a.allocated_cents || 0), 0);
     }
     return true;
   });
@@ -1440,7 +1455,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     let expAllocs: Array<{ id?: string; memberId: string; memberName: string; allocatedCents: number; isMe: boolean }>;
     const isDynamic = !isFinalized && exp.expense_type !== "website_maintenance" && (
       exp.split_mode === "all_attendees" ||
-      (!exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
+      (!exp.split_mode && !exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
     );
     if (isDynamic) {
       const dynamicAllocs = confirmedAttendees.length > 0
@@ -1611,7 +1626,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       let expAllocations: Array<{ memberId: string; allocatedCents: number }>;
       const isDynamic = !isFinalized && (
         exp.split_mode === "all_attendees" ||
-        (!exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
+        (!exp.split_mode && !exp.is_locked && (exp.allocations ?? []).length >= Math.max(2, confirmedAttendees.length - 1))
       );
       if (isDynamic) {
         const dynamicAllocs = confirmedAttendees.length > 0
@@ -1867,8 +1882,31 @@ async function getConstitution(member: Member, tripId?: string): Promise<Record<
 async function sendTripSummaryEmail(
   authUser: { id: string; email?: string },
   tripId: string,
-  recipientType: "admin" | "all"
+  recipientType: "admin" | "all",
+  sections?: {
+    whosComing?: boolean;
+    carpools?: boolean;
+    activityPairings?: boolean;
+    sharedGear?: boolean;
+    individualGear?: boolean;
+    dutiesByDay?: boolean;
+    commitmentsTable?: boolean;
+    commitments?: boolean;
+    activityVouchers?: boolean;
+  }
 ): Promise<{ sent: boolean; recipientCount: number; recipients: string[]; provider?: string; reason?: string }> {
+  const selectedSections = {
+    whosComing: sections?.whosComing ?? true,
+    carpools: sections?.carpools ?? true,
+    activityPairings: sections?.activityPairings ?? true,
+    sharedGear: sections?.sharedGear ?? true,
+    individualGear: sections?.individualGear ?? true,
+    dutiesByDay: sections?.dutiesByDay ?? true,
+    commitmentsTable: sections?.commitmentsTable ?? false,
+    commitments: sections?.commitments ?? false,
+    activityVouchers: sections?.activityVouchers ?? false,
+  };
+
   const { data: trip, error: tripErr } = await service
     .from("camping_trips")
     .select("id, title, month_key, starts_on, ends_on, additional_information, selected_campsite_id")
@@ -1920,7 +1958,7 @@ async function sendTripSummaryEmail(
   // 3. Carpools
   const { data: rawCarpools } = await service
     .from("trip_carpools")
-    .select("id, driver_member_id, vehicle_description, max_seats, departure_details")
+    .select("id, driver_member_id, vehicle_description, max_seats, departure_details, meeting_time, meeting_location")
     .eq("trip_id", tripId);
 
   const carpoolIds = (rawCarpools ?? []).map((c: any) => c.id);
@@ -1941,7 +1979,7 @@ async function sendTripSummaryEmail(
   // 4. Activities & Vouchers
   const { data: rawActivities } = await service
     .from("trip_activities")
-    .select("id, title, activity_date, start_time, location_name")
+    .select("id, title, activity_date, start_time, location_name, address, unit_label")
     .eq("trip_id", tripId);
 
   const activityIds = (rawActivities ?? []).map((a: any) => a.id);
@@ -1984,6 +2022,60 @@ async function sendTripSummaryEmail(
     .order("category")
     .order("item_name");
 
+  // 5c. Individual Packing Gear
+  const { data: individualCommitments } = await service
+    .from("trip_commitments")
+    .select("id, category, item_name, quantity_description, is_critical, commitment_type, is_active")
+    .eq("trip_id", tripId)
+    .eq("is_active", true)
+    .eq("commitment_type", "individual_pack")
+    .order("category")
+    .order("item_name");
+
+  // 6. Time Slots and Duty Assignments (for Duties by Day)
+  const { data: rawTimeSlots } = await service
+    .from("trip_time_slots")
+    .select(`
+      id,
+      slot_date,
+      time_block,
+      label,
+      is_enabled,
+      sort_order,
+      duties:trip_slot_duties(
+        id,
+        capacity,
+        workload_weight,
+        is_active,
+        responsibility:master_responsibilities(
+          id,
+          title,
+          category
+        )
+      )
+    `)
+    .eq("trip_id", tripId)
+    .neq("is_enabled", false)
+    .order("slot_date", { ascending: true })
+    .order("sort_order", { ascending: true });
+
+  const slotDutyIds: string[] = [];
+  for (const s of rawTimeSlots ?? []) {
+    for (const d of (s as any).duties ?? []) {
+      if (d.is_active !== false) {
+        slotDutyIds.push(d.id);
+      }
+    }
+  }
+
+  const { data: rawDutyAssignments } = slotDutyIds.length > 0
+    ? await service
+        .from("trip_duty_assignments")
+        .select("id, slot_duty_id, member_id, status")
+        .in("slot_duty_id", slotDutyIds)
+        .in("status", ["claimed", "assigned_by_admin"])
+    : { data: [] };
+
   // Determine recipients
   let toList: string[] = [];
   const adminEmail = authUser.email || Deno.env.get("ADMIN_NOTIFICATION_EMAIL") || Deno.env.get("GMAIL_USER") || "veerraju.amanchi@gmail.com";
@@ -2009,11 +2101,49 @@ async function sendTripSummaryEmail(
     carpoolsHtml = rawCarpools.map((cp: any, idx: number) => {
       const driverName = nameByMemberId.get(cp.driver_member_id) || "Designated Driver";
       const riderNames = (ridersByCarpool.get(cp.id) ?? []).map((rId: string) => nameByMemberId.get(rId) || "Passenger").join(", ");
+      const meetingDetails: string[] = [];
+      if (cp.meeting_time) meetingDetails.push(`⏰ <strong>Meeting Time:</strong> ${cp.meeting_time}`);
+      if (cp.meeting_location) meetingDetails.push(`📍 <strong>Meeting Location:</strong> ${cp.meeting_location}`);
+      if (cp.departure_details) meetingDetails.push(`📝 <em>${cp.departure_details}</em>`);
+
       return `
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
           <strong style="color: #0f172a;">🚗 Vehicle ${idx + 1}: ${driverName}</strong> (${cp.vehicle_description || "Personal Vehicle"})<br/>
           <span style="font-size: 0.88rem; color: #334155;"><strong>Seats:</strong> ${cp.max_seats} max | <strong>Passengers:</strong> ${riderNames || "None assigned yet"}</span>
-          ${cp.departure_details ? `<br/><span style="font-size: 0.85rem; color: #475569;">📍 <em>Departure: ${cp.departure_details}</em></span>` : ""}
+          ${meetingDetails.length > 0 ? `<br/><span style="font-size: 0.85rem; color: #475569;">${meetingDetails.join(" &nbsp;|&nbsp; ")}</span>` : ""}
+        </div>
+      `;
+    }).join("");
+  }
+
+  let activityPairingsHtml = "";
+  if (!rawActivities || rawActivities.length === 0) {
+    activityPairingsHtml = `<p style="color: #64748b; font-style: italic;">No activities scheduled.</p>`;
+  } else {
+    activityPairingsHtml = rawActivities.map((act: any) => {
+      const actGroups = groupsByActivity.get(act.id) ?? [];
+      const unitLabel = act.unit_label || "Vehicle";
+      const icon = /kayak/i.test(unitLabel) ? "🛶" : /boat/i.test(unitLabel) ? "🚤" : /bike/i.test(unitLabel) ? "🚲" : /car/i.test(unitLabel) || /gocar/i.test(unitLabel) ? "🏎️" : "🚗";
+
+      const pairingsList = actGroups.length === 0
+        ? `<p style="color: #64748b; font-style: italic; margin: 4px 0;">No vehicle pairings formed yet.</p>`
+        : actGroups.map((g: any) => {
+            const memberNames = (g.members ?? []).map((m: any) => nameByMemberId.get(m.member_id) || "Member").join(", ");
+            const vehicleLabel = g.group_name || `${unitLabel} #${g.group_number}`;
+            return `
+              <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-top: 6px; font-size: 0.9rem;">
+                <strong style="color: #0f172a;">${icon} ${vehicleLabel}:</strong> <span style="color: #334155;">${memberNames || "Unassigned"}</span>
+              </div>
+            `;
+          }).join("");
+
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
+          <strong style="color: #0f172a; font-size: 1rem;">🎟️ ${act.title}</strong> — 📅 ${act.activity_date}${act.start_time ? ` at ${act.start_time}` : ""}<br/>
+          ${act.location_name ? `<span style="font-size: 0.85rem; color: #475569;">📍 <strong>Location:</strong> ${act.location_name}${act.address ? ` (${act.address})` : ""}</span><br/>` : ""}
+          <div style="margin-top: 4px;">
+            ${pairingsList}
+          </div>
         </div>
       `;
     }).join("");
@@ -2077,11 +2207,317 @@ async function sendTripSummaryEmail(
     `;
   }
 
+  // 5b. Shared Gear by Camper
+  const commitmentsByMember = new Map<string, any[]>();
+  const unassignedCommitments: any[] = [];
+  for (const c of commitments ?? []) {
+    if (c.assigned_member_id) {
+      const list = commitmentsByMember.get(c.assigned_member_id) ?? [];
+      list.push(c);
+      commitmentsByMember.set(c.assigned_member_id, list);
+    } else {
+      unassignedCommitments.push(c);
+    }
+  }
+
+  let sharedGearHtml = "";
+  if (!commitments || commitments.length === 0) {
+    sharedGearHtml = `<p style="color: #64748b; font-style: italic;">No shared gear or supplies listed.</p>`;
+  } else {
+    const memberIdsWithItems = Array.from(commitmentsByMember.keys());
+    memberIdsWithItems.sort((a, b) => {
+      const nameA = (nameByMemberId.get(a) || "").toLowerCase();
+      const nameB = (nameByMemberId.get(b) || "").toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    const camperCards = memberIdsWithItems.map((mId) => {
+      const mName = nameByMemberId.get(mId) || "Camper";
+      const mPhone = phoneByMemberId.get(mId);
+      const items = commitmentsByMember.get(mId) ?? [];
+      const itemsList = items.map((it: any) => {
+        const critIcon = it.is_critical ? "🚨 " : "• ";
+        const qty = it.quantity_description ? ` <span style="color: #64748b; font-size: 0.85rem;">(${it.quantity_description})</span>` : "";
+        return `<li style="margin-bottom: 4px;">${critIcon}<strong>${it.item_name}</strong>${qty}</li>`;
+      }).join("");
+
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 6px; font-size: 0.95rem;">
+            👤 ${mName} ${mPhone ? `<span style="font-weight: normal; font-size: 0.82rem; color: #64748b;">(${mPhone})</span>` : ""}
+            <span style="float: right; font-size: 0.78rem; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 600;">${items.length} item${items.length === 1 ? "" : "s"}</span>
+          </div>
+          <ul style="padding-left: 18px; margin: 0; font-size: 0.88rem; color: #334155; list-style-type: none;">
+            ${itemsList}
+          </ul>
+        </div>
+      `;
+    });
+
+    if (unassignedCommitments.length > 0) {
+      const unassignedList = unassignedCommitments.map((it: any) => {
+        const critIcon = it.is_critical ? "🚨 " : "• ";
+        const qty = it.quantity_description ? ` <span style="color: #64748b; font-size: 0.85rem;">(${it.quantity_description})</span>` : "";
+        return `<li style="margin-bottom: 4px;">${critIcon}<strong>${it.item_name}</strong>${qty}</li>`;
+      }).join("");
+
+      camperCards.push(`
+        <div style="background-color: #fffbeb; border: 1px dashed #f59e0b; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;">
+          <div style="font-weight: 700; color: #92400e; margin-bottom: 6px; font-size: 0.95rem;">
+            ⚠️ Unassigned / Needs Volunteer
+            <span style="float: right; font-size: 0.78rem; background: #fef3c7; color: #92400e; padding: 2px 7px; border-radius: 4px; font-weight: 600;">${unassignedCommitments.length} item${unassignedCommitments.length === 1 ? "" : "s"}</span>
+          </div>
+          <ul style="padding-left: 18px; margin: 0; font-size: 0.88rem; color: #78350f; list-style-type: none;">
+            ${unassignedList}
+          </ul>
+        </div>
+      `);
+    }
+
+    sharedGearHtml = camperCards.join("");
+  }
+
+  // 5c. Individual Packing Gear HTML
+  let individualGearHtml = "";
+  if (!individualCommitments || individualCommitments.length === 0) {
+    individualGearHtml = `<p style="color: #64748b; font-style: italic;">No individual packing items configured for this trip.</p>`;
+  } else {
+    const itemsList = individualCommitments.map((it: any) => {
+      const critIcon = it.is_critical ? "🚨 " : "🎒 ";
+      const qty = it.quantity_description ? ` <span style="color: #64748b; font-size: 0.85rem;">(${it.quantity_description})</span>` : "";
+      return `<li style="margin-bottom: 4px;">${critIcon}<strong>${it.item_name}</strong>${qty}</li>`;
+    }).join("");
+
+    individualGearHtml = `
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 8px;">
+        <p style="margin: 0 0 8px; font-size: 0.88rem; color: #475569;">
+          <em>Every confirmed attendee should bring their own personal essentials:</em>
+        </p>
+        <ul style="padding-left: 18px; margin: 0; font-size: 0.88rem; color: #334155; list-style-type: none;">
+          ${itemsList}
+        </ul>
+      </div>
+    `;
+  }
+
+  // 6b. Duties by Day (including Driving)
+  const dateSet = new Set<string>();
+  if (trip?.starts_on && trip?.ends_on) {
+    let curr = new Date(trip.starts_on + "T12:00:00Z");
+    const end = new Date(trip.ends_on + "T12:00:00Z");
+    while (curr <= end) {
+      dateSet.add(curr.toISOString().slice(0, 10));
+      curr.setUTCDate(curr.getUTCDate() + 1);
+    }
+  }
+  for (const s of rawTimeSlots ?? []) {
+    if (s.slot_date) dateSet.add(s.slot_date);
+  }
+
+  const sortedDates = Array.from(dateSet).sort();
+
+  let dutiesByDayHtml = "";
+  if (sortedDates.length === 0) {
+    dutiesByDayHtml = `<p style="color: #64748b; font-style: italic;">No dates or duties scheduled.</p>`;
+  } else {
+    dutiesByDayHtml = sortedDates.map((dStr) => {
+      const dutiesByMember = new Map<string, string[]>();
+      const addMemberDuty = (mId: string, text: string) => {
+        const list = dutiesByMember.get(mId) ?? [];
+        list.push(text);
+        dutiesByMember.set(mId, list);
+      };
+
+      // Carpool Driving on trip.starts_on and trip.ends_on
+      if (trip?.starts_on && dStr === trip.starts_on) {
+        for (const cp of rawCarpools ?? []) {
+          if (cp.driver_member_id) {
+            const desc = cp.vehicle_description ? ` (${cp.vehicle_description})` : "";
+            addMemberDuty(cp.driver_member_id, `🚗 <strong>Carpool Driver</strong> — Inbound to campsite${desc}`);
+          }
+        }
+      }
+      if (trip?.ends_on && dStr === trip.ends_on) {
+        for (const cp of rawCarpools ?? []) {
+          if (cp.driver_member_id) {
+            const desc = cp.vehicle_description ? ` (${cp.vehicle_description})` : "";
+            addMemberDuty(cp.driver_member_id, `🚗 <strong>Carpool Driver</strong> — Return trip${desc}`);
+          }
+        }
+      }
+
+      // Scheduled slot duties on this date
+      const slotsOnDate = (rawTimeSlots ?? []).filter((s: any) => s.slot_date === dStr);
+      const unfilledDuties: string[] = [];
+
+      for (const slot of slotsOnDate) {
+        const slotLabel = slot.label || slot.time_block || "General";
+        for (const duty of slot.duties ?? []) {
+          if (duty.is_active === false) continue;
+          const dutyTitle = duty.responsibility?.title || "Duty";
+          const assignments = (rawDutyAssignments ?? []).filter((a: any) => a.slot_duty_id === duty.id);
+          for (const a of assignments) {
+            addMemberDuty(a.member_id, `📋 <strong>${dutyTitle}</strong> (${slotLabel})`);
+          }
+          const openSpots = (duty.capacity || 1) - assignments.length;
+          if (openSpots > 0) {
+            unfilledDuties.push(`${dutyTitle} (${slotLabel}) [${openSpots} open]`);
+          }
+        }
+      }
+
+      let dateHeader = dStr;
+      try {
+        const dt = new Date(dStr + "T12:00:00Z");
+        dateHeader = dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+      } catch {
+        dateHeader = dStr;
+      }
+
+      const activeMemberIds = Array.from(dutiesByMember.keys());
+      activeMemberIds.sort((a, b) => {
+        const nameA = (nameByMemberId.get(a) || "").toLowerCase();
+        const nameB = (nameByMemberId.get(b) || "").toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+
+      let dayBody = "";
+      if (activeMemberIds.length === 0 && unfilledDuties.length === 0) {
+        dayBody = `<p style="color: #64748b; font-style: italic; font-size: 0.88rem; margin: 4px 0;">No duties or driving scheduled for this day.</p>`;
+      } else {
+        const memberRows = activeMemberIds.map((mId) => {
+          const mName = nameByMemberId.get(mId) || "Camper";
+          const mPhone = phoneByMemberId.get(mId);
+          const tasks = dutiesByMember.get(mId) ?? [];
+          return `
+            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-top: 6px;">
+              <strong style="color: #0f172a; font-size: 0.92rem;">👤 ${mName}</strong> ${mPhone ? `<span style="font-size: 0.8rem; color: #64748b;">(${mPhone})</span>` : ""}
+              <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 0.88rem; color: #334155; list-style-type: none;">
+                ${tasks.map((t) => `<li style="margin-bottom: 2px;">${t}</li>`).join("")}
+              </ul>
+            </div>
+          `;
+        }).join("");
+
+        const unfilledNotice = unfilledDuties.length > 0
+          ? `
+            <div style="margin-top: 8px; padding: 8px 12px; background-color: #fef2f2; border: 1px dashed #f87171; border-radius: 6px; font-size: 0.85rem; color: #991b1b;">
+              <strong>⚠️ Volunteers Needed:</strong> ${unfilledDuties.join(", ")}
+            </div>
+          `
+          : "";
+
+        dayBody = memberRows + unfilledNotice;
+      }
+
+      return `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+          <div style="font-weight: 700; color: #0f172a; font-size: 1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+            📅 ${dateHeader}
+          </div>
+          ${dayBody}
+        </div>
+      `;
+    }).join("");
+  }
+
   const attendeesHtml = attendeesList.map((a) => `
     <li style="margin-bottom: 4px;">
       <strong>${a.name}</strong> ${a.phone ? `(${a.phone})` : ""}
     </li>
   `).join("");
+
+  const bodySections: string[] = [];
+
+  if (selectedSections.whosComing) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          👥 Who's Coming (${attendeesList.length} Confirmed)
+        </h3>
+        <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem;">
+          ${attendeesHtml || "<li>No confirmed attendees yet.</li>"}
+        </ul>
+      </div>
+    `);
+  }
+
+  if (selectedSections.carpools) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🚗 Carpools &amp; Transit
+        </h3>
+        ${carpoolsHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.activityPairings) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🏎️ Activity Pool Vehicle Pairings
+        </h3>
+        ${activityPairingsHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.sharedGear) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎒 Shared Gear &amp; Supplies (By Camper)
+        </h3>
+        ${sharedGearHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.individualGear) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎒 Individual Gear (What Each Camper Needs to Bring)
+        </h3>
+        ${individualGearHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.dutiesByDay) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          📋 Duties &amp; Chores by Day
+        </h3>
+        ${dutiesByDayHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.commitmentsTable || selectedSections.commitments) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          📦 Full Itemized Gear &amp; Supplies Table
+        </h3>
+        ${commitmentsHtml}
+      </div>
+    `);
+  }
+
+  if (selectedSections.activityVouchers) {
+    bodySections.push(`
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🎟️ Activity Pools &amp; Vouchers
+        </h3>
+        ${activitiesHtml}
+      </div>
+    `);
+  }
 
   const emailSubject = `🏕️ Trip Briefing: ${tripTitle} (${datesStr})`;
   const emailHtml = `
@@ -2096,35 +2532,7 @@ async function sendTripSummaryEmail(
         </p>
       </div>
 
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          👥 Who's Coming (${attendeesList.length} Confirmed)
-        </h3>
-        <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem;">
-          ${attendeesHtml || "<li>No confirmed attendees yet.</li>"}
-        </ul>
-      </div>
-
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          🚗 Carpools &amp; Transit
-        </h3>
-        ${carpoolsHtml}
-      </div>
-
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          🎟️ Activity Pools &amp; Vouchers
-        </h3>
-        ${activitiesHtml}
-      </div>
-
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #0f172a; margin-bottom: 8px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
-          🎒 Trip Commitments &amp; Supplies
-        </h3>
-        ${commitmentsHtml}
-      </div>
+      ${bodySections.join("")}
 
       <div style="margin-top: 28px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
         <a href="${webAppUrl.replace(/\/$/, "")}/trips/${tripId}" style="background-color: #16a34a; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
@@ -2626,6 +3034,8 @@ Deno.serve(async (request) => {
         p_starting_mileage: input.startingMileage ?? null,
         p_ending_mileage: input.endingMileage ?? null,
         p_departure_details: input.departureDetails ?? null,
+        p_meeting_time: input.meetingTime ?? null,
+        p_meeting_location: input.meetingLocation ?? null,
         p_rider_member_ids: input.riderMemberIds ?? [],
         p_actor_id: member.member_id,
         p_is_admin: member.member_role === "admin",
@@ -2782,20 +3192,11 @@ Deno.serve(async (request) => {
             });
             checkError(waitlistError);
 
-            // Clean up any unfinalized website maintenance fee for this member since they are waitlisted
-            const { data: memberAllocRows } = await service
-              .from("trip_expense_allocations")
-              .select("expense_id")
-              .eq("member_id", member.member_id);
-            if (memberAllocRows && memberAllocRows.length > 0) {
-              const expIds = memberAllocRows.map((r: any) => r.expense_id);
-              await service
-                .from("trip_expenses")
-                .delete()
-                .eq("trip_id", input.tripId)
-                .eq("expense_type", "website_maintenance")
-                .eq("is_locked", false)
-                .in("id", expIds);
+            // Clean up / re-sync website maintenance fee for this member since they are waitlisted
+            try {
+              await service.rpc("sync_trip_website_maintenance_fees", { p_trip_id: input.tripId });
+            } catch (syncErr) {
+              console.warn("Failed to sync website fees on waitlist join:", syncErr);
             }
             try {
               await finish(authUser.id, action, aggregate, key, input, (waitlistResult as { entryId?: string })?.entryId ?? null);
@@ -2858,19 +3259,10 @@ Deno.serve(async (request) => {
         .eq("trip_id", input.tripId)
         .eq("member_id", input.memberId);
 
-      const { data: memberAllocRows } = await service
-        .from("trip_expense_allocations")
-        .select("expense_id")
-        .eq("member_id", input.memberId);
-      if (memberAllocRows && memberAllocRows.length > 0) {
-        const expIds = memberAllocRows.map((r: any) => r.expense_id);
-        await service
-          .from("trip_expenses")
-          .delete()
-          .eq("trip_id", input.tripId)
-          .eq("expense_type", "website_maintenance")
-          .eq("is_locked", false)
-          .in("id", expIds);
+      try {
+        await service.rpc("sync_trip_website_maintenance_fees", { p_trip_id: input.tripId });
+      } catch (syncErr) {
+        console.warn("Failed to sync website fees on admin remove waitlist:", syncErr);
       }
 
       try {
@@ -2883,7 +3275,12 @@ Deno.serve(async (request) => {
     case "admin_send_trip_summary_email": {
       if (member.member_role !== "admin") return errorResponse(request, 403, "forbidden", requestId);
       try {
-        const summaryResult = await sendTripSummaryEmail(authUser, input.tripId as string, (input.recipientType as "admin" | "all") || "admin");
+        const summaryResult = await sendTripSummaryEmail(
+          authUser,
+          input.tripId as string,
+          (input.recipientType as "admin" | "all") || "admin",
+          input.sections as any
+        );
         try {
           await finish(authUser.id, action, aggregate, key, input, null);
         } catch {

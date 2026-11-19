@@ -266,6 +266,8 @@ export function TripFinancialsTab({
   const [editPayerId, setEditPayerId] = useState("");
   const [editDollars, setEditDollars] = useState("");
   const [editIncurredDate, setEditIncurredDate] = useState("");
+  const [editSplitMode, setEditSplitMode] = useState<"all_attendees" | "custom">("all_attendees");
+  const [editSelectedParticipantIds, setEditSelectedParticipantIds] = useState<string[]>([]);
 
   // Mobile Hub active navigation tab: "receipts" | "campers" | "ledger"
   const [activeMobileTab, setActiveMobileTab] = useState<"receipts" | "campers" | "ledger">("receipts");
@@ -296,6 +298,14 @@ export function TripFinancialsTab({
     setEditPayerId(exp.payerMemberId);
     setEditDollars((exp.amountCents / 100).toFixed(2));
     setEditIncurredDate(exp.incurredDate);
+    const mode = exp.splitMode === "custom" ? "custom" : "all_attendees";
+    setEditSplitMode(mode);
+    const allocatedMemberIds = (exp.allocations ?? []).map((a) => a.memberId);
+    setEditSelectedParticipantIds(
+      allocatedMemberIds.length > 0
+        ? allocatedMemberIds
+        : attendeesList.map((a) => a.memberId)
+    );
   };
 
   const handleSaveEditExpense = async (e: React.FormEvent) => {
@@ -307,6 +317,34 @@ export function TripFinancialsTab({
       return;
     }
     const amountCents = Math.round(dollars * 100);
+
+    const effectiveEditSplitMode =
+      editSplitMode === "all_attendees" ||
+      (editSplitMode === "custom" && editSelectedParticipantIds.length === attendeesList.length && attendeesList.length > 0)
+        ? "all_attendees"
+        : "custom";
+
+    const participantsToSplit =
+      effectiveEditSplitMode === "all_attendees"
+        ? attendeesList.map((a) => a.memberId)
+        : editSelectedParticipantIds;
+
+    if (participantsToSplit.length === 0) {
+      setErrorMsg(
+        effectiveEditSplitMode === "all_attendees"
+          ? "No confirmed attendees available to split this expense."
+          : "Please select at least one participant to split this expense."
+      );
+      return;
+    }
+
+    const equalAllocations = calculateEqualAllocations(amountCents, participantsToSplit);
+    const allocationMap = new Map(equalAllocations.map((a) => [a.memberId, a.allocatedCents]));
+    const allocations = participantsToSplit.map((memberId) => ({
+      memberId,
+      allocatedCents: allocationMap.get(memberId) ?? 0,
+    }));
+
     try {
       setActionBusy(true);
       setErrorMsg(null);
@@ -318,6 +356,8 @@ export function TripFinancialsTab({
         payerMemberId: editPayerId || editingExpense.payerMemberId,
         amountCents,
         incurredDate: editIncurredDate || editingExpense.incurredDate,
+        splitMode: effectiveEditSplitMode,
+        allocations,
       });
       setEditingExpense(null);
       await fetchFinancials();
@@ -2543,6 +2583,207 @@ export function TripFinancialsTab({
                 />
               </label>
 
+              {/* Split Mode Options */}
+              <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.25rem" }}>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>Split Type</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      padding: "0.6rem 0.75rem",
+                      border: editSplitMode === "all_attendees" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                      borderRadius: "8px",
+                      background: editSplitMode === "all_attendees" ? "#eff6ff" : "#ffffff",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="editSplitMode"
+                      value="all_attendees"
+                      checked={editSplitMode === "all_attendees"}
+                      onChange={() => setEditSplitMode("all_attendees")}
+                    />
+                    <span>🌐 All Attendees (Dynamic)</span>
+                  </label>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      padding: "0.6rem 0.75rem",
+                      border: editSplitMode === "custom" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                      borderRadius: "8px",
+                      background: editSplitMode === "custom" ? "#eff6ff" : "#ffffff",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="editSplitMode"
+                      value="custom"
+                      checked={editSplitMode === "custom"}
+                      onChange={() => setEditSplitMode("custom")}
+                    />
+                    <span>🎯 Custom Subset (Select Campers)</span>
+                  </label>
+                </div>
+              </div>
+
+              {editSplitMode === "all_attendees" ? (
+                <div
+                  style={{
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    borderRadius: "8px",
+                    padding: "0.6rem 0.75rem",
+                    fontSize: "0.85rem",
+                    color: "#166534",
+                  }}
+                >
+                  {(() => {
+                    const previewAmountCents = Math.round((parseFloat(editDollars) || 0) * 100);
+                    const estPerPerson =
+                      attendeesList.length > 0 && previewAmountCents > 0
+                        ? ` = ${formatMoney(Math.round(previewAmountCents / attendeesList.length))}/person`
+                        : "";
+                    return (
+                      <p style={{ margin: 0, lineHeight: 1.4 }}>
+                        Splits equally among all confirmed attendees (currently {attendeesList.length} campers{estPerPerson}). New attendees who join later will automatically be included.
+                      </p>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.25rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.4rem" }}>
+                    <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>
+                      Split Between Participants:
+                    </span>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
+                        onClick={() => setEditSelectedParticipantIds(attendeesList.map((a) => a.memberId))}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: "0.8rem", padding: "0.25rem 0.65rem", borderRadius: "9999px" }}
+                        onClick={() => setEditSelectedParticipantIds([])}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {editSelectedParticipantIds.length === attendeesList.length && attendeesList.length > 0 ? (
+                    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "6px", padding: "0.4rem 0.65rem", fontSize: "0.8rem", color: "#166534", fontWeight: 500 }}>
+                      🌐 All {attendeesList.length} campers selected — this expense will dynamically split across all attendees, including any new campers who join later.
+                    </div>
+                  ) : (
+                    <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "6px", padding: "0.4rem 0.65rem", fontSize: "0.8rem", color: "#92400e" }}>
+                      🎯 Custom subset: {editSelectedParticipantIds.length} of {attendeesList.length} campers selected (fixed split).
+                    </div>
+                  )}
+
+                  <div
+                    data-testid="edit-expense-split-list"
+                    style={{
+                      maxHeight: "220px",
+                      overflowY: "auto",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "8px",
+                      padding: "0.5rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                      background: "#f8fafc",
+                    }}
+                  >
+                    {attendeesList.map((att) => {
+                      const isChecked = editSelectedParticipantIds.includes(att.memberId);
+                      const displayName = att.displayName?.trim() || "Camper";
+                      return (
+                        <label
+                          key={att.memberId}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.75rem",
+                            fontSize: "0.95rem",
+                            cursor: "pointer",
+                            padding: "0.5rem 0.75rem",
+                            borderRadius: "6px",
+                            border: isChecked ? "1px solid #86efac" : "1px solid #e2e8f0",
+                            background: isChecked ? "#f0fdf4" : "#ffffff",
+                            minHeight: "44px",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            style={{
+                              width: "20px",
+                              height: "20px",
+                              flexShrink: 0,
+                              margin: 0,
+                              cursor: "pointer",
+                            }}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setEditSelectedParticipantIds((prev) => [...prev, att.memberId]);
+                              } else {
+                                setEditSelectedParticipantIds((prev) => prev.filter((id) => id !== att.memberId));
+                              }
+                            }}
+                          />
+                          <span
+                            style={{
+                              minWidth: 0,
+                              overflowWrap: "anywhere",
+                              wordBreak: "break-word",
+                              color: "#0f172a",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {displayName} {att.memberId === currentMemberId ? "(You)" : ""}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {(() => {
+                    const previewAmountCents = Math.round((parseFloat(editDollars) || 0) * 100);
+                    if (editSelectedParticipantIds.length > 0 && previewAmountCents > 0) {
+                      const estPerPersonCents = Math.round(previewAmountCents / editSelectedParticipantIds.length);
+                      return (
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: "#0369a1" }}>
+                          Splitting equally among {editSelectedParticipantIds.length} participant{editSelectedParticipantIds.length > 1 ? "s" : ""}: ~{formatMoney(estPerPersonCents)} each.
+                        </p>
+                      );
+                    }
+                    return (
+                      <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.8rem", color: editSelectedParticipantIds.length === 0 ? "#dc2626" : "#64748b" }}>
+                        {editSelectedParticipantIds.length === 0
+                          ? "⚠️ Please select at least one participant."
+                          : `Selected ${editSelectedParticipantIds.length} participant(s).`}
+                      </p>
+                    );
+                  })()}
+                </div>
+              )}
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
                 <button
                   type="button"
@@ -2552,7 +2793,15 @@ export function TripFinancialsTab({
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary" disabled={actionBusy}>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={
+                    actionBusy ||
+                    (editSplitMode === "custom" && editSelectedParticipantIds.length === 0) ||
+                    (editSplitMode === "all_attendees" && attendeesList.length === 0)
+                  }
+                >
                   {actionBusy ? "Saving..." : "Save Changes"}
                 </button>
               </div>
