@@ -119,6 +119,9 @@ export function isTripPast(trip: Trip, todayStr?: string): boolean {
   ) {
     return true;
   }
+  if (trip.eventStatus === "in_progress" || (trip as any).tripStatus === "in_progress") {
+    return false;
+  }
   if (!trip.endsOn) {
     return false;
   }
@@ -434,23 +437,31 @@ function EventCard({
   const navigate = useNavigate();
   const isPast = isTripPast(trip);
 
-  const eventStatusLabel = trip.eventStatus === "confirmed"
-    ? "Confirmed"
-    : trip.eventStatus === "cancelled"
+  const eventStatusLabel = isPast
+    ? trip.eventStatus === "cancelled"
       ? "Cancelled"
-      : trip.eventStatus === "completed"
-        ? "Completed"
+      : trip.eventStatus === "financially_settled"
+        ? "Concluded & Settled"
         : trip.eventStatus === "financially_finalized"
-          ? "Finalized"
-          : trip.eventStatus === "financially_settled"
-            ? "Settled"
-            : trip.eventStatus === "tentative"
-              ? "Tentative"
-              : (isDraft
-                ? "Pending"
-                : trip.pollStatus === "open"
-                  ? (trip.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
-                  : (trip.pollStatus === "closed" ? "Confirmed" : "Pending"));
+          ? "Settlement In Progress"
+          : "Completed • Reconciling Expenses"
+    : trip.eventStatus === "confirmed"
+      ? "Confirmed"
+      : trip.eventStatus === "cancelled"
+        ? "Cancelled"
+        : trip.eventStatus === "completed"
+          ? "Completed"
+          : trip.eventStatus === "financially_finalized"
+            ? "Finalized"
+            : trip.eventStatus === "financially_settled"
+              ? "Settled"
+              : trip.eventStatus === "tentative"
+                ? "Tentative"
+                : (isDraft
+                  ? "Pending"
+                  : trip.pollStatus === "open"
+                    ? (trip.cabinBookingStatus === "booked" ? "Confirmed" : "Pending")
+                    : (trip.pollStatus === "closed" ? "Confirmed" : "Pending"));
 
   const formattedDeadlinePST = trip.pollDeadlineAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -522,7 +533,7 @@ function EventCard({
           <span className="badge-pill" style={{ fontSize: "0.78rem", background: "#f3f4f6", color: "#374151" }}>
             🏕️ {campingTypeLabel}
           </span>
-          <span className={`event-status-pill status-${trip.eventStatus === "confirmed" ? "confirmed" : trip.eventStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : trip.pollStatus}`}>
+          <span className={`event-status-pill status-${isPast ? (trip.eventStatus === "cancelled" ? "closed" : trip.eventStatus === "financially_settled" ? "confirmed" : "upcoming") : (trip.eventStatus === "confirmed" ? "confirmed" : trip.eventStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : trip.pollStatus)}`}>
             Event Status: {eventStatusLabel}
           </span>
         </div>
@@ -531,7 +542,7 @@ function EventCard({
       <div className="event-card-date-row">
         <span>📅</span>
         <span>{dateLabel} {trip.startsOn ? "(Pacific Time)" : ""}</span>
-        {formattedDeadlinePST && (
+        {!isPast && formattedDeadlinePST && (
           <span style={{ fontSize: "0.82rem", color: "#6b7280", marginLeft: "0.5rem" }}>
             · Deadline: {formattedDeadlinePST}
           </span>
@@ -549,10 +560,14 @@ function EventCard({
         </div>
         <div>
           <strong style={{ display: "block", fontSize: "0.8rem", textTransform: "uppercase", color: "#4b5563", letterSpacing: "0.04em" }}>
-            Attendance &amp; RSVP
+            {isPast ? "Trip Attendance" : "Attendance & RSVP"}
           </strong>
           <span style={{ fontSize: "0.9rem", color: "#111827" }}>
-            • {trip.comingCount} Confirmed | {trip.spotsRemaining ?? 0} Spots Remaining{trip.waitlistCount > 0 ? ` | ${trip.waitlistCount} Waitlisted` : ""}
+            {isPast ? (
+              <>• {trip.comingCount} Campers Attended</>
+            ) : (
+              <>• {trip.comingCount} Confirmed | {trip.spotsRemaining ?? 0} Spots Remaining{trip.waitlistCount > 0 ? ` | ${trip.waitlistCount} Waitlisted` : ""}</>
+            )}
           </span>
         </div>
       </div>
@@ -783,13 +798,23 @@ function EventCard({
 
       <div className="event-card-footer">
         <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "0.82rem", color: "#6b7280" }}>RSVP:</span>
-          {isComing && <span className="status-badge-going status-chip status-coming">Going</span>}
-          {isNotComing && <span className="status-badge-not-going status-chip status-not_coming">Not Going</span>}
-          {trip.myWaitlistPosition && (
-            <span className="status-badge-not-going status-chip status-waitlisted">Waitlisted</span>
+          <span style={{ fontSize: "0.82rem", color: "#6b7280" }}>{isPast ? "Participation:" : "RSVP:"}</span>
+          {isComing && (
+            <span className="status-badge-going status-chip status-coming">
+              {isPast ? "🎉 You Attended" : "Going"}
+            </span>
           )}
-          {choice === "coming" && !isComing && (
+          {isNotComing && (
+            <span className="status-badge-not-going status-chip status-not_coming">
+              {isPast ? "Did Not Attend" : "Not Going"}
+            </span>
+          )}
+          {trip.myWaitlistPosition && (
+            <span className="status-badge-not-going status-chip status-waitlisted">
+              {isPast ? "Waitlisted (Event Passed)" : "Waitlisted"}
+            </span>
+          )}
+          {choice === "coming" && !isComing && !isPast && (
             <span
               style={{
                 backgroundColor: "#fee2e2",
@@ -805,7 +830,9 @@ function EventCard({
             </span>
           )}
           {!isComing && !isNotComing && !trip.myWaitlistPosition && choice !== "coming" && (
-            <span className="status-chip status-none">No response</span>
+            <span className="status-chip status-none">
+              {isPast ? "Did Not Attend" : "No response"}
+            </span>
           )}
           {isComing && (
             trip.myDailyWorkload?.target != null ? <Link to={`/trips/${trip.tripId}?tab=tasks`} className="badge-pill">{dailyWorkloadLabel(trip.myDailyWorkload)}</Link> :
