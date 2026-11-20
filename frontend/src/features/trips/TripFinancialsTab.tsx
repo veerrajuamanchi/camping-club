@@ -186,6 +186,12 @@ export function TripFinancialsTab({
     contentType?: string | null;
   } | null>(null);
 
+  const [showSettlementEmailModal, setShowSettlementEmailModal] = useState(false);
+  const [settlementEmailRecipientType, setSettlementEmailRecipientType] = useState<"admin" | "all">("admin");
+  const [settlementEmailSending, setSettlementEmailSending] = useState(false);
+  const [settlementEmailSuccessMsg, setSettlementEmailSuccessMsg] = useState<string | null>(null);
+  const [settlementEmailErrorMsg, setSettlementEmailErrorMsg] = useState<string | null>(null);
+
   const openAddExpenseModal = () => {
     setDesc("");
     setPayerId(currentMemberId ?? (attendeesList[0]?.memberId || ""));
@@ -715,6 +721,9 @@ export function TripFinancialsTab({
       setShowFinalizeModal(false);
       await fetchFinancials();
       onStatusChange?.();
+      setSettlementEmailSuccessMsg(null);
+      setSettlementEmailErrorMsg(null);
+      setShowSettlementEmailModal(true);
     } catch (err: any) {
       setErrorMsg(err?.message || "Failed to finalize settlement.");
     } finally {
@@ -973,6 +982,34 @@ export function TripFinancialsTab({
                 🔒 Lock & Finalize Settlement
               </button>
             )}
+            {isFinalized && isAdmin && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setSettlementEmailSuccessMsg(null);
+                  setSettlementEmailErrorMsg(null);
+                  setShowSettlementEmailModal(true);
+                }}
+                style={{
+                  width: "100%",
+                  background: "#f0fdf4",
+                  color: "#166534",
+                  border: "1px solid #86efac",
+                  padding: "0.6rem 1rem",
+                  borderRadius: "8px",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem",
+                }}
+              >
+                📧 Send Settlement Email
+              </button>
+            )}
           </div>
 
           {/* 3-Tab Segmented Mobile Navigation */}
@@ -1087,6 +1124,20 @@ export function TripFinancialsTab({
                   style={{ background: "#2563eb", color: "#fff", border: "none", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}
                 >
                   🔒 Lock & Finalize Settlement
+                </button>
+              )}
+              {isFinalized && isAdmin && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    setSettlementEmailSuccessMsg(null);
+                    setSettlementEmailErrorMsg(null);
+                    setShowSettlementEmailModal(true);
+                  }}
+                  style={{ background: "#059669", color: "#fff", border: "none", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+                >
+                  📧 Send Settlement Email
                 </button>
               )}
             </div>
@@ -2922,6 +2973,137 @@ export function TripFinancialsTab({
                 style={{ background: "#2563eb", color: "#fff", border: "none", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}
               >
                 {actionBusy ? "Finalizing..." : "Yes, Finalize Settlement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Send Settlement Email */}
+      {showSettlementEmailModal && (
+        <div className="modal-backdrop" onClick={() => setShowSettlementEmailModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "560px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+              <h3 style={{ margin: 0, fontSize: "1.2rem", color: "#0f172a" }}>
+                📧 Send Trip Settlement Email
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSettlementEmailModal(false)}
+                style={{ background: "none", border: "none", fontSize: "1.2rem", cursor: "pointer", color: "#64748b" }}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ fontSize: "0.88rem", color: "#475569", margin: "0.25rem 0 1rem" }}>
+              Dispatch an official settlement summary email with transfer instructions, member balances, and payment details.
+            </p>
+
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontWeight: 700, fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+                Select Recipients:
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="settlementRecipientType"
+                    value="admin"
+                    checked={settlementEmailRecipientType === "admin"}
+                    onChange={() => setSettlementEmailRecipientType("admin")}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <div>
+                    <strong>Admin Only (Test Mode)</strong> <span style={{ color: "#16a34a", fontSize: "0.75rem", fontWeight: 700 }}>(Recommended)</span>
+                    <p style={{ margin: "0.15rem 0 0", fontSize: "0.82rem", color: "#64748b" }}>
+                      Sends a test preview exclusively to your admin email address to review formatting and transfers before broadcasting.
+                    </p>
+                  </div>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="settlementRecipientType"
+                    value="all"
+                    checked={settlementEmailRecipientType === "all"}
+                    onChange={() => setSettlementEmailRecipientType("all")}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <div>
+                    <strong>All Confirmed Attendees</strong> ({attendeesList.length} members)
+                    <p style={{ margin: "0.15rem 0 0", fontSize: "0.82rem", color: "#64748b" }}>
+                      Sends the settlement summary and transfer instructions to all confirmed attendees and the admin team.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ background: "#f8fafc", border: "1.5px solid #cbd5e1", borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
+              <label style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a", margin: "0 0 0.5rem 0", display: "block" }}>
+                📋 Included in this email:
+              </label>
+              <ul style={{ margin: 0, paddingLeft: "1.25rem", fontSize: "0.85rem", color: "#334155", lineHeight: 1.5 }}>
+                <li>💰 <strong>Total Expenses Summary:</strong> {formatMoney(totalExpensesCents)} across all categories.</li>
+                <li>🔄 <strong>Peer Transfers List:</strong> {(data?.transfers ?? []).length} transfer obligations with payment methods.</li>
+                <li>📊 <strong>Member Balances:</strong> Incurred, fair share, and net balance for each attendee.</li>
+                <li>📱 <strong>Reconciliation Steps:</strong> Clear instructions on how to pay via Zelle/Venmo and mark transfers sent in the app.</li>
+              </ul>
+            </div>
+
+            {settlementEmailSuccessMsg && (
+              <p role="status" style={{ background: "#dcfce7", color: "#166534", padding: "0.6rem 0.85rem", borderRadius: "6px", fontSize: "0.88rem", fontWeight: 600 }}>
+                {settlementEmailSuccessMsg}
+              </p>
+            )}
+
+            {settlementEmailErrorMsg && (
+              <p role="alert" className="form-error" style={{ margin: "0.5rem 0" }}>
+                {settlementEmailErrorMsg}
+              </p>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "1rem" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={settlementEmailSending}
+                onClick={() => setShowSettlementEmailModal(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={settlementEmailSending}
+                onClick={async () => {
+                  setSettlementEmailSending(true);
+                  setSettlementEmailErrorMsg(null);
+                  setSettlementEmailSuccessMsg(null);
+                  try {
+                    const res = await api<{ sent: boolean; recipientCount: number; reason?: string }>("admin_send_trip_settlement_email", {
+                      tripId,
+                      recipientType: settlementEmailRecipientType,
+                    });
+                    if (res?.sent) {
+                      setSettlementEmailSuccessMsg(`✓ Settlement email successfully dispatched to ${res.recipientCount} recipient${res.recipientCount === 1 ? "" : "s"}!`);
+                    } else {
+                      setSettlementEmailErrorMsg(`Email dispatch failed: ${res?.reason || "Check server email credentials."}`);
+                    }
+                  } catch (err: unknown) {
+                    setSettlementEmailErrorMsg((err as Error)?.message || "Failed to dispatch email.");
+                  } finally {
+                    setSettlementEmailSending(false);
+                  }
+                }}
+                style={{ background: "#059669" }}
+              >
+                {settlementEmailSending
+                  ? "Sending..."
+                  : settlementEmailRecipientType === "admin"
+                  ? "Send Test Email to Admin"
+                  : "Send Email to All Attendees"}
               </button>
             </div>
           </div>

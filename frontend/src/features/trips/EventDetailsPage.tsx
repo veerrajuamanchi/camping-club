@@ -1321,6 +1321,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                 >
                   📧 Send Briefing Email
                 </button>
+                {(effectiveStatus === "financially_finalized" || effectiveStatus === "financially_settled" || isPast) && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ fontSize: "0.85rem", padding: "0.25rem 0.65rem", background: "#f0fdf4", borderColor: "#86efac", color: "#166534" }}
+                    onClick={() => {
+                      setTab("financials");
+                    }}
+                  >
+                    📧 Send Settlement Email
+                  </button>
+                )}
                 <button
                   type="button"
                   className="secondary-button"
