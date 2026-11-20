@@ -82,6 +82,9 @@ export type SettlementTransfer = {
   confirmedReceivedAt: string | null;
   paymentMethod: string | null;
   recipientPreferredMethod: string;
+  recipientPaymentIdentifier?: string | null;
+  recipientPhone?: string | null;
+  paymentUrl?: string | null;
   notes: string | null;
   isPayer: boolean;
   isRecipient: boolean;
@@ -877,6 +880,16 @@ export function TripFinancialsTab({
                 <div style={{ fontSize: "0.82rem", color: "#e2e8f0" }}>
                   Send {formatMoney(myOutgoingTransfer.amountCents)} to <strong>{myOutgoingTransfer.recipientName}</strong> via{" "}
                   <strong>{myOutgoingTransfer.recipientPreferredMethod}</strong>
+                  {myOutgoingTransfer.recipientPaymentIdentifier && (
+                    <span style={{ color: "#38bdf8", marginLeft: "0.35rem", fontWeight: 700 }}>
+                      ({myOutgoingTransfer.recipientPaymentIdentifier})
+                    </span>
+                  )}
+                  {myOutgoingTransfer.recipientPhone && (!myOutgoingTransfer.recipientPaymentIdentifier || myOutgoingTransfer.recipientPreferredMethod?.toLowerCase().includes("zelle")) && (
+                    <span style={{ color: "#cbd5e1", marginLeft: "0.35rem" }}>
+                      • Phone: <strong>{myOutgoingTransfer.recipientPhone}</strong>
+                    </span>
+                  )}
                   {myOutgoingTransfer.notes && (
                     <div style={{ fontSize: "0.74rem", color: "#94a3b8", marginTop: "0.15rem" }}>
                       Note / ID: {myOutgoingTransfer.notes}
@@ -884,13 +897,37 @@ export function TripFinancialsTab({
                   )}
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", width: "100%", justifyContent: "flex-start" }}>
+                  {myOutgoingTransfer.paymentUrl && (
+                    <a
+                      href={myOutgoingTransfer.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        background: myOutgoingTransfer.paymentMethod === "paypal" ? "#003087" : "#008cff",
+                        color: "#ffffff",
+                        textDecoration: "none",
+                        padding: "0.4rem 0.75rem",
+                        borderRadius: "6px",
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.3rem",
+                      }}
+                    >
+                      {myOutgoingTransfer.paymentMethod === "paypal" ? "💳 Pay on PayPal ➔" : "📱 Pay on Venmo ➔"}
+                    </a>
+                  )}
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      const handleOrPhone = myOutgoingTransfer.recipientPaymentIdentifier
+                        ? `(${myOutgoingTransfer.recipientPaymentIdentifier})`
+                        : (myOutgoingTransfer.recipientPhone ? `(Phone: ${myOutgoingTransfer.recipientPhone})` : "");
                       handleCopyPaymentDetails(
-                        `${myOutgoingTransfer.recipientName} (${myOutgoingTransfer.recipientPreferredMethod}): ${myOutgoingTransfer.notes || ""}`
-                      )
-                    }
+                        `Send ${formatMoney(myOutgoingTransfer.amountCents)} to ${myOutgoingTransfer.recipientName} via ${myOutgoingTransfer.recipientPreferredMethod} ${handleOrPhone}${myOutgoingTransfer.notes ? ` • Note: ${myOutgoingTransfer.notes}` : ""}`
+                      );
+                    }}
                     style={{
                       background: "#334155",
                       color: "#ffffff",
@@ -2097,7 +2134,19 @@ export function TripFinancialsTab({
 
                       {/* Payment Method / Note */}
                       <div style={{ fontSize: "0.82rem", color: "#475569" }}>
-                        <span>Preferred: <strong>{tx.recipientPreferredMethod || "Direct Transfer"}</strong></span>
+                        <span>
+                          Preferred: <strong>{tx.recipientPreferredMethod || "Direct Transfer"}</strong>
+                        </span>
+                        {tx.recipientPaymentIdentifier && (
+                          <span style={{ marginLeft: "0.5rem", color: "#0284c7", fontWeight: 700 }}>
+                            • Handle: {tx.recipientPaymentIdentifier}
+                          </span>
+                        )}
+                        {tx.recipientPhone && (!tx.recipientPaymentIdentifier || tx.recipientPreferredMethod?.toLowerCase().includes("zelle")) && (
+                          <span style={{ marginLeft: "0.5rem", color: "#475569" }}>
+                            • Phone: <strong>{tx.recipientPhone}</strong>
+                          </span>
+                        )}
                         {tx.notes && <span style={{ marginLeft: "0.5rem", color: "#64748b" }}>• Note: "{tx.notes}"</span>}
                       </div>
 
@@ -2120,10 +2169,58 @@ export function TripFinancialsTab({
 
                       {/* Action buttons (Left-aligned) */}
                       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-start", marginTop: "0.2rem" }}>
+                        {tx.paymentUrl && !isConfirmed && (
+                          <a
+                            href={tx.paymentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              background: tx.paymentMethod === "paypal" ? "#003087" : "#008cff",
+                              color: "#fff",
+                              textDecoration: "none",
+                              padding: "0.35rem 0.75rem",
+                              borderRadius: "6px",
+                              fontSize: "0.78rem",
+                              fontWeight: 700,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.3rem",
+                            }}
+                          >
+                            {tx.paymentMethod === "paypal" ? "💳 Pay via PayPal ➔" : "📱 Pay via Venmo ➔"}
+                          </a>
+                        )}
+
+                        {tx.recipientPhone && !isConfirmed && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(tx.recipientPhone || "");
+                              setCopySuccess(true);
+                              setTimeout(() => setCopySuccess(false), 2000);
+                            }}
+                            style={{
+                              background: "#f8fafc",
+                              color: "#4338ca",
+                              border: "1px solid #c7d2fe",
+                              padding: "0.35rem 0.65rem",
+                              borderRadius: "6px",
+                              fontSize: "0.78rem",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            📋 Copy Phone ({tx.recipientPhone})
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => {
-                            const details = `Send ${formatMoney(tx.amountCents)} to ${tx.recipientName} via ${tx.recipientPreferredMethod}${tx.notes ? ` (Note: ${tx.notes})` : ""}`;
+                            const handleOrPhone = tx.recipientPaymentIdentifier
+                              ? `(${tx.recipientPaymentIdentifier})`
+                              : (tx.recipientPhone ? `(Phone: ${tx.recipientPhone})` : "");
+                            const details = `Send ${formatMoney(tx.amountCents)} to ${tx.recipientName} via ${tx.recipientPreferredMethod} ${handleOrPhone}${tx.notes ? ` • Note: ${tx.notes}` : ""}`;
                             navigator.clipboard?.writeText(details);
                             setCopySuccess(true);
                             setTimeout(() => setCopySuccess(false), 2000);
