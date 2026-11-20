@@ -1166,5 +1166,105 @@ describe("Phase 5: Unified Expense Ledger & Settlement Engine", () => {
       expect(screen.getByText("Paid Out-of-Pocket")).toBeInTheDocument();
       expect(screen.getByText("Net Settlement Position")).toBeInTheDocument();
     });
+
+    it("renders Send Settlement Email button when finalized and dispatches test email to admin", async () => {
+      const user = userEvent.setup();
+      let sentPayload: any = null;
+      const mockApi = vi.fn().mockImplementation((action: string, input: any) => {
+        if (action === "get_trip_financials") return Promise.resolve(mockFinalizedFinancials);
+        if (action === "admin_send_trip_settlement_email") {
+          sentPayload = input;
+          return Promise.resolve({ sent: true, recipientCount: 1 });
+        }
+        return Promise.resolve({});
+      });
+
+      render(
+        <TripFinancialsTab
+          tripId="trip-1"
+          isAdmin={true}
+          isConfirmedAttendee={true}
+          currentMemberId="member-1"
+          api={mockApi}
+        />
+      );
+
+      await screen.findByText(/Financially Finalized/i);
+
+      // Verify button exists
+      const sendEmailBtn = screen.getByRole("button", { name: /📧 Send Settlement Email/i });
+      expect(sendEmailBtn).toBeInTheDocument();
+
+      // Click to open modal
+      await user.click(sendEmailBtn);
+
+      expect(screen.getByText("📧 Send Trip Settlement Email")).toBeInTheDocument();
+      expect(screen.getByText(/Admin Only \(Test Mode\)/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/All Confirmed Attendees/i).length).toBeGreaterThan(0);
+
+      // Check default radio is Admin Only
+      const adminRadio = screen.getByDisplayValue("admin") as HTMLInputElement;
+      expect(adminRadio.checked).toBe(true);
+
+      // Verify primary action button says Send Test Email to Admin
+      const submitBtn = screen.getByRole("button", { name: /Send Test Email to Admin/i });
+      expect(submitBtn).toBeInTheDocument();
+
+      // Dispatch test email
+      await user.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Settlement email successfully dispatched to 1 recipient/i)).toBeInTheDocument();
+      });
+
+      expect(sentPayload).toEqual({
+        tripId: "trip-1",
+        recipientType: "admin",
+      });
+    });
+
+    it("allows switching settlement email to All Confirmed Attendees before dispatching", async () => {
+      const user = userEvent.setup();
+      let sentPayload: any = null;
+      const mockApi = vi.fn().mockImplementation((action: string, input: any) => {
+        if (action === "get_trip_financials") return Promise.resolve(mockFinalizedFinancials);
+        if (action === "admin_send_trip_settlement_email") {
+          sentPayload = input;
+          return Promise.resolve({ sent: true, recipientCount: 5 });
+        }
+        return Promise.resolve({});
+      });
+
+      render(
+        <TripFinancialsTab
+          tripId="trip-1"
+          isAdmin={true}
+          isConfirmedAttendee={true}
+          currentMemberId="member-1"
+          api={mockApi}
+        />
+      );
+
+      await screen.findByText(/Financially Finalized/i);
+      await user.click(screen.getByRole("button", { name: /📧 Send Settlement Email/i }));
+
+      // Switch to All Attendees
+      const allRadio = screen.getByDisplayValue("all");
+      await user.click(allRadio);
+
+      const submitBtn = screen.getByRole("button", { name: /Send Email to All Attendees/i });
+      expect(submitBtn).toBeInTheDocument();
+
+      await user.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Settlement email successfully dispatched to 5 recipients/i)).toBeInTheDocument();
+      });
+
+      expect(sentPayload).toEqual({
+        tripId: "trip-1",
+        recipientType: "all",
+      });
+    });
   });
 });

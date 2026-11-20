@@ -16,7 +16,7 @@ const actionNames = [
   "get_calendar", "get_constitution", "get_trip_details", "get_trip_time_slots", "admin_configure_club", "admin_generate_calendar",
   "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite", "admin_configure_trip", "admin_set_poll_status",
   "admin_publish_rule", "admin_set_rule_override", "submit_rsvp", "admin_record_interest", "request_withdrawal",
-  "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
+  "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email", "admin_send_trip_settlement_email", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "get_trip_task_matrix", "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
   "admin_delete_trip", "admin_create_custom_trip", "admin_delete_campsite", "admin_set_daily_workload_target",
@@ -309,6 +309,10 @@ const inputSchemas = {
       activityVouchers: z.boolean().optional(),
     }).optional(),
   }).strict(),
+  admin_send_trip_settlement_email: z.object({
+    tripId: uuid,
+    recipientType: z.enum(["admin", "all"]).default("admin"),
+  }).strict(),
   admin_list_master_responsibilities: z.object({ includeInactive: z.boolean().optional() }).strict(),
   admin_create_master_responsibility: z.object({
     title: z.string().trim().min(3).max(100),
@@ -551,7 +555,7 @@ type Action = typeof actionNames[number];
 const adminActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override", "admin_record_interest",
-  "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
+  "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email", "admin_send_trip_settlement_email", "admin_list_master_responsibilities", "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit", "admin_delete_trip", "admin_create_custom_trip",
   "admin_delete_campsite", "admin_set_daily_workload_target",
@@ -565,7 +569,7 @@ const adminActions = new Set<Action>([
 const mutatingActions = new Set<Action>([
   "admin_configure_club", "admin_generate_calendar", "admin_reorder_campsites", "admin_update_campsite", "admin_create_campsite",
   "admin_configure_trip", "admin_set_poll_status", "admin_publish_rule", "admin_set_rule_override",
-  "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email",
+  "submit_rsvp", "admin_record_interest", "request_withdrawal", "admin_promote_from_waitlist", "admin_remove_from_waitlist", "admin_send_trip_summary_email", "admin_send_trip_settlement_email",
   "admin_create_master_responsibility", "admin_update_master_responsibility",
   "admin_save_daily_responsibilities", "admin_generate_candidate_slots", "admin_configure_time_slot", "admin_create_custom_time_slot", "admin_add_slot_duty", "admin_update_slot_duty",
   "claim_duty", "drop_duty", "admin_assign_duty", "admin_reassign_duty", "admin_set_driver_credit",
@@ -2560,6 +2564,279 @@ async function sendTripSummaryEmail(
   };
 }
 
+async function sendTripSettlementEmail(
+  authUser: any,
+  member: Member,
+  tripId: string,
+  recipientType: "admin" | "all"
+): Promise<{ sent: boolean; recipientCount: number; recipients: string[]; provider?: string; reason?: string }> {
+  const fin = await getTripFinancials(member, tripId);
+  const { data: trip, error: tripErr } = await service
+    .from("camping_trips")
+    .select("id, title, month_key, starts_on, ends_on, selected_campsite_id")
+    .eq("id", tripId)
+    .single();
+  checkError(tripErr);
+
+  let campsiteName = "Campground";
+  if (trip?.selected_campsite_id) {
+    const { data: cs } = await service
+      .from("campsites")
+      .select("name, location_description")
+      .eq("id", trip.selected_campsite_id)
+      .maybeSingle();
+    if (cs?.name) campsiteName = cs.name;
+  }
+
+  // 1. Confirmed RSVPs
+  const { data: rsvps } = await service
+    .from("trip_rsvps")
+    .select("member_id")
+    .eq("trip_id", tripId)
+    .eq("response", "coming");
+  const confirmedMemberIds = (rsvps ?? []).map((r: any) => r.member_id).filter(Boolean);
+
+  // 2. Member profiles & emails
+  const { data: profiles } = await service
+    .from("member_profiles")
+    .select("member_id, auth_user_id, display_name")
+    .in("member_id", confirmedMemberIds.length > 0 ? confirmedMemberIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  const { data: usersData } = await service.auth.admin.listUsers();
+  const emailByAuthId = new Map((usersData?.users ?? []).map((u: any) => [u.id, u.email]));
+  const nameByMemberId = new Map((profiles ?? []).map((p: any) => [p.member_id, p.display_name]));
+
+  const adminEmail = authUser.email || Deno.env.get("ADMIN_NOTIFICATION_EMAIL") || Deno.env.get("GMAIL_USER") || "veerraju.amanchi@gmail.com";
+
+  let toList: string[] = [];
+  if (recipientType === "admin") {
+    toList = [adminEmail];
+  } else {
+    const attendeeEmails = (profiles ?? [])
+      .map((p: any) => emailByAuthId.get(p.auth_user_id))
+      .filter((e): e is string => Boolean(e) && typeof e === "string");
+    toList = Array.from(new Set([...attendeeEmails, adminEmail])).filter(Boolean);
+  }
+
+  const tripTitle = trip?.title || "Camping Trip";
+  let datesStr = "Trip Dates TBA";
+  if (trip?.starts_on && trip?.ends_on) {
+    datesStr = `${trip.starts_on} – ${trip.ends_on}`;
+  } else if (trip?.starts_on) {
+    datesStr = trip.starts_on;
+  }
+
+  const webAppUrl = Deno.env.get("SITE_URL") || Deno.env.get("FRONTEND_URL") || "https://camping-club.onrender.com";
+
+  const totalExpensesCents = (fin.settlementRun as any)?.totalExpensesCents ?? (fin.expenses as any[])?.reduce((acc: number, exp: any) => acc + (exp.amountCents || 0), 0) ?? 0;
+  const totalExpensesFormatted = `$${(totalExpensesCents / 100).toFixed(2)}`;
+  const transfers = (fin.transfers as any[]) ?? [];
+  const balances = (fin.balances as any[]) ?? [];
+  const expenses = (fin.expenses as any[]) ?? [];
+
+  // Build HTML sections
+  // 1. Required Transfers Table
+  let transfersHtml = "";
+  if (transfers.length === 0) {
+    transfersHtml = `<p style="color: #64748b; font-style: italic; margin: 8px 0;">All balances are already even or no transfers are needed.</p>`;
+  } else {
+    transfersHtml = `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 8px;">
+        <thead>
+          <tr style="background: #f1f5f9; text-align: left; border-bottom: 2px solid #cbd5e1;">
+            <th style="padding: 8px 10px;">Who Pays</th>
+            <th style="padding: 8px 10px;">Who Receives</th>
+            <th style="padding: 8px 10px;">Amount</th>
+            <th style="padding: 8px 10px;">Method</th>
+            <th style="padding: 8px 10px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${transfers.map((t: any) => {
+            const payer = t.payerName || nameByMemberId.get(t.payerMemberId) || "Camper";
+            const recipient = t.recipientName || nameByMemberId.get(t.recipientMemberId) || "Camper";
+            const amt = `$${(t.amountCents / 100).toFixed(2)}`;
+            const method = (t.paymentMethod || "Zelle").toUpperCase();
+            const isConfirmed = t.status === "confirmed";
+            const isSent = t.status === "sent";
+            const statusLabel = isConfirmed ? "✅ Confirmed" : isSent ? "📤 Sent" : "⏳ Outstanding";
+            const statusColor = isConfirmed ? "#166534" : isSent ? "#1e40af" : "#b45309";
+            return `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 8px 10px; font-weight: 600; color: #0f172a;">${payer}</td>
+                <td style="padding: 8px 10px; font-weight: 600; color: #0f172a;">${recipient}</td>
+                <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${amt}</td>
+                <td style="padding: 8px 10px; color: #475569;"><span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">${method}</span></td>
+                <td style="padding: 8px 10px; font-weight: 600; color: ${statusColor}; font-size: 0.85rem;">${statusLabel}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // 2. Member Balances Table
+  let balancesHtml = "";
+  if (balances.length === 0) {
+    balancesHtml = `<p style="color: #64748b; font-style: italic; margin: 8px 0;">No member balances recorded.</p>`;
+  } else {
+    balancesHtml = `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 8px;">
+        <thead>
+          <tr style="background: #f1f5f9; text-align: left; border-bottom: 2px solid #cbd5e1;">
+            <th style="padding: 6px 8px;">Camper</th>
+            <th style="padding: 6px 8px;">Paid / Incurred</th>
+            <th style="padding: 6px 8px;">Fair Share</th>
+            <th style="padding: 6px 8px;">Net Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${balances.map((b: any) => {
+            const name = b.displayName || nameByMemberId.get(b.memberId) || "Camper";
+            const paid = `$${(b.totalPaidCents / 100).toFixed(2)}`;
+            const allocated = `$${(b.totalAllocatedCents / 100).toFixed(2)}`;
+            const net = b.netBalanceCents;
+            const netFormatted = net > 0 ? `+$${(net / 100).toFixed(2)}` : net < 0 ? `-$${(Math.abs(net) / 100).toFixed(2)}` : "$0.00";
+            const netColor = net > 0 ? "#16a34a" : net < 0 ? "#dc2626" : "#64748b";
+            return `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 6px 8px; font-weight: 600; color: #0f172a;">${name}</td>
+                <td style="padding: 6px 8px; color: #475569;">${paid}</td>
+                <td style="padding: 6px 8px; color: #475569;">${allocated}</td>
+                <td style="padding: 6px 8px; font-weight: 700; color: ${netColor};">${netFormatted}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // 3. Top Itemized Expenses
+  let expensesHtml = "";
+  if (expenses.length === 0) {
+    expensesHtml = `<p style="color: #64748b; font-style: italic; margin: 8px 0;">No expenses recorded.</p>`;
+  } else {
+    expensesHtml = `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px;">
+        <thead>
+          <tr style="background: #f1f5f9; text-align: left; border-bottom: 2px solid #cbd5e1;">
+            <th style="padding: 6px 8px;">Description</th>
+            <th style="padding: 6px 8px;">Paid By</th>
+            <th style="padding: 6px 8px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${expenses.map((exp: any) => {
+            const payer = exp.payerName || nameByMemberId.get(exp.payerMemberId) || "Camper";
+            const amt = `$${(exp.amountCents / 100).toFixed(2)}`;
+            return `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 6px 8px; color: #0f172a;">${exp.description || "Trip Expense"}</td>
+                <td style="padding: 6px 8px; color: #475569;">${payer}</td>
+                <td style="padding: 6px 8px; font-weight: 600; color: #0f172a;">${amt}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  const emailSubject = `💰 Finalized Settlement: ${tripTitle} (${datesStr})`;
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #ffffff; color: #1e293b;">
+      <div style="border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 16px;">
+        <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #059669;">
+          ${recipientType === "admin" ? "🧪 Admin Test Dispatch" : "💰 Official Trip Settlement"}
+        </span>
+        <h1 style="color: #0f172a; margin: 4px 0 6px; font-size: 1.45rem;">${tripTitle} — Settlement Finalized</h1>
+        <p style="margin: 0; color: #475569; font-size: 0.95rem;">
+          📅 <strong>${datesStr}</strong> &nbsp;•&nbsp; 📍 <strong>${campsiteName}</strong>
+        </p>
+      </div>
+
+      <!-- Overview Stats -->
+      <div style="display: flex; gap: 12px; margin-bottom: 20px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px;">
+        <div style="flex: 1; text-align: center;">
+          <div style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Total Expenses</div>
+          <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a;">${totalExpensesFormatted}</div>
+        </div>
+        <div style="flex: 1; text-align: center; border-left: 1px solid #e2e8f0;">
+          <div style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Transfers Required</div>
+          <div style="font-size: 1.3rem; font-weight: 800; color: #2563eb;">${transfers.length}</div>
+        </div>
+        <div style="flex: 1; text-align: center; border-left: 1px solid #e2e8f0;">
+          <div style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; font-weight: 600;">Attendees</div>
+          <div style="font-size: 1.3rem; font-weight: 800; color: #059669;">${balances.length}</div>
+        </div>
+      </div>
+
+      <!-- Section 1: Required Transfers -->
+      <div style="margin-bottom: 24px;">
+        <h3 style="color: #0f172a; margin-bottom: 4px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🔄 Required Settlement Transfers
+        </h3>
+        <p style="font-size: 0.85rem; color: #64748b; margin: 4px 0 8px;">
+          Please send payment directly to your assigned recipient. Once sent, log into the app to mark it sent.
+        </p>
+        ${transfersHtml}
+      </div>
+
+      <!-- Section 2: Member Balances -->
+      <div style="margin-bottom: 24px;">
+        <h3 style="color: #0f172a; margin-bottom: 4px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          📊 Member Balances &amp; Shares
+        </h3>
+        ${balancesHtml}
+      </div>
+
+      <!-- Section 3: Expense Ledger Summary -->
+      <div style="margin-bottom: 24px;">
+        <h3 style="color: #0f172a; margin-bottom: 4px; font-size: 1.1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+          🧾 Unified Expense Ledger
+        </h3>
+        ${expensesHtml}
+      </div>
+
+      <!-- Section 4: Instructions -->
+      <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 12px 16px; margin-bottom: 20px;">
+        <strong style="color: #166534; font-size: 0.95rem;">📱 Next Steps to Reconcile:</strong>
+        <ol style="margin: 6px 0 0 16px; padding: 0; font-size: 0.88rem; color: #166534; line-height: 1.4;">
+          <li>Send payment to your recipient using their preferred handle (Zelle, Venmo, etc.).</li>
+          <li>Open the Camping Club app and navigate to the <strong>Financials</strong> tab.</li>
+          <li>Click <strong>Mark Sent</strong> for your transfer. Recipients will confirm when received.</li>
+        </ol>
+      </div>
+
+      <!-- Call to Action -->
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
+        <a href="${webAppUrl.replace(/\/$/, "")}/trips/${tripId}?tab=financials" style="background-color: #059669; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
+          Open Trip Financials &amp; Settle →
+        </a>
+        <p style="font-size: 0.78rem; color: #94a3b8; margin-top: 12px;">
+          Private Camping Club • Sent to ${toList.length} recipient${toList.length === 1 ? "" : "s"} (${recipientType === "admin" ? "Admin Preview" : "All Confirmed Members"}).
+        </p>
+      </div>
+    </div>
+  `;
+
+  const sendRes = await sendEmail({
+    to: toList,
+    subject: emailSubject,
+    html: emailHtml,
+  });
+
+  return {
+    sent: sendRes.success,
+    recipientCount: toList.length,
+    recipients: toList,
+    provider: sendRes.provider,
+    reason: sendRes.reason,
+  };
+}
+
 Deno.serve(async (request) => {
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request.headers.get("origin")) });
@@ -3289,6 +3566,27 @@ Deno.serve(async (request) => {
         return json(request, 200, { ...summaryResult, requestId });
       } catch (err: unknown) {
         console.error("sendTripSummaryEmail error:", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        return errorResponse(request, 500, "email_send_failed", requestId, errMsg);
+      }
+    }
+    case "admin_send_trip_settlement_email": {
+      if (member.member_role !== "admin") return errorResponse(request, 403, "forbidden", requestId);
+      try {
+        const settlementResult = await sendTripSettlementEmail(
+          authUser,
+          member,
+          input.tripId as string,
+          (input.recipientType as "admin" | "all") || "admin"
+        );
+        try {
+          await finish(authUser.id, action, aggregate, key, input, null);
+        } catch {
+          return errorResponse(request, 500, "idempotency_completion_failed", requestId);
+        }
+        return json(request, 200, { ...settlementResult, requestId });
+      } catch (err: unknown) {
+        console.error("sendTripSettlementEmail error:", err);
         const errMsg = err instanceof Error ? err.message : String(err);
         return errorResponse(request, 500, "email_send_failed", requestId, errMsg);
       }
