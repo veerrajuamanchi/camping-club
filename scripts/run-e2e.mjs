@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +19,17 @@ const serviceKey = status.SERVICE_ROLE_KEY;
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "camping-club-e2e-"));
 const envPath = join(temporaryDirectory, "functions.env");
 const secret = () => randomBytes(32).toString("base64");
+
+const frontendEnvPath = join(process.cwd(), "frontend", ".env.local");
+let createdFrontendEnv = false;
+if (!existsSync(frontendEnvPath)) {
+  await writeFile(
+    frontendEnvPath,
+    `VITE_SUPABASE_URL=${api}\nVITE_SUPABASE_PUBLISHABLE_KEY=${status.PUBLISHABLE_KEY}\n`,
+    "utf8"
+  );
+  createdFrontendEnv = true;
+}
 
 await writeFile(
   envPath,
@@ -82,6 +94,8 @@ try {
     env: {
       ...process.env,
       PLAYWRIGHT_BASE_URL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5173",
+      VITE_SUPABASE_URL: api,
+      VITE_SUPABASE_PUBLISHABLE_KEY: status.PUBLISHABLE_KEY,
       SUPABASE_URL: api,
       SUPABASE_SERVICE_ROLE_KEY: serviceKey,
       SUPABASE_PUBLISHABLE_KEY: status.PUBLISHABLE_KEY,
@@ -109,6 +123,9 @@ try {
   console.log("Shutting down Edge Functions server...");
   await terminateProcessTree(server).catch((err) => console.error("Error stopping functions server:", err));
   await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => {});
+  if (createdFrontendEnv) {
+    await rm(frontendEnvPath, { force: true }).catch(() => {});
+  }
 }
 
 process.exit(playwrightExitCode);
