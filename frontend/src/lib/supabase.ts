@@ -44,24 +44,54 @@ export class AuthApiError extends Error {
   }
 }
 
-export async function responseErrorDetails(response?: Response): Promise<{ code?: string; message?: string }> {
+export async function responseErrorDetails(response?: Response, error?: unknown): Promise<{ code?: string; message?: string }> {
+  const errContext = (error as { context?: unknown })?.context;
+  if (errContext) {
+    let payload: any = errContext;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        return { message: payload };
+      }
+    }
+    if (payload && typeof payload === "object") {
+      const code = typeof payload.error === "string" ? payload.error : typeof payload.error?.code === "string" ? payload.error.code : undefined;
+      const message = typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.error_description === "string"
+          ? payload.error_description
+          : typeof payload.error === "string"
+            ? payload.error
+            : undefined;
+      if (code || message) {
+        return { code, message };
+      }
+    }
+  }
+
   if (!response) return {};
   try {
-    const payload = await response.clone().json();
-    const code = typeof payload?.error === "string" ? payload.error : typeof payload?.error?.code === "string" ? payload.error.code : undefined;
-    const message = typeof payload?.message === "string"
-      ? payload.message
-      : typeof payload?.error_description === "string"
-        ? payload.error_description
-        : undefined;
-    return { code, message };
+    if (!response.bodyUsed) {
+      const payload = await response.clone().json();
+      const code = typeof payload?.error === "string" ? payload.error : typeof payload?.error?.code === "string" ? payload.error.code : undefined;
+      const message = typeof payload?.message === "string"
+        ? payload.message
+        : typeof payload?.error_description === "string"
+          ? payload.error_description
+          : typeof payload?.error === "string"
+            ? payload.error
+            : undefined;
+      return { code, message };
+    }
   } catch {
     return {};
   }
+  return {};
 }
 
-export async function responseErrorCode(response?: Response): Promise<string | undefined> {
-  const { code } = await responseErrorDetails(response);
+export async function responseErrorCode(response?: Response, error?: unknown): Promise<string | undefined> {
+  const { code } = await responseErrorDetails(response, error);
   return code;
 }
 
@@ -71,7 +101,7 @@ export async function invokeMemberApi<T>(action: string, input?: unknown, idempo
   const headers = !["me", "list_members"].includes(action) ? { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() } : undefined;
   const { data, error, response } = await supabase.functions.invoke("member-api", { body, headers });
   if (error || data?.error) {
-    const { code: responseCode, message: responseMsg } = await responseErrorDetails(response);
+    const { code: responseCode, message: responseMsg } = await responseErrorDetails(response, error);
     const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
     const msg = responseMsg || (typeof data?.message === "string" ? data.message : undefined) || (error?.message && error.message !== "Edge Function returned a non-2xx status code" ? error.message : undefined);
     throw new MemberApiError(responseCode ?? payloadCode, response?.status, msg);
@@ -110,7 +140,7 @@ export async function invokeTripApi<T>(action: string, input?: unknown, idempote
   }
   const { data, error, response } = result;
   if (error || data?.error) {
-    const { code: responseCode, message: responseMsg } = await responseErrorDetails(response);
+    const { code: responseCode, message: responseMsg } = await responseErrorDetails(response, error);
     const payloadCode = typeof data?.error === "string" ? data.error : typeof data?.error?.code === "string" ? data.error.code : undefined;
     const msg = responseMsg || (typeof data?.message === "string" ? data.message : undefined) || (error?.message && error.message !== "Edge Function returned a non-2xx status code" ? error.message : undefined);
     throw new TripApiError(responseCode ?? payloadCode, response?.status, msg);

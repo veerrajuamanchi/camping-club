@@ -8,7 +8,7 @@ import { PostRsvpDutyModal } from "./PostRsvpDutyModal";
 import { MealPreferencesModal, type MealSlotItem } from "./MealPreferencesModal";
 import { ConfirmGoingModal } from "./ConfirmGoingModal";
 import { dailyWorkloadLabel, type DailyWorkload } from "./DailyWorkloadProgress";
-import { formatCabinBookingStatus } from "./TripCalendarPage";
+import { formatCabinBookingStatus, datePlusDays } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
 import { TripActivitiesTab, ACTIVITY_CATEGORIES } from "./TripActivitiesTab";
@@ -245,14 +245,10 @@ const eventStatuses = [
 ];
 
 const cabinBookingStatuses = [
-  { value: "not_booked", label: "Not Booked" },
-  { value: "booked", label: "Booked" },
   { value: "pending", label: "Pending (sites available)" },
+  { value: "booked", label: "Booked" },
   { value: "sites_available", label: "Sites Available" },
   { value: "no_vacancy", label: "No Vacancy" },
-  { value: "cancellation_requested", label: "Cancellation Requested" },
-  { value: "cancellation_confirmed", label: "Cancellation Confirmed" },
-  { value: "unresolved", label: "Unresolved" },
 ];
 
 function monthName(monthKey: string): string {
@@ -3077,7 +3073,12 @@ function EditTripDetailsModal({
   const [perCabinCapacity, setPerCabinCapacity] = useState(details.perCabinCapacity?.toString() ?? "6");
   const [campingType, setCampingType] = useState<"cabin" | "tent" | "rv" | "boat">(details.campingType ?? "cabin");
   const [eventStatus, setEventStatus] = useState<string>(details.tripStatus || details.eventStatus || "rsvp_open");
-  const [bookingStatus, setBookingStatus] = useState<string>(details.cabinBookingStatus || "not_booked");
+  const [bookingStatus, setBookingStatus] = useState<string>(
+    details.cabinBookingStatus === "booked" ? "booked"
+    : details.cabinBookingStatus === "no_vacancy" ? "no_vacancy"
+    : details.cabinBookingStatus === "sites_available" ? "sites_available"
+    : "pending"
+  );
   const [cabinPayerMemberId, setCabinPayerMemberId] = useState<string>(details.cabinPayerMemberId || details.cabinReservation?.paid_by_member_id || "");
   const [information, setInformation] = useState(details.additionalInformation ?? "");
   const [busy, setBusy] = useState(false);
@@ -3092,6 +3093,31 @@ function EditTripDetailsModal({
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    const siteId = details.selectedCampsiteId || details.campsite?.campsiteId;
+    if (!siteId) {
+      setMsg("Please select a campsite for this trip.");
+      return;
+    }
+    if (!startsOn) {
+      setMsg("Please select a trip start date.");
+      return;
+    }
+    if (!endsOn) {
+      setMsg("Please select a trip end date.");
+      return;
+    }
+    if (endsOn < startsOn) {
+      setMsg("Trip end date must be on or after trip start date.");
+      return;
+    }
+    if (deadline && startsOn && deadline >= startsOn) {
+      setMsg("Registration deadline date must be before trip start date.");
+      return;
+    }
+    if (!bookingStatus) {
+      setMsg("Please select a Cabin Booking Status.");
+      return;
+    }
     setBusy(true);
     setMsg(null);
     try {
@@ -3105,7 +3131,7 @@ function EditTripDetailsModal({
         maxCapacity: capacity ? Number(capacity) : null,
         cabinCount: cabinCount ? Number(cabinCount) : null,
         perCabinCapacity: perCabinCapacity ? Number(perCabinCapacity) : 6,
-        selectedCampsiteId: details.selectedCampsiteId || details.campsite?.campsiteId || "",
+        selectedCampsiteId: siteId,
         cabinBookingStatus: bookingStatus,
         cabinPayerMemberId: cabinPayerMemberId || null,
         additionalInformation: information,
@@ -3178,7 +3204,7 @@ function EditTripDetailsModal({
             </label>
             <label>
               Registration deadline date
-              <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+              <input type="date" value={deadline} max={startsOn ? datePlusDays(startsOn, -1) : undefined} onChange={(e) => setDeadline(e.target.value)} />
             </label>
             <label>
               Deadline time

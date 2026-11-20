@@ -267,7 +267,7 @@ const inputSchemas = {
     minimumParticipants: z.number().int().min(1).max(100), maxCapacity: z.number().int().min(1).max(100).nullable(),
     cabinCount: z.number().int().min(1).max(50).nullable().optional(),
     perCabinCapacity: z.number().int().min(1).max(50).optional(),
-    selectedCampsiteId: uuid, cabinBookingStatus: z.enum(["booked", "pending", "sites_available", "no_vacancy"]),
+    selectedCampsiteId: uuid, cabinBookingStatus: z.preprocess((val) => val === "not_booked" ? "pending" : val, z.enum(["booked", "pending", "sites_available", "no_vacancy"])),
     additionalInformation: z.string().max(4000), expectedVersion: z.number().int().positive(), reason,
     title: z.string().trim().min(1).max(120).nullable().optional(),
     eventStatus: z.enum([
@@ -3514,6 +3514,9 @@ Deno.serve(async (request) => {
       break;
     }
     case "admin_configure_trip":
+      if (input.deadlineDate && input.startsOn && (input.deadlineDate as string) >= (input.startsOn as string)) {
+        return errorResponse(request, 400, "deadline_must_be_before_trip_start", requestId, "Registration deadline date must be before trip start date.");
+      }
       rpcName = "phase2_admin_configure_trip";
       rpcArgs = {
         p_actor_id: member.member_id,
