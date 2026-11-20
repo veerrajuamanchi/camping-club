@@ -70,15 +70,17 @@ describe("EventDetailsPage Lifecycle & Health", () => {
   });
 
   it("renders Active Camping banner with directions and camp host contact when on-site", async () => {
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+    const tomorrowStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date(Date.now() + 86400000));
     const mockApi = vi.fn().mockImplementation((action: string) => {
       if (action === "get_trip_details") {
         return Promise.resolve({
           tripId: "trip-active-1",
-          monthKey: "2026-11",
+          monthKey: todayStr.slice(0, 7),
           title: "Big Basin Active Camp",
           eventStatus: "in_progress", // Active camping phase
-          startsOn: "2026-11-01",
-          endsOn: "2026-11-03",
+          startsOn: todayStr,
+          endsOn: tomorrowStr,
           cabinBookingStatus: "booked",
           minimumParticipants: 4,
           comingCount: 5,

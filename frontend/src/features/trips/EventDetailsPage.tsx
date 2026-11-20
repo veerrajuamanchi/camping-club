@@ -941,6 +941,16 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: details.clubTimezone ?? "America/Los_Angeles" }).format(new Date());
   const canChangeRsvp = details.pollStatus !== "draft" && details.eventStatus !== "cancelled" &&
     !!details.endsOn && details.endsOn >= today;
+  const isPast =
+    details.eventStatus === "completed" ||
+    details.eventStatus === "financially_finalized" ||
+    details.eventStatus === "financially_settled" ||
+    details.eventStatus === "archived" ||
+    (details as any).tripStatus === "completed" ||
+    (details as any).tripStatus === "financially_finalized" ||
+    (details as any).tripStatus === "financially_settled" ||
+    (details as any).tripStatus === "archived" ||
+    (details.eventStatus !== "in_progress" && (details as any).tripStatus !== "in_progress" && Boolean(details.endsOn) && details.endsOn! < today);
   const daysUntilTrip = details.startsOn ? (Date.parse(details.startsOn) - Date.parse(today)) / 86_400_000 : null;
   const showLateWithdrawalWarning = (details.myRsvp?.response === "coming" && rsvpChoice === "not_coming") &&
     daysUntilTrip !== null && daysUntilTrip >= 0 && daysUntilTrip <= 30;
@@ -958,12 +968,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       };
     });
   const rsvpStatusLabel = currentWaitlistPosition
-    ? "Waitlisted"
+    ? (isPast ? "Waitlisted (Event Passed)" : "Waitlisted")
     : isComing
-      ? "Going"
+      ? (isPast ? "Attended" : "Going")
       : isNotComing
-        ? "Not Going"
-        : "No response";
+        ? (isPast ? "Did Not Attend" : "Not Going")
+        : (isPast ? "Did Not Attend" : "No response");
 
   const isCabinPayer = details.cabinPayerMemberId === authProfileMemberId || details.depositStatus === "exempt";
   const depositStatus = isCabinPayer ? "exempt" : (details.depositStatus ?? "unpaid");
@@ -1099,7 +1109,15 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
     archived: "Archived",
     cancelled: "Cancelled",
   };
-  const eventStatusLabel = statusLabels[effectiveStatus] || (isDraft ? "Pending" : "RSVP Open");
+  const eventStatusLabel = isPast
+    ? effectiveStatus === "cancelled"
+      ? "Cancelled"
+      : effectiveStatus === "financially_settled"
+        ? "Concluded & Settled"
+        : effectiveStatus === "financially_finalized"
+          ? "Settlement In Progress"
+          : "Completed • Reconciling Expenses"
+    : statusLabels[effectiveStatus] || (isDraft ? "Pending" : "RSVP Open");
 
   const formattedDeadlinePST = details.pollDeadlineAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -1148,7 +1166,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
               🏕️ {campingTypeLabel}
             </span>
-            <span className={`event-status-pill status-${effectiveStatus === "confirmed" ? "confirmed" : effectiveStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : details.pollStatus}`}>
+            <span className={`event-status-pill status-${isPast ? (effectiveStatus === "cancelled" ? "closed" : effectiveStatus === "financially_settled" ? "confirmed" : "upcoming") : (effectiveStatus === "confirmed" ? "confirmed" : effectiveStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : details.pollStatus)}`}>
               Event Status: {eventStatusLabel}
             </span>
             {tripHealth && (
@@ -1171,9 +1189,13 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </span>
             )}
             <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
-              RSVP: {rsvpStatusLabel}
+              {isPast ? "Participation:" : "RSVP:"} {rsvpStatusLabel}
             </span>
-            {isComing && <span className="status-badge-going">You're going</span>}
+            {isComing && (
+              <span className="status-badge-going">
+                {isPast ? "🎉 You Attended" : "You're going"}
+              </span>
+            )}
             {isComing && (
               details.myDailyWorkload?.target != null ? (
                 <button type="button" className="badge-pill" onClick={() => setTab("tasks")}>{dailyWorkloadLabel(details.myDailyWorkload)}</button>
@@ -1324,7 +1346,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               <strong>Dates TBA</strong>
             </div>
           )}
-          {formattedDeadlinePST && (
+          {!isPast && formattedDeadlinePST && (
             <div className="hero-info-item">
               <span>⏰</span>
               <span>Registration deadline: {formattedDeadlinePST}</span>
@@ -1356,12 +1378,12 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         <div className="metric-boxes-grid">
           <div className="metric-box-card">
             <p className="metric-value">{details.comingCount}</p>
-            <p className="metric-label">Going</p>
-            <span className="sr-only">{details.comingCount} confirmed</span>
+            <p className="metric-label">{isPast ? "Campers Attended" : "Going"}</p>
+            <span className="sr-only">{details.comingCount} {isPast ? "attended" : "confirmed"}</span>
           </div>
           <div className="metric-box-card">
-            <p className="metric-value">{details.spotsRemaining ?? "—"}</p>
-            <p className="metric-label">Spots left</p>
+            <p className="metric-value">{isPast ? "Concluded" : (details.spotsRemaining ?? "—")}</p>
+            <p className="metric-label">{isPast ? "Trip Status" : "Spots left"}</p>
             {details.spotsRemaining != null && <span className="sr-only">{details.spotsRemaining} spots remaining</span>}
           </div>
           <div className="metric-box-card">
@@ -2657,7 +2679,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
           )}
 
           <div id="rsvp-actions-card" className="card">
-            <h2>RSVP & Attendance</h2>
+            <h2>{isPast ? "Trip Attendance & Retrospective" : "RSVP & Attendance"}</h2>
             <div style={{ marginBottom: "1rem", background: "#f8fafc", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
               <strong style={{ display: "block", fontSize: "0.85rem", textTransform: "uppercase", color: "#334155", letterSpacing: "0.04em", marginBottom: "0.25rem" }}>
                 Deposit Obligation
@@ -2675,10 +2697,10 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             </div>
 
             <p>
-              Your status: <strong>{rsvpStatusLabel}</strong>
+              {isPast ? "Your participation:" : "Your status:"} <strong>{rsvpStatusLabel}</strong>
             </p>
 
-            {isComing && (
+            {isComing && !isPast && (
               details.myDailyWorkload?.target != null ? (
                 details.myDailyWorkload.satisfied ? (
                   <div style={{ margin: "0.75rem 0", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "0.75rem 0.85rem", borderRadius: "8px", fontSize: "0.88rem", color: "#166534" }}>
@@ -2712,7 +2734,28 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               )
             )}
 
-            {canChangeRsvp && (
+            {isPast ? (
+              <div style={{ background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "0.75rem 1rem", marginTop: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <div>
+                    <span style={{ fontWeight: 600, color: "#0f172a", fontSize: "0.95rem" }}>
+                      🏁 This camping trip has concluded
+                    </span>
+                    <p style={{ margin: "0.2rem 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                      {isComing ? "Thank you for participating! Review trip receipts and settlement transfers in the Financials tab." : "This event is over. Check upcoming trips on the calendar."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => setTab("financials")}
+                    style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem", borderRadius: "6px" }}
+                  >
+                    💰 View Financials &rarr;
+                  </button>
+                </div>
+              </div>
+            ) : canChangeRsvp ? (
               <div className="response-actions">
                 <button
                   type="button"
@@ -2754,7 +2797,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                   Not Going
                 </button>
               </div>
-            )}
+            ) : null}
 
             {rsvpChoice === "coming" && details.myRsvp?.response !== "coming" && !isWaitlisted && (
               <div

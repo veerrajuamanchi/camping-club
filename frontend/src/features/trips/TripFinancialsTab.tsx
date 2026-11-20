@@ -952,7 +952,7 @@ export function TripFinancialsTab({
               <button
                 type="button"
                 className="btn-secondary"
-                disabled={actionBusy || (data?.balances.length ?? 0) === 0}
+                disabled={actionBusy || (data?.balances?.length ?? 0) === 0}
                 onClick={() => setShowFinalizeModal(true)}
                 style={{
                   width: "100%",
@@ -1082,7 +1082,7 @@ export function TripFinancialsTab({
                 <button
                   type="button"
                   className="btn-primary"
-                  disabled={actionBusy || (data?.balances.length ?? 0) === 0}
+                  disabled={actionBusy || (data?.balances?.length ?? 0) === 0}
                   onClick={() => setShowFinalizeModal(true)}
                   style={{ background: "#2563eb", color: "#fff", border: "none", padding: "0.5rem 1rem", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}
                 >
