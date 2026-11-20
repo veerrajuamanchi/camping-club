@@ -102,6 +102,15 @@ export function TripTasksAndMealsTab({
   const [assigningDuty, setAssigningDuty] = useState<TripSlotDuty | null>(null);
   const [selectedMemberToAssign, setSelectedMemberToAssign] = useState<string>("");
 
+  // Admin reassign modal state
+  const [reassignDutyModal, setReassignDutyModal] = useState<{
+    duty: TripSlotDuty;
+    assignments: DutyAssignment[];
+    selectedAssignmentId: string;
+  } | null>(null);
+  const [selectedMemberToReassign, setSelectedMemberToReassign] = useState<string>("");
+  const [reassignReason, setReassignReason] = useState<string>("");
+
   // Admin driver credit modal state
   const [showDriverModal, setShowDriverModal] = useState(false);
   const [driverMemberId, setDriverMemberId] = useState("");
@@ -238,6 +247,37 @@ export function TripTasksAndMealsTab({
           setErrorMsg("Member already holds this duty.");
         } else {
           setErrorMsg("Failed to assign member.");
+        }
+      }
+    });
+  };
+
+  const handleAdminReassign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reassignDutyModal || !selectedMemberToReassign) return;
+    const targetAssignmentId = reassignDutyModal.selectedAssignmentId;
+
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    startTransition(async () => {
+      try {
+        await api("admin_reassign_duty", {
+          assignmentId: targetAssignmentId,
+          newMemberId: selectedMemberToReassign,
+          reason: reassignReason.trim() || undefined,
+        });
+        setReassignDutyModal(null);
+        setSelectedMemberToReassign("");
+        setReassignReason("");
+        setSuccessMsg("Responsibility reassigned successfully.");
+        await loadData();
+        void onDutyChanged?.();
+      } catch (err: unknown) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === "23505") {
+          setErrorMsg("Target camper already holds this responsibility.");
+        } else {
+          setErrorMsg("Failed to reassign responsibility: " + (error.message || "Unknown error"));
         }
       }
     });
@@ -648,10 +688,45 @@ export function TripTasksAndMealsTab({
                                     borderRadius: "6px",
                                     fontWeight: a.member_id === currentMemberId ? 600 : 400,
                                     border: a.member_id === currentMemberId ? "1px solid #93c5fd" : "1px solid #e2e8f0",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "0.35rem",
                                   }}
                                 >
-                                  {a.member?.display_name ?? "Member"}
-                                  {a.member_id === currentMemberId && " (You)"}
+                                  <span>
+                                    {a.member?.display_name ?? "Member"}
+                                    {a.member_id === currentMemberId && " (You)"}
+                                  </span>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      aria-label={`Reassign ${a.member?.display_name ?? "Volunteer"}`}
+                                      title={`Reassign ${a.member?.display_name ?? "this volunteer"}`}
+                                      style={{
+                                        border: "1px solid #cbd5e1",
+                                        background: "#ffffff",
+                                        borderRadius: "3px",
+                                        cursor: "pointer",
+                                        fontSize: "0.72rem",
+                                        padding: "1px 5px",
+                                        color: "#0284c7",
+                                        fontWeight: 600,
+                                        lineHeight: 1.2,
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setReassignDutyModal({
+                                          duty,
+                                          assignments: dutyAssignments,
+                                          selectedAssignmentId: a.id,
+                                        });
+                                        setSelectedMemberToReassign("");
+                                        setReassignReason("");
+                                      }}
+                                    >
+                                      🔄 Reassign
+                                    </button>
+                                  )}
                                 </span>
                               ))
                             )}
@@ -729,19 +804,50 @@ export function TripTasksAndMealsTab({
                           )}
 
                           {isAdmin && (
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              disabled={isPending || isFull}
-                              onClick={() => {
-                                setAssigningDuty(duty);
-                                setSelectedMemberToAssign("");
-                              }}
-                              style={{ fontSize: "0.8rem", padding: "0.35rem 0.6rem" }}
-                              title="Assign a confirmed camper to this duty"
-                            >
-                              Assign…
-                            </button>
+                            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                              {!isFull && (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  disabled={isPending}
+                                  onClick={() => {
+                                    setAssigningDuty(duty);
+                                    setSelectedMemberToAssign("");
+                                  }}
+                                  style={{ fontSize: "0.8rem", padding: "0.35rem 0.6rem" }}
+                                  title="Assign a confirmed camper to this duty"
+                                >
+                                  Assign…
+                                </button>
+                              )}
+                              {spotsTaken > 0 && (
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  disabled={isPending}
+                                  onClick={() => {
+                                    setReassignDutyModal({
+                                      duty,
+                                      assignments: dutyAssignments,
+                                      selectedAssignmentId: dutyAssignments[0].id,
+                                    });
+                                    setSelectedMemberToReassign("");
+                                    setReassignReason("");
+                                  }}
+                                  style={{
+                                    fontSize: "0.8rem",
+                                    padding: "0.35rem 0.6rem",
+                                    borderColor: "#0284c7",
+                                    color: "#0284c7",
+                                    background: "#f0f9ff",
+                                    fontWeight: 600,
+                                  }}
+                                  title="Reassign or unassign an assigned camper"
+                                >
+                                  🔄 Reassign…
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -929,6 +1035,143 @@ export function TripTasksAndMealsTab({
           </div>
         </div>
       )}
+
+      {/* Admin Reassign Modal */}
+      {reassignDutyModal && (() => {
+        const currentAssignment =
+          reassignDutyModal.assignments.find((a) => a.id === reassignDutyModal.selectedAssignmentId) ||
+          reassignDutyModal.assignments[0];
+        return (
+          <div className="modal-overlay" onClick={() => setReassignDutyModal(null)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px" }}>
+              <h3 style={{ margin: "0 0 0.5rem 0" }}>
+                Reassign: {reassignDutyModal.duty.responsibility?.title ?? "Duty"}
+              </h3>
+              <p style={{ margin: "0 0 1rem 0", fontSize: "0.875rem", color: "#64748b" }}>
+                Reassign this responsibility to another confirmed camper, or unassign the current volunteer.
+              </p>
+
+              {reassignDutyModal.assignments.length > 1 && (
+                <label style={{ display: "block", marginBottom: "1rem" }}>
+                  Current Volunteer to Reassign:
+                  <select
+                    value={reassignDutyModal.selectedAssignmentId}
+                    onChange={(e) => {
+                      setReassignDutyModal({
+                        ...reassignDutyModal,
+                        selectedAssignmentId: e.target.value,
+                      });
+                      setSelectedMemberToReassign("");
+                    }}
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.35rem" }}
+                  >
+                    {reassignDutyModal.assignments.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.member?.display_name ?? "Member"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {reassignDutyModal.assignments.length === 1 && (
+                <div style={{ background: "#f1f5f9", padding: "0.6rem 0.85rem", borderRadius: "6px", marginBottom: "1rem", fontSize: "0.88rem" }}>
+                  Currently assigned to: <strong>{currentAssignment?.member?.display_name ?? "Member"}</strong>
+                </div>
+              )}
+
+              <form onSubmit={handleAdminReassign}>
+                <label style={{ display: "block", marginBottom: "1rem" }}>
+                  New Camper:
+                  <select
+                    required
+                    aria-label="New Camper:"
+                    value={selectedMemberToReassign}
+                    onChange={(e) => setSelectedMemberToReassign(e.target.value)}
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.35rem" }}
+                  >
+                    <option value="">-- Choose confirmed attendee --</option>
+                    {attendees
+                      .filter(
+                        (att) =>
+                          att.memberId !== currentAssignment?.member_id &&
+                          !assignments.some(
+                            (otherA) =>
+                              otherA.slot_duty_id === reassignDutyModal.duty.id &&
+                              otherA.member_id === att.memberId &&
+                              otherA.id !== currentAssignment?.id
+                          )
+                      )
+                      .map((a) => (
+                        <option key={a.memberId} value={a.memberId}>
+                          {a.displayName}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+
+                <label style={{ display: "block", marginBottom: "1.25rem" }}>
+                  Reason (Optional):
+                  <input
+                    type="text"
+                    placeholder="e.g. Volunteer request, schedule conflict"
+                    value={reassignReason}
+                    onChange={(e) => setReassignReason(e.target.value)}
+                    maxLength={200}
+                    style={{ width: "100%", padding: "0.5rem", marginTop: "0.35rem" }}
+                  />
+                </label>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={isPending}
+                    onClick={async () => {
+                      if (!currentAssignment) return;
+                      if (!window.confirm(`Are you sure you want to remove ${currentAssignment.member?.display_name ?? "this volunteer"} from this duty?`)) return;
+                      setErrorMsg(null);
+                      setSuccessMsg(null);
+                      startTransition(async () => {
+                        try {
+                          await api("drop_duty", { assignmentId: currentAssignment.id, reason: "Unassigned by admin" });
+                          setReassignDutyModal(null);
+                          setSuccessMsg("Volunteer unassigned successfully.");
+                          await loadData();
+                          void onDutyChanged?.();
+                        } catch {
+                          setErrorMsg("Failed to unassign volunteer.");
+                        }
+                      });
+                    }}
+                    style={{ color: "#dc2626", borderColor: "#fca5a5", fontSize: "0.85rem" }}
+                  >
+                    🗑️ Unassign
+                  </button>
+
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setReassignDutyModal(null)}
+                      disabled={isPending}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={isPending || !selectedMemberToReassign}
+                    >
+                      {isPending ? "Reassigning…" : "Confirm Reassignment"}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Admin Grant Driver Credit Modal */}
       {showDriverModal && (

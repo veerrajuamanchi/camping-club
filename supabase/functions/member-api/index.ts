@@ -80,25 +80,36 @@ Deno.serve(async (request) => {
   if (action === "me") {
     if (!member) return json(request, 403, { error: "invitation_profile_required", requestId });
     if (member.account_status !== "active") return json(request, 403, { error: "membership_inactive", requestId });
-    const [{ data: contact }, { data: method }] = await Promise.all([
-      service.from("member_private_contacts").select("phone_e164").eq("member_id", member.member_id).maybeSingle(),
-      service.from("member_payment_methods").select("id, method").eq("member_id", member.member_id).eq("preferred", true).eq("active", true).maybeSingle(),
-    ]);
+    const { data: contact } = await service.from("member_private_contacts").select("phone_e164").eq("member_id", member.member_id).maybeSingle();
 
-    let paymentIdentifier: string | null = null;
+    const paymentMethods: Array<{ id: string; method: string; paymentIdentifier: string | null; preferred: boolean }> = [];
     try {
-      const { data: identRows, error: identErr } = await service.rpc("member_api_get_own_payment_identifier", {
+      const { data: identRows, error: identErr } = await service.rpc("member_api_get_own_payment_methods", {
         p_auth_user_id: authUser.id,
       });
-      if (!identErr && identRows && identRows.length > 0) {
-        const row = identRows[0] as { identifier_ciphertext_hex: string; nonce_hex: string; key_version: string };
-        if (row.identifier_ciphertext_hex && row.nonce_hex) {
-          paymentIdentifier = await unprotectPaymentIdentifier(row.identifier_ciphertext_hex, row.nonce_hex);
+      if (!identErr && identRows) {
+        for (const row of identRows) {
+          let handle: string | null = null;
+          if (row.identifier_ciphertext_hex && row.nonce_hex) {
+            try {
+              handle = await unprotectPaymentIdentifier(row.identifier_ciphertext_hex, row.nonce_hex);
+            } catch (err) {
+              console.warn("Could not decrypt payment identifier for method", row.method, err);
+            }
+          }
+          paymentMethods.push({
+            id: row.payment_method_id,
+            method: row.method,
+            paymentIdentifier: handle,
+            preferred: Boolean(row.preferred),
+          });
         }
       }
     } catch (identCatch) {
-      console.warn("Could not decrypt member own payment identifier:", identCatch);
+      console.warn("Could not load member payment methods:", identCatch);
     }
+
+    const preferredMethod = paymentMethods.find((pm) => pm.preferred) || paymentMethods[0] || null;
 
     return json(request, 200, {
       member: {
@@ -106,8 +117,9 @@ Deno.serve(async (request) => {
         displayName: member.display_name,
         role: member.member_role,
         phoneE164: contact?.phone_e164 ?? "",
-        paymentMethod: method?.method ?? null,
-        paymentIdentifier,
+        paymentMethod: preferredMethod?.method ?? null,
+        paymentIdentifier: preferredMethod?.paymentIdentifier ?? null,
+        paymentMethods,
       },
       requestId,
     });
@@ -207,15 +219,42 @@ Deno.serve(async (request) => {
     }
     if (action === "update_profile") {
       const input = parsedInput as z.infer<typeof profileSchema>;
-      const protectedValue = await protectPaymentIdentifier(input.paymentIdentifier);
-      const { data, error } = await service.rpc("phase1_update_own_profile", {
-        p_auth_user_id: authUser.id, p_display_name: input.displayName, p_phone_e164: input.phoneE164,
-        p_method: input.paymentMethod, p_ciphertext: protectedValue.ciphertext, p_nonce: protectedValue.nonce,
-        p_key_version: protectedValue.keyVersion, p_fingerprint: protectedValue.fingerprint, p_request_id: idempotencyKey,
-      });
-      if (error) return json(request, 400, { error: "profile_update_failed", requestId });
-      await finish(authUser.id, action, idempotencyKey, parsedInput, data, "profile_updated");
-      return json(request, 200, { paymentMethodId: data, requestId });
+      if (input.paymentMethods && input.paymentMethods.length > 0) {
+        const methodsPayload = [];
+        for (const opt of input.paymentMethods) {
+          const protectedVal = await protectPaymentIdentifier(opt.paymentIdentifier);
+          methodsPayload.push({
+            method: opt.method,
+            preferred: opt.preferred,
+            ciphertext_hex: protectedVal.ciphertext,
+            nonce_hex: protectedVal.nonce,
+            key_version: protectedVal.keyVersion,
+            fingerprint_hex: protectedVal.fingerprint,
+          });
+        }
+        const { error } = await service.rpc("member_api_save_own_payment_methods", {
+          p_auth_user_id: authUser.id,
+          p_display_name: input.displayName,
+          p_phone_e164: input.phoneE164,
+          p_methods: methodsPayload,
+          p_request_id: idempotencyKey,
+        });
+        if (error) return json(request, 400, { error: "profile_update_failed", requestId });
+        await finish(authUser.id, action, idempotencyKey, parsedInput, null, "profile_updated");
+        return json(request, 200, { success: true, requestId });
+      } else if (input.paymentMethod && input.paymentIdentifier) {
+        const protectedValue = await protectPaymentIdentifier(input.paymentIdentifier);
+        const { data, error } = await service.rpc("phase1_update_own_profile", {
+          p_auth_user_id: authUser.id, p_display_name: input.displayName, p_phone_e164: input.phoneE164,
+          p_method: input.paymentMethod, p_ciphertext: protectedValue.ciphertext, p_nonce: protectedValue.nonce,
+          p_key_version: protectedValue.keyVersion, p_fingerprint: protectedValue.fingerprint, p_request_id: idempotencyKey,
+        });
+        if (error) return json(request, 400, { error: "profile_update_failed", requestId });
+        await finish(authUser.id, action, idempotencyKey, parsedInput, data, "profile_updated");
+        return json(request, 200, { paymentMethodId: data, requestId });
+      } else {
+        return json(request, 400, { error: "invalid_payment_methods", requestId });
+      }
     }
     if (action === "invite_member") {
       const input = parsedInput as z.infer<typeof inviteSchema>;

@@ -146,4 +146,83 @@ describe("MemberProfileForm", () => {
       expect(screen.getByText(/profile updated successfully/i)).toBeInTheDocument();
     });
   });
+
+  it("supports managing multiple payment options and setting primary", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemberProfileForm
+        mode="edit"
+        initialDisplayName="Bob Camper"
+        initialPhone="+14155550200"
+        initialPaymentMethods={[
+          { method: "venmo", paymentIdentifier: "@bob-venmo", preferred: true },
+          { method: "zelle", paymentIdentifier: "+14155550200", preferred: false },
+        ]}
+        onSave={onSave}
+      />
+    );
+
+    expect(screen.getByText(/★ Primary \/ Preferred/i)).toBeInTheDocument();
+    expect(screen.getByText(/Fallback Option/i)).toBeInTheDocument();
+
+    // Click Set as Primary for Zelle
+    const setPrimaryBtn = screen.getByRole("button", { name: /set as primary/i });
+    await user.click(setPrimaryBtn);
+
+    // Save profile
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      displayName: "Bob Camper",
+      phoneE164: "+14155550200",
+      paymentMethod: "zelle",
+      paymentIdentifier: "+14155550200",
+      paymentMethods: [
+        { id: undefined, method: "venmo", paymentIdentifier: "@bob-venmo", preferred: false },
+        { id: undefined, method: "zelle", paymentIdentifier: "+14155550200", preferred: true },
+      ],
+    });
+  });
+
+  it("allows adding a new fallback payment option", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemberProfileForm
+        mode="edit"
+        initialDisplayName="Charlie Hiker"
+        initialPhone="+14155550300"
+        initialPaymentMethods={[
+          { method: "venmo", paymentIdentifier: "@charlie-venmo", preferred: true },
+        ]}
+        onSave={onSave}
+      />
+    );
+
+    // Click Add Another Payment Option
+    await user.click(screen.getByRole("button", { name: /add another payment option/i }));
+    expect(screen.getByText(/add payment method/i)).toBeInTheDocument();
+
+    // Select PayPal
+    await user.selectOptions(screen.getByLabelText(/select method/i), "paypal");
+    await user.type(screen.getByPlaceholderText(/paypal\.me/i), "charlie-paypal");
+    await user.click(screen.getByRole("button", { name: /add option/i }));
+
+    // Both Venmo and PayPal now exist
+    expect(screen.getByDisplayValue("charlie-paypal")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      displayName: "Charlie Hiker",
+      phoneE164: "+14155550300",
+      paymentMethod: "venmo",
+      paymentIdentifier: "@charlie-venmo",
+      paymentMethods: [
+        { id: undefined, method: "venmo", paymentIdentifier: "@charlie-venmo", preferred: true },
+        { id: undefined, method: "paypal", paymentIdentifier: "charlie-paypal", preferred: false },
+      ],
+    });
+  });
 });

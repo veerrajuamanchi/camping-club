@@ -85,6 +85,14 @@ export type SettlementTransfer = {
   recipientPaymentIdentifier?: string | null;
   recipientPhone?: string | null;
   paymentUrl?: string | null;
+  paymentOptions?: Array<{
+    method: string;
+    label: string;
+    handle: string | null;
+    phone: string | null;
+    preferred: boolean;
+    paymentUrl: string | null;
+  }>;
   notes: string | null;
   isPayer: boolean;
   isRecipient: boolean;
@@ -974,6 +982,53 @@ export function TripFinancialsTab({
                     </button>
                   )}
                 </div>
+                {myOutgoingTransfer.paymentOptions && myOutgoingTransfer.paymentOptions.length > 1 && (
+                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center", marginTop: "0.35rem", fontSize: "0.76rem", color: "#cbd5e1" }}>
+                    <span style={{ fontWeight: 600, color: "#94a3b8" }}>Or Alternative:</span>
+                    {myOutgoingTransfer.paymentOptions.filter((opt) => !opt.preferred && (opt.handle || opt.phone)).map((opt) => {
+                      const optCleanHandle = cleanDisplayHandle(opt.handle);
+                      return (
+                        <span
+                          key={opt.method}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.3rem",
+                            background: "rgba(255, 255, 255, 0.1)",
+                            padding: "0.2rem 0.5rem",
+                            borderRadius: "4px",
+                          }}
+                        >
+                          <strong style={{ color: "#ffffff" }}>{opt.label}:</strong>
+                          <span style={{ color: "#e2e8f0" }}>{optCleanHandle || opt.phone}</span>
+                          {opt.paymentUrl && (
+                            <a
+                              href={opt.paymentUrl.replace(/paypal\.me\/paypal\.me%2F/i, "paypal.me/")}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: "#38bdf8", fontWeight: 700, textDecoration: "underline" }}
+                            >
+                              Pay ➔
+                            </a>
+                          )}
+                          {opt.phone && (opt.method === "zelle" || !optCleanHandle) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard?.writeText(opt.phone || "");
+                                setCopySuccess(true);
+                                setTimeout(() => setCopySuccess(false), 2000);
+                              }}
+                              style={{ background: "none", border: "none", padding: 0, color: "#a5b4fc", cursor: "pointer", fontSize: "0.74rem", fontWeight: 600, textDecoration: "underline" }}
+                            >
+                              Copy
+                            </button>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2281,6 +2336,56 @@ export function TripFinancialsTab({
                           </>
                         )}
                       </div>
+
+                      {tx.paymentOptions && tx.paymentOptions.length > 1 && !isConfirmed && (
+                        <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center", marginTop: "0.2rem", fontSize: "0.8rem", color: "#475569" }}>
+                          <span style={{ fontWeight: 600, color: "#64748b" }}>Or Alternative:</span>
+                          {tx.paymentOptions.filter((opt) => !opt.preferred && (opt.handle || opt.phone)).map((opt) => {
+                            const optCleanHandle = cleanDisplayHandle(opt.handle);
+                            return (
+                              <span
+                                key={opt.method}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "0.35rem",
+                                  background: "#f8fafc",
+                                  border: "1px solid #e2e8f0",
+                                  padding: "0.2rem 0.55rem",
+                                  borderRadius: "6px",
+                                  fontSize: "0.78rem",
+                                }}
+                              >
+                                <strong>{opt.label}:</strong>
+                                <span>{optCleanHandle || opt.phone}</span>
+                                {opt.paymentUrl && (
+                                  <a
+                                    href={opt.paymentUrl.replace(/paypal\.me\/paypal\.me%2F/i, "paypal.me/")}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ color: "#0284c7", fontWeight: 700, textDecoration: "underline", marginLeft: "0.2rem" }}
+                                  >
+                                    Pay ➔
+                                  </a>
+                                )}
+                                {opt.phone && (opt.method === "zelle" || !optCleanHandle) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard?.writeText(opt.phone || "");
+                                      setCopySuccess(true);
+                                      setTimeout(() => setCopySuccess(false), 2000);
+                                    }}
+                                    style={{ background: "none", border: "none", padding: 0, color: "#4338ca", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, textDecoration: "underline", marginLeft: "0.2rem" }}
+                                  >
+                                    Copy
+                                  </button>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

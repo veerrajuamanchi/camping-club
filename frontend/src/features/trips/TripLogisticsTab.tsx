@@ -51,6 +51,8 @@ export type TripCarpool = {
   endingMileage: number | null;
   totalMiles: number | null;
   departureDetails: string | null;
+  meetingTime?: string | null;
+  meetingLocation?: string | null;
   isMyCarpool: boolean;
   riders: Array<{
     id: string;
@@ -145,6 +147,8 @@ export function TripLogisticsTab({
   const [carpoolVehicle, setCarpoolVehicle] = useState("");
   const [carpoolMaxSeats, setCarpoolMaxSeats] = useState(4);
   const [carpoolDeparture, setCarpoolDeparture] = useState("");
+  const [carpoolMeetingTime, setCarpoolMeetingTime] = useState("");
+  const [carpoolMeetingLocation, setCarpoolMeetingLocation] = useState("");
   const [carpoolSelectedRiders, setCarpoolSelectedRiders] = useState<string[]>([]);
 
   // Mileage form state
@@ -293,6 +297,8 @@ export function TripLogisticsTab({
     setCarpoolVehicle("");
     setCarpoolMaxSeats(4);
     setCarpoolDeparture("");
+    setCarpoolMeetingTime("");
+    setCarpoolMeetingLocation("");
     setCarpoolSelectedRiders([]);
     setEditingCarpool(null);
     setShowAddCarpoolModal(true);
@@ -304,6 +310,8 @@ export function TripLogisticsTab({
     setCarpoolVehicle(cp.vehicleDescription);
     setCarpoolMaxSeats(cp.maxSeats);
     setCarpoolDeparture(cp.departureDetails || "");
+    setCarpoolMeetingTime(cp.meetingTime || "");
+    setCarpoolMeetingLocation(cp.meetingLocation || "");
     setCarpoolSelectedRiders(cp.riders.map((r) => r.riderMemberId));
     setShowAddCarpoolModal(true);
   }
@@ -323,6 +331,8 @@ export function TripLogisticsTab({
           vehicleDescription: carpoolVehicle.trim(),
           maxSeats: carpoolMaxSeats,
           departureDetails: carpoolDeparture.trim() || null,
+          meetingTime: carpoolMeetingTime.trim() || null,
+          meetingLocation: carpoolMeetingLocation.trim() || null,
           riderMemberIds: carpoolSelectedRiders,
         });
       } else {
@@ -333,6 +343,8 @@ export function TripLogisticsTab({
           vehicleDescription: carpoolVehicle.trim(),
           maxSeats: carpoolMaxSeats,
           departureDetails: carpoolDeparture.trim() || null,
+          meetingTime: carpoolMeetingTime.trim() || null,
+          meetingLocation: carpoolMeetingLocation.trim() || null,
           riderMemberIds: carpoolSelectedRiders,
         });
       }
@@ -406,9 +418,10 @@ export function TripLogisticsTab({
   const sharedCommitments = commitments.filter(
     (c) => c.commitmentType !== "individual_pack" && c.isActive !== false
   );
-  const individualItemsCount = commitments.filter(
+  const individualItems = commitments.filter(
     (c) => c.commitmentType === "individual_pack" && c.isActive !== false
-  ).length;
+  );
+  const individualItemsCount = individualItems.length;
   const criticalMissing = sharedCommitments.filter((c) => c.isCritical && !c.assignedMemberId);
   const filteredCommitments =
     selectedCategory === "all" ? sharedCommitments : sharedCommitments.filter((c) => c.category === selectedCategory);
@@ -587,8 +600,15 @@ export function TripLogisticsTab({
                     </div>
                   </div>
 
+                  {(cp.meetingTime || cp.meetingLocation) && (
+                    <p style={{ margin: "0.4rem 0 0.2rem", fontSize: "0.85rem", color: "#1e293b" }}>
+                      {cp.meetingTime && <span>⏰ <strong>Meeting Time:</strong> {cp.meetingTime} &nbsp;&nbsp;</span>}
+                      {cp.meetingLocation && <span>📍 <strong>Meeting Location:</strong> {cp.meetingLocation}</span>}
+                    </p>
+                  )}
+
                   {cp.departureDetails && (
-                    <p style={{ margin: "0.5rem 0", fontSize: "0.85rem", color: "#374151" }}>
+                    <p style={{ margin: "0.25rem 0 0.5rem", fontSize: "0.85rem", color: "#475569" }}>
                       <strong>Departure details:</strong> {cp.departureDetails}
                     </p>
                   )}
@@ -852,6 +872,69 @@ export function TripLogisticsTab({
       </div>
       )}
 
+      {/* Individual Gear Card */}
+      <div className="card" data-testid="individual-gear-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+          <div>
+            <h2 style={{ margin: 0 }}>🎒 Individual Gear (What Each Camper Needs to Bring)</h2>
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.88rem", color: "#6b7280" }}>
+              Every attendee is responsible for packing their own personal essentials.
+            </p>
+          </div>
+          {onOpenPackingChecklist && (
+            <button
+              type="button"
+              className="primary-button"
+              style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+              onClick={onOpenPackingChecklist}
+            >
+              Open Interactive Checklist ({individualItems.length})
+            </button>
+          )}
+        </div>
+
+        {individualItems.length === 0 ? (
+          <p style={{ color: "#64748b", fontStyle: "italic", fontSize: "0.9rem", margin: 0 }}>
+            No individual packing items configured for this trip.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "0.75rem" }}>
+            {individualItems.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "6px",
+                  padding: "0.6rem 0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "0.5rem",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "#0f172a" }}>
+                    {item.isCritical ? "🚨 " : "🎒 "}
+                    {item.itemName}
+                  </div>
+                  {item.quantityDescription && (
+                    <div style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                      Qty: {item.quantityDescription}
+                    </div>
+                  )}
+                </div>
+                {item.isCritical && (
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, background: "#fee2e2", color: "#991b1b", padding: "2px 6px", borderRadius: "4px" }}>
+                    Required
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Trip Notes & Directions Card */}
       {(section === "all" || section === "gear") && (
       <div className="card">
@@ -1017,12 +1100,32 @@ export function TripLogisticsTab({
               </label>
 
               <label>
-                Departure Details:
+                Meeting Time (Optional):
+                <input
+                  type="text"
+                  value={carpoolMeetingTime}
+                  onChange={(e) => setCarpoolMeetingTime(e.target.value)}
+                  placeholder="e.g., Friday 4:30 PM or 8:00 AM"
+                />
+              </label>
+
+              <label>
+                Meeting Location (Optional):
+                <input
+                  type="text"
+                  value={carpoolMeetingLocation}
+                  onChange={(e) => setCarpoolMeetingLocation(e.target.value)}
+                  placeholder="e.g., Dublin BART or North Gate Park & Ride"
+                />
+              </label>
+
+              <label>
+                Departure Details / Notes:
                 <input
                   type="text"
                   value={carpoolDeparture}
                   onChange={(e) => setCarpoolDeparture(e.target.value)}
-                  placeholder="e.g., Leaving Friday 4:00 PM from North Gate Park & Ride"
+                  placeholder="e.g., Leaving right on time, trunk has space for 2 coolers"
                 />
               </label>
 

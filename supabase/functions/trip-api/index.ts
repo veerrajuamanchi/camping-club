@@ -1466,7 +1466,15 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     return clean;
   }
 
-  const paymentMethodsByMember = new Map<string, { method: string; label: string; handle: string | null; phone: string | null }>();
+  type RecipientPaymentOption = {
+    method: string;
+    label: string;
+    handle: string | null;
+    phone: string | null;
+    preferred: boolean;
+  };
+
+  const paymentOptionsByMember = new Map<string, RecipientPaymentOption[]>();
 
   for (const row of (recipientDetailsRows ?? [])) {
     let handle: string | null = null;
@@ -1479,23 +1487,34 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     }
     const methodStr = (row.method || "zelle").toLowerCase();
     const cleanHandle = handle ? cleanPaymentHandle(methodStr, handle) : null;
-    paymentMethodsByMember.set(row.member_id, {
+    const opt: RecipientPaymentOption = {
       method: methodStr,
       label: methodStr.replace("_", " ").toUpperCase(),
       handle: cleanHandle,
       phone: row.phone_e164 ?? null,
-    });
+      preferred: Boolean(row.preferred),
+    };
+    const list = paymentOptionsByMember.get(row.member_id) ?? [];
+    list.push(opt);
+    paymentOptionsByMember.set(row.member_id, list);
   }
 
   for (const pm of (paymentMethodsResult.data ?? [])) {
-    if (!paymentMethodsByMember.has(pm.member_id)) {
-      paymentMethodsByMember.set(pm.member_id, {
+    if (!paymentOptionsByMember.has(pm.member_id)) {
+      paymentOptionsByMember.set(pm.member_id, [{
         method: pm.method,
         label: pm.method.replace("_", " ").toUpperCase(),
         handle: null,
         phone: null,
-      });
+        preferred: true,
+      }]);
     }
+  }
+
+  function getRecipientPaymentInfo(memberId: string) {
+    const options = paymentOptionsByMember.get(memberId) ?? [];
+    const primary = options.find((o) => o.preferred) || options[0] || null;
+    return { options, primary };
   }
 
   function buildPaymentUrl(method: string | null | undefined, handle: string | null | undefined, amountCents: number, tripTitle: string | null | undefined): string | null {
@@ -1664,7 +1683,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     }));
 
     transfers = (latestRun.transfers ?? []).map((t: any) => {
-      const pm = paymentMethodsByMember.get(t.recipient_member_id);
+      const { options, primary } = getRecipientPaymentInfo(t.recipient_member_id);
       return {
         id: t.id,
         payerMemberId: t.payer_member_id,
@@ -1675,11 +1694,19 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
         status: t.status,
         markedSentAt: t.marked_sent_at,
         confirmedReceivedAt: t.confirmed_received_at,
-        paymentMethod: t.payment_method ?? pm?.method ?? null,
-        recipientPreferredMethod: pm?.label ?? "Zelle / Venmo",
-        recipientPaymentIdentifier: pm?.handle ?? null,
-        recipientPhone: pm?.phone ?? null,
-        paymentUrl: buildPaymentUrl(t.payment_method ?? pm?.method, pm?.handle, t.amount_cents, trip.title),
+        paymentMethod: t.payment_method ?? primary?.method ?? null,
+        recipientPreferredMethod: primary?.label ?? "Zelle / Venmo",
+        recipientPaymentIdentifier: primary?.handle ?? null,
+        recipientPhone: primary?.phone ?? null,
+        paymentUrl: buildPaymentUrl(t.payment_method ?? primary?.method, primary?.handle, t.amount_cents, trip.title),
+        paymentOptions: options.map((opt) => ({
+          method: opt.method,
+          label: opt.label,
+          handle: opt.handle,
+          phone: opt.phone,
+          preferred: opt.preferred,
+          paymentUrl: buildPaymentUrl(opt.method, opt.handle, t.amount_cents, trip.title),
+        })),
         notes: t.notes,
         isPayer: t.payer_member_id === member.member_id,
         isRecipient: t.recipient_member_id === member.member_id,
@@ -1743,7 +1770,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
         }));
 
         transfers = draftResult.transfers.map((t, idx) => {
-          const pm = paymentMethodsByMember.get(t.recipientMemberId);
+          const { options, primary } = getRecipientPaymentInfo(t.recipientMemberId);
           return {
             id: `draft-${idx}`,
             payerMemberId: t.payerMemberId,
@@ -1754,11 +1781,19 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
             status: "outstanding",
             markedSentAt: null,
             confirmedReceivedAt: null,
-            paymentMethod: pm?.method ?? null,
-            recipientPreferredMethod: pm?.label ?? "Zelle / Venmo",
-            recipientPaymentIdentifier: pm?.handle ?? null,
-            recipientPhone: pm?.phone ?? null,
-            paymentUrl: buildPaymentUrl(pm?.method, pm?.handle, t.amountCents, trip.title),
+            paymentMethod: primary?.method ?? null,
+            recipientPreferredMethod: primary?.label ?? "Zelle / Venmo",
+            recipientPaymentIdentifier: primary?.handle ?? null,
+            recipientPhone: primary?.phone ?? null,
+            paymentUrl: buildPaymentUrl(primary?.method, primary?.handle, t.amountCents, trip.title),
+            paymentOptions: options.map((opt) => ({
+              method: opt.method,
+              label: opt.label,
+              handle: opt.handle,
+              phone: opt.phone,
+              preferred: opt.preferred,
+              paymentUrl: buildPaymentUrl(opt.method, opt.handle, t.amountCents, trip.title),
+            })),
             notes: null,
             isPayer: t.payerMemberId === member.member_id,
             isRecipient: t.recipientMemberId === member.member_id,
@@ -2726,6 +2761,18 @@ async function sendTripSettlementEmail(
             const isSent = t.status === "sent";
             const statusLabel = isConfirmed ? "✅ Confirmed" : isSent ? "📤 Sent" : "⏳ Outstanding";
             const statusColor = isConfirmed ? "#166534" : isSent ? "#1e40af" : "#b45309";
+            const fallbacks = (t.paymentOptions ?? []).filter((opt: any) => !opt.preferred && (opt.handle || opt.phone));
+            const fallbacksHtml = fallbacks.length > 0 && !isConfirmed ? `
+              <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #cbd5e1; font-size: 0.76rem; color: #475569;">
+                <span style="color: #64748b; font-weight: 600;">Or Alternative:</span>
+                ${fallbacks.map((f: any) => `
+                  <div style="margin-top: 2px;">
+                    <strong>${f.label}:</strong> ${f.handle || f.phone}
+                    ${f.paymentUrl ? `<a href="${f.paymentUrl}" style="color: #0284c7; font-weight: bold; text-decoration: underline; margin-left: 4px;">Pay ➔</a>` : ''}
+                  </div>
+                `).join("")}
+              </div>
+            ` : '';
             return `
               <tr style="border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 8px 10px; font-weight: 600; color: #0f172a;">${payer}</td>
@@ -2736,6 +2783,7 @@ async function sendTripSettlementEmail(
                   ${t.recipientPaymentIdentifier ? `<div style="color: #0369a1; font-weight: 600; margin-top: 2px;">${t.recipientPaymentIdentifier}</div>` : ''}
                   ${t.recipientPhone && (method === 'ZELLE' || !t.recipientPaymentIdentifier) ? `<div style="color: #64748b; font-size: 0.78rem;">${t.recipientPhone}</div>` : ''}
                   ${t.paymentUrl && !isConfirmed ? `<div style="margin-top: 4px;"><a href="${t.paymentUrl}" style="background: ${method === 'VENMO' ? '#008cff' : '#003087'}; color: #ffffff; padding: 3px 8px; border-radius: 4px; text-decoration: none; font-size: 0.75rem; font-weight: bold; display: inline-block;">Pay via ${method} ➔</a></div>` : ''}
+                  ${fallbacksHtml}
                 </td>
                 <td style="padding: 8px 10px; font-weight: 600; color: ${statusColor}; font-size: 0.85rem;">${statusLabel}</td>
               </tr>
