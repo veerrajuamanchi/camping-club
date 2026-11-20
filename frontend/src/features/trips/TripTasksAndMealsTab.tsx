@@ -558,7 +558,11 @@ export function TripTasksAndMealsTab({
                           ) : isNoTasksScheduled ? (
                             "No active tasks scheduled. No selection required."
                           ) : (
-                            `✓ Target Met for ${dayName}!`
+                            <>
+                              <span>{`✓ Target Met for ${dayName}!`}</span>
+                              {" · "}
+                              <span>Daily target reached (tasks selected).</span>
+                            </>
                           )
                         ) : (
                           `Select chores worth ${dayTarget}× for ${dayName} (Select at least ${(dayTarget - dayWeightSelected).toFixed(1).replace(/\.0$/, "")}× more while slots remain).`
