@@ -119,6 +119,15 @@ export function formatMoney(cents: number): string {
   return `${sign}$${(abs / 100).toFixed(2)}`;
 }
 
+export function cleanDisplayHandle(raw: string | null | undefined): string {
+  if (!raw) return "";
+  let clean = raw.trim();
+  clean = clean.replace(/^https?:\/\/(www\.)?paypal\.(me|com\/paypalme)\//i, "");
+  clean = clean.replace(/^https?:\/\/(www\.)?venmo\.com\//i, "");
+  clean = clean.replace(/^paypal\.me\//i, "");
+  return clean;
+}
+
 function detectIsMobile(): boolean {
   if (typeof window === "undefined") return false;
   if (typeof window.screen !== "undefined") {
@@ -795,6 +804,8 @@ export function TripFinancialsTab({
   const myOutgoingTransfer = (data?.transfers ?? []).find(
     (tx) => (tx.isPayer || tx.payerMemberId === currentMemberId) && tx.status !== "confirmed"
   );
+  const myOutgoingCleanHandle = cleanDisplayHandle(myOutgoingTransfer?.recipientPaymentIdentifier);
+  const myOutgoingPaymentUrl = myOutgoingTransfer?.paymentUrl?.replace(/paypal\.me\/paypal\.me%2F/i, "paypal.me/");
 
   return (
     <div className="stack" style={{ gap: "1.5rem" }}>
@@ -880,12 +891,12 @@ export function TripFinancialsTab({
                 <div style={{ fontSize: "0.82rem", color: "#e2e8f0" }}>
                   Send {formatMoney(myOutgoingTransfer.amountCents)} to <strong>{myOutgoingTransfer.recipientName}</strong> via{" "}
                   <strong>{myOutgoingTransfer.recipientPreferredMethod}</strong>
-                  {myOutgoingTransfer.recipientPaymentIdentifier && (
+                  {myOutgoingCleanHandle && (
                     <span style={{ color: "#38bdf8", marginLeft: "0.35rem", fontWeight: 700 }}>
-                      ({myOutgoingTransfer.recipientPaymentIdentifier})
+                      ({myOutgoingCleanHandle})
                     </span>
                   )}
-                  {myOutgoingTransfer.recipientPhone && (!myOutgoingTransfer.recipientPaymentIdentifier || myOutgoingTransfer.recipientPreferredMethod?.toLowerCase().includes("zelle")) && (
+                  {myOutgoingTransfer.recipientPhone && (!myOutgoingCleanHandle || myOutgoingTransfer.recipientPreferredMethod?.toLowerCase().includes("zelle")) && (
                     <span style={{ color: "#cbd5e1", marginLeft: "0.35rem" }}>
                       • Phone: <strong>{myOutgoingTransfer.recipientPhone}</strong>
                     </span>
@@ -897,9 +908,9 @@ export function TripFinancialsTab({
                   )}
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", width: "100%", justifyContent: "flex-start" }}>
-                  {myOutgoingTransfer.paymentUrl && (
+                  {myOutgoingPaymentUrl && (
                     <a
-                      href={myOutgoingTransfer.paymentUrl}
+                      href={myOutgoingPaymentUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -921,8 +932,8 @@ export function TripFinancialsTab({
                   <button
                     type="button"
                     onClick={() => {
-                      const handleOrPhone = myOutgoingTransfer.recipientPaymentIdentifier
-                        ? `(${myOutgoingTransfer.recipientPaymentIdentifier})`
+                      const handleOrPhone = myOutgoingCleanHandle
+                        ? `(${myOutgoingCleanHandle})`
                         : (myOutgoingTransfer.recipientPhone ? `(Phone: ${myOutgoingTransfer.recipientPhone})` : "");
                       handleCopyPaymentDetails(
                         `Send ${formatMoney(myOutgoingTransfer.amountCents)} to ${myOutgoingTransfer.recipientName} via ${myOutgoingTransfer.recipientPreferredMethod} ${handleOrPhone}${myOutgoingTransfer.notes ? ` • Note: ${myOutgoingTransfer.notes}` : ""}`
@@ -2101,6 +2112,8 @@ export function TripFinancialsTab({
                   const isRecipient = tx.isRecipient || tx.recipientMemberId === currentMemberId;
                   const isConfirmed = tx.status === "confirmed";
                   const isSent = tx.status === "sent";
+                  const cleanHandle = cleanDisplayHandle(tx.recipientPaymentIdentifier);
+                  const paymentUrl = tx.paymentUrl?.replace(/paypal\.me\/paypal\.me%2F/i, "paypal.me/");
 
                   return (
                     <div
@@ -2137,12 +2150,12 @@ export function TripFinancialsTab({
                         <span>
                           Preferred: <strong>{tx.recipientPreferredMethod || "Direct Transfer"}</strong>
                         </span>
-                        {tx.recipientPaymentIdentifier && (
+                        {cleanHandle && (
                           <span style={{ marginLeft: "0.5rem", color: "#0284c7", fontWeight: 700 }}>
-                            • Handle: {tx.recipientPaymentIdentifier}
+                            • Handle: {cleanHandle}
                           </span>
                         )}
-                        {tx.recipientPhone && (!tx.recipientPaymentIdentifier || tx.recipientPreferredMethod?.toLowerCase().includes("zelle")) && (
+                        {tx.recipientPhone && (!cleanHandle || tx.recipientPreferredMethod?.toLowerCase().includes("zelle")) && (
                           <span style={{ marginLeft: "0.5rem", color: "#475569" }}>
                             • Phone: <strong>{tx.recipientPhone}</strong>
                           </span>
@@ -2169,9 +2182,9 @@ export function TripFinancialsTab({
 
                       {/* Action buttons (Left-aligned) */}
                       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-start", marginTop: "0.2rem" }}>
-                        {tx.paymentUrl && !isConfirmed && (
+                        {paymentUrl && !isConfirmed && (
                           <a
-                            href={tx.paymentUrl}
+                            href={paymentUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{
@@ -2217,8 +2230,8 @@ export function TripFinancialsTab({
                         <button
                           type="button"
                           onClick={() => {
-                            const handleOrPhone = tx.recipientPaymentIdentifier
-                              ? `(${tx.recipientPaymentIdentifier})`
+                            const handleOrPhone = cleanHandle
+                              ? `(${cleanHandle})`
                               : (tx.recipientPhone ? `(Phone: ${tx.recipientPhone})` : "");
                             const details = `Send ${formatMoney(tx.amountCents)} to ${tx.recipientName} via ${tx.recipientPreferredMethod} ${handleOrPhone}${tx.notes ? ` • Note: ${tx.notes}` : ""}`;
                             navigator.clipboard?.writeText(details);
