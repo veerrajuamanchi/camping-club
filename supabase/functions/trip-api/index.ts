@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { resolveServiceApiKey } from "../_shared/service-key.mjs";
-import { canonicalJson, keyedDigest, requestDigest, requiredEnv } from "../_shared/crypto.ts";
+import { canonicalJson, keyedDigest, requestDigest, requiredEnv, unprotectPaymentIdentifier } from "../_shared/crypto.ts";
 import { corsHeaders, isOriginAllowed, json, readBody } from "../_shared/http.ts";
 import { computeSettlement, calculateEqualAllocations, type ExpenseInput, type ExternalPaymentInput } from "../_shared/settlementEngine.ts";
 import { sendEmail } from "../_shared/mailer.ts";
@@ -1445,14 +1445,58 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   const nameMap = new Map((memberProfiles ?? []).map((m: any) => [m.member_id, m.display_name]));
 
-  const paymentMethodsByMember = new Map<string, { method: string; label: string }>();
+  const { data: recipientDetailsRows, error: recipientDetailsErr } = await service.rpc(
+    "trip_api_get_settlement_recipient_payment_details",
+    { p_trip_id: tripId, p_actor_id: member.member_id }
+  );
+  if (recipientDetailsErr) {
+    console.warn("Could not load settlement recipient payment details:", recipientDetailsErr);
+  }
+
+  const paymentMethodsByMember = new Map<string, { method: string; label: string; handle: string | null; phone: string | null }>();
+
+  for (const row of (recipientDetailsRows ?? [])) {
+    let handle: string | null = null;
+    if (row.identifier_ciphertext_hex && row.nonce_hex) {
+      try {
+        handle = await unprotectPaymentIdentifier(row.identifier_ciphertext_hex, row.nonce_hex);
+      } catch (err) {
+        console.warn("Could not decrypt payment identifier for member", row.member_id, err);
+      }
+    }
+    const methodStr = (row.method || "zelle").toLowerCase();
+    paymentMethodsByMember.set(row.member_id, {
+      method: methodStr,
+      label: methodStr.replace("_", " ").toUpperCase(),
+      handle: handle ? handle.trim() : null,
+      phone: row.phone_e164 ?? null,
+    });
+  }
+
   for (const pm of (paymentMethodsResult.data ?? [])) {
-    if (pm.preferred || !paymentMethodsByMember.has(pm.member_id)) {
+    if (!paymentMethodsByMember.has(pm.member_id)) {
       paymentMethodsByMember.set(pm.member_id, {
         method: pm.method,
         label: pm.method.replace("_", " ").toUpperCase(),
+        handle: null,
+        phone: null,
       });
     }
+  }
+
+  function buildPaymentUrl(method: string | null | undefined, handle: string | null | undefined, amountCents: number, tripTitle: string | null | undefined): string | null {
+    if (!method || !handle) return null;
+    const cleanHandle = handle.replace(/^@/, "").trim();
+    if (!cleanHandle) return null;
+    const dollars = (amountCents / 100).toFixed(2);
+    if (method.toLowerCase() === "venmo") {
+      const note = `${tripTitle || "Camping Trip"} Settlement`;
+      return `https://venmo.com/?txn=pay&audience=private&recipients=${encodeURIComponent(cleanHandle)}&amount=${dollars}&note=${encodeURIComponent(note)}`;
+    }
+    if (method.toLowerCase() === "paypal") {
+      return `https://paypal.me/${encodeURIComponent(cleanHandle)}/${dollars}`;
+    }
+    return null;
   }
 
 
@@ -1619,6 +1663,9 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
         confirmedReceivedAt: t.confirmed_received_at,
         paymentMethod: t.payment_method ?? pm?.method ?? null,
         recipientPreferredMethod: pm?.label ?? "Zelle / Venmo",
+        recipientPaymentIdentifier: pm?.handle ?? null,
+        recipientPhone: pm?.phone ?? null,
+        paymentUrl: buildPaymentUrl(t.payment_method ?? pm?.method, pm?.handle, t.amount_cents, trip.title),
         notes: t.notes,
         isPayer: t.payer_member_id === member.member_id,
         isRecipient: t.recipient_member_id === member.member_id,
@@ -1695,6 +1742,9 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
             confirmedReceivedAt: null,
             paymentMethod: pm?.method ?? null,
             recipientPreferredMethod: pm?.label ?? "Zelle / Venmo",
+            recipientPaymentIdentifier: pm?.handle ?? null,
+            recipientPhone: pm?.phone ?? null,
+            paymentUrl: buildPaymentUrl(pm?.method, pm?.handle, t.amountCents, trip.title),
             notes: null,
             isPayer: t.payerMemberId === member.member_id,
             isRecipient: t.recipientMemberId === member.member_id,
@@ -2648,7 +2698,7 @@ async function sendTripSettlementEmail(
             <th style="padding: 8px 10px;">Who Pays</th>
             <th style="padding: 8px 10px;">Who Receives</th>
             <th style="padding: 8px 10px;">Amount</th>
-            <th style="padding: 8px 10px;">Method</th>
+            <th style="padding: 8px 10px;">Payment Details</th>
             <th style="padding: 8px 10px;">Status</th>
           </tr>
         </thead>
@@ -2667,7 +2717,12 @@ async function sendTripSettlementEmail(
                 <td style="padding: 8px 10px; font-weight: 600; color: #0f172a;">${payer}</td>
                 <td style="padding: 8px 10px; font-weight: 600; color: #0f172a;">${recipient}</td>
                 <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${amt}</td>
-                <td style="padding: 8px 10px; color: #475569;"><span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">${method}</span></td>
+                <td style="padding: 8px 10px; color: #334155; font-size: 0.82rem;">
+                  <span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">${method}</span>
+                  ${t.recipientPaymentIdentifier ? `<div style="color: #0369a1; font-weight: 600; margin-top: 2px;">${t.recipientPaymentIdentifier}</div>` : ''}
+                  ${t.recipientPhone && (method === 'ZELLE' || !t.recipientPaymentIdentifier) ? `<div style="color: #64748b; font-size: 0.78rem;">${t.recipientPhone}</div>` : ''}
+                  ${t.paymentUrl && !isConfirmed ? `<div style="margin-top: 4px;"><a href="${t.paymentUrl}" style="background: ${method === 'VENMO' ? '#008cff' : '#003087'}; color: #ffffff; padding: 3px 8px; border-radius: 4px; text-decoration: none; font-size: 0.75rem; font-weight: bold; display: inline-block;">Pay via ${method} ➔</a></div>` : ''}
+                </td>
                 <td style="padding: 8px 10px; font-weight: 600; color: ${statusColor}; font-size: 0.85rem;">${statusLabel}</td>
               </tr>
             `;
