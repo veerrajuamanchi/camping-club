@@ -1453,6 +1453,19 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
     console.warn("Could not load settlement recipient payment details:", recipientDetailsErr);
   }
 
+  function cleanPaymentHandle(method: string, raw: string): string {
+    let clean = raw.trim();
+    if (method.toLowerCase() === "paypal") {
+      clean = clean.replace(/^https?:\/\/(www\.)?paypal\.(me|com\/paypalme)\//i, "");
+      clean = clean.replace(/^paypal\.me\//i, "");
+      clean = clean.replace(/^@/, "").trim();
+    } else if (method.toLowerCase() === "venmo") {
+      clean = clean.replace(/^https?:\/\/(www\.)?venmo\.com\//i, "");
+      clean = clean.replace(/^@/, "").trim();
+    }
+    return clean;
+  }
+
   const paymentMethodsByMember = new Map<string, { method: string; label: string; handle: string | null; phone: string | null }>();
 
   for (const row of (recipientDetailsRows ?? [])) {
@@ -1465,10 +1478,11 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
       }
     }
     const methodStr = (row.method || "zelle").toLowerCase();
+    const cleanHandle = handle ? cleanPaymentHandle(methodStr, handle) : null;
     paymentMethodsByMember.set(row.member_id, {
       method: methodStr,
       label: methodStr.replace("_", " ").toUpperCase(),
-      handle: handle ? handle.trim() : null,
+      handle: cleanHandle,
       phone: row.phone_e164 ?? null,
     });
   }
@@ -1486,7 +1500,7 @@ async function getTripFinancials(member: Member, tripId: string): Promise<Record
 
   function buildPaymentUrl(method: string | null | undefined, handle: string | null | undefined, amountCents: number, tripTitle: string | null | undefined): string | null {
     if (!method || !handle) return null;
-    const cleanHandle = handle.replace(/^@/, "").trim();
+    const cleanHandle = cleanPaymentHandle(method, handle);
     if (!cleanHandle) return null;
     const dollars = (amountCents / 100).toFixed(2);
     if (method.toLowerCase() === "venmo") {
