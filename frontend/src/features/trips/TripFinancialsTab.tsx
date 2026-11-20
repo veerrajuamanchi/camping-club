@@ -1799,6 +1799,9 @@ export function TripFinancialsTab({
                             <div style={{ fontSize: "0.76rem", color: "#64748b" }}>
                               Paid by <strong>{row.payerName}</strong>
                               {row.date ? ` • ${row.date}` : ""}
+                              {row.rawExpense && (
+                                <span> • Split among {(row.rawExpense.allocations ?? []).length} members</span>
+                              )}
                             </div>
 
                             {/* Quick action buttons on matrix row */}

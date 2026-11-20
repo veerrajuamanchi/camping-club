@@ -102,7 +102,7 @@ test("active totals and daily targets persist; full tasks excuse remaining campe
         await volunteer.first().click();
         await expect.poll(() => claimRows(member.memberId)).toBe(1);
         await memberPage.reload();
-        await expect(memberPage.getByText("2× / 4×")).toBeVisible();
+        await expect(memberPage.getByText("2× / 4×", { exact: true })).toBeVisible();
         await memberPage.getByRole("button", { name: "Volunteer", exact: true }).first().click();
         await expect.poll(() => claimRows(member.memberId)).toBe(2);
         await memberPage.reload();

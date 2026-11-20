@@ -369,7 +369,39 @@ export function MemberProfileForm({
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                         <span style={{ fontSize: "1.1rem" }}>{methodMeta.icon}</span>
-                        <strong style={{ fontSize: "0.95rem", color: "#0f172a" }}>{methodMeta.label}</strong>
+                        {opt.preferred ? (
+                          <label style={{ margin: 0, display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                            <span style={{ display: "none" }}>Preferred payment method</span>
+                            <select
+                              aria-label="Preferred payment method"
+                              value={opt.method}
+                              onChange={(e) => {
+                                const newMethod = e.target.value as PaymentMethod;
+                                const updated = paymentOptions.map((o, i) =>
+                                  i === idx ? { ...o, method: newMethod } : o
+                                );
+                                setPaymentOptions(updated);
+                                setPaymentMethod(newMethod);
+                              }}
+                              style={{
+                                padding: "0.2rem 0.4rem",
+                                borderRadius: "6px",
+                                border: "1.5px solid #0284c7",
+                                fontWeight: 600,
+                                fontSize: "0.9rem",
+                                background: "#ffffff",
+                                color: "#0f172a",
+                              }}
+                            >
+                              <option value="venmo">Venmo</option>
+                              <option value="zelle">Zelle</option>
+                              <option value="paypal">PayPal</option>
+                              <option value="apple_cash">Apple Cash</option>
+                            </select>
+                          </label>
+                        ) : (
+                          <strong style={{ fontSize: "0.95rem", color: "#0f172a" }}>{methodMeta.label}</strong>
+                        )}
                         {opt.preferred ? (
                           <span style={{ background: "#0284c7", color: "#ffffff", fontSize: "0.72rem", padding: "0.15rem 0.5rem", borderRadius: "9999px", fontWeight: 700 }}>
                             ★ Primary / Preferred
@@ -427,6 +459,7 @@ export function MemberProfileForm({
                       </span>
                       <input
                         required
+                        aria-label={opt.preferred ? "Payment handle or account email" : `${methodMeta.label} handle or phone`}
                         maxLength={254}
                         autoComplete="off"
                         placeholder={methodMeta.placeholder}
