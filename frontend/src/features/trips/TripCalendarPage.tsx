@@ -171,6 +171,10 @@ function TripEditModal({
     if (!endsOn || endsOn < newStarts) {
       setEndsOn(newStarts);
     }
+    const leadDays = calendar?.clubConfiguration.defaultPollLeadDays ?? 35;
+    if (newStarts) {
+      setDeadline(datePlusDays(newStarts, -leadDays));
+    }
   }
 
   async function handleSave(e: React.FormEvent) {

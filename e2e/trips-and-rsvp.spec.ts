@@ -55,12 +55,14 @@ test.describe("Trip Management, Constitution Acknowledgment, and RSVP Persistenc
     const modal = page.locator(".modal-card");
     await expect(modal).toBeVisible();
 
-    // Dates in November 2026
-    const startsOn = "2026-11-20";
-    const endsOn = "2026-11-22";
+    // Future dates in 2027 so deadline is in the future and before startsOn
+    const startsOn = "2027-08-20";
+    const endsOn = "2027-08-22";
+    const deadlineDate = "2027-07-15";
 
     await modal.getByLabel(/Trip start/i).fill(startsOn);
     await modal.getByLabel(/Trip end/i).fill(endsOn);
+    await modal.getByLabel(/Registration deadline date/i).fill(deadlineDate);
     await modal.getByRole("combobox", { name: "Cabin Booking Status" }).selectOption("booked");
     await modal.getByLabel(/Trip notes & information/i).fill("Annual Autumn Ridge Exploration");
 
