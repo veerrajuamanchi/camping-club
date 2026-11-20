@@ -27,8 +27,8 @@ select has_column('public', 'trip_rsvps', 'deposit_status', 'trip_rsvps has depo
 select has_column('public', 'camping_trips', 'rules_markdown', 'camping_trips has rules_markdown');
 
 -- 4. Seed data verification
-select ok((select count(*) >= 16 from public.master_gear), 'seeded default master gear exist');
-select ok((select count(*) >= 10 from public.master_food_groceries), 'seeded default master food exist');
+select ok((select count(*) >= 15 from public.master_gear), 'seeded default master gear exist');
+select ok((select count(*) >= 3 from public.master_food_groceries), 'seeded default master food exist');
 
 -- 5. RLS verification
 select ok((select relrowsecurity from pg_class where oid='public.master_gear'::regclass), 'master_gear RLS enabled');

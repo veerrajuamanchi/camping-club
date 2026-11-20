@@ -88,6 +88,23 @@ SELECT results_eq(
 );
 
 -- Test 4: Alice (New Member, 0 past trips) RSVPs Coming -> $5.00 (500 cents) expense created
+INSERT INTO public.trip_rule_acknowledgments (id, trip_id, member_id, bundle_id, content_hash, statement_version, request_id)
+SELECT
+  'c2222222-2222-4222-8222-222222222222',
+  'b2222222-2222-4222-8222-222222222222',
+  'a2222222-2222-4222-8222-222222222222',
+  b.id,
+  b.content_hash,
+  'coming-v1',
+  gen_random_uuid()
+FROM public.trip_rule_bundles b
+WHERE b.trip_id = 'b2222222-2222-4222-8222-222222222222' AND b.is_current;
+
+INSERT INTO public.trip_rsvps (id, trip_id, member_id, response, rule_acknowledgment_id, version)
+VALUES
+  (gen_random_uuid(), 'b2222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222', 'coming', 'c2222222-2222-4222-8222-222222222222', 1)
+ON CONFLICT (trip_id, member_id) DO UPDATE SET response = 'coming';
+
 SELECT lives_ok(
   $$ SELECT private.apply_website_maintenance_fee('b2222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222') $$,
   'apply_website_maintenance_fee succeeds for new member Alice'
@@ -103,6 +120,23 @@ SELECT results_eq(
 );
 
 -- Test 5: Bob (Returning Member, 1 past trip) RSVPs Coming -> $2.50 (250 cents) expense created
+INSERT INTO public.trip_rule_acknowledgments (id, trip_id, member_id, bundle_id, content_hash, statement_version, request_id)
+SELECT
+  'c4444444-4444-4444-8444-444444444444',
+  'b2222222-2222-4222-8222-222222222222',
+  'a3333333-3333-4333-8333-333333333333',
+  b.id,
+  b.content_hash,
+  'coming-v1',
+  gen_random_uuid()
+FROM public.trip_rule_bundles b
+WHERE b.trip_id = 'b2222222-2222-4222-8222-222222222222' AND b.is_current;
+
+INSERT INTO public.trip_rsvps (id, trip_id, member_id, response, rule_acknowledgment_id, version)
+VALUES
+  (gen_random_uuid(), 'b2222222-2222-4222-8222-222222222222', 'a3333333-3333-4333-8333-333333333333', 'coming', 'c4444444-4444-4444-8444-444444444444', 1)
+ON CONFLICT (trip_id, member_id) DO UPDATE SET response = 'coming';
+
 SELECT lives_ok(
   $$ SELECT private.apply_website_maintenance_fee('b2222222-2222-4222-8222-222222222222', 'a3333333-3333-4333-8333-333333333333') $$,
   'apply_website_maintenance_fee succeeds for returning member Bob'
@@ -118,6 +152,10 @@ SELECT results_eq(
 );
 
 -- Test 6: Alice changes RSVP to Not Coming -> Fee is deleted/cancelled
+UPDATE public.trip_rsvps
+SET response = 'not_coming'
+WHERE trip_id = 'b2222222-2222-4222-8222-222222222222' AND member_id = 'a2222222-2222-4222-8222-222222222222';
+
 SELECT lives_ok(
   $$ SELECT private.cancel_website_maintenance_fee('b2222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222') $$,
   'cancel_website_maintenance_fee succeeds for Alice'

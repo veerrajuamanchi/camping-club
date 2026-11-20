@@ -6,6 +6,13 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 export const configurationError = !url || !key ? "Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to connect this local app." : null;
 export const supabase = url && key ? createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
 
+export type PaymentOption = {
+  id?: string;
+  method: "zelle" | "venmo" | "paypal" | "apple_cash";
+  paymentIdentifier: string;
+  preferred: boolean;
+};
+
 export type ApiMember = {
   memberId: string;
   displayName: string;
@@ -13,6 +20,7 @@ export type ApiMember = {
   phoneE164: string;
   paymentMethod: "zelle" | "venmo" | "paypal" | "apple_cash" | null;
   paymentIdentifier?: string | null;
+  paymentMethods?: PaymentOption[];
 };
 
 export class MemberApiError extends Error {

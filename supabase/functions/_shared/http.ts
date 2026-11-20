@@ -45,9 +45,16 @@ export async function readBody<T extends z.ZodType>(request: Request, schema: T)
 }
 
 export const emailSchema = z.string().email().max(254).transform((value) => value.trim().toLowerCase());
+export const paymentOptionSchema = z.object({
+  id: z.string().uuid().optional(),
+  method: z.enum(["zelle", "venmo", "paypal", "apple_cash"]),
+  paymentIdentifier: z.string().trim().min(1).max(254),
+  preferred: z.boolean(),
+});
 export const profileSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
   phoneE164: z.string().regex(/^\+[1-9][0-9]{7,14}$/),
-  paymentMethod: z.enum(["zelle", "venmo", "paypal", "apple_cash"]),
-  paymentIdentifier: z.string().trim().min(1).max(254),
+  paymentMethod: z.enum(["zelle", "venmo", "paypal", "apple_cash"]).optional(),
+  paymentIdentifier: z.string().trim().min(1).max(254).optional(),
+  paymentMethods: z.array(paymentOptionSchema).optional(),
 });
