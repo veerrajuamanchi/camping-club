@@ -96,7 +96,7 @@ test("active totals and daily targets persist; full tasks excuse remaining campe
         await memberPage.getByRole("button", { name: "Done", exact: true }).click();
       }
       await memberPage.goto(`/trips/${tripId}?tab=tasks`);
-      await expect(memberPage.getByText("QA Dinner (1) - prep")).toBeVisible();
+      await expect(memberPage.getByText("QA Dinner (1) - prep").first()).toBeVisible();
       if (member === first) {
         const volunteer = memberPage.getByRole("button", { name: "Volunteer", exact: true });
         await volunteer.first().click();

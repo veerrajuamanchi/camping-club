@@ -1349,6 +1349,7 @@ export function TripFinancialsTab({
                             <button
                               type="button"
                               onClick={() => handleOpenReceiptViewer(exp)}
+                              aria-label="View Receipt"
                               style={{
                                 background: "transparent",
                                 border: "none",
