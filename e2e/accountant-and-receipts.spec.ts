@@ -429,7 +429,7 @@ test.describe("Accountant Role, Dynamic Expense Splits & Receipts", () => {
     // -------------------------------------------------------------------------
     // 5. Verify receipt link is rendered and opens receipt modal
     // -------------------------------------------------------------------------
-    const viewReceiptBtn = page.getByRole("button", { name: "📄 View Receipt" });
+    const viewReceiptBtn = page.getByRole("button", { name: /View Receipt/i });
     await expect(viewReceiptBtn).toBeVisible();
     await viewReceiptBtn.click();
 
@@ -449,6 +449,12 @@ test.describe("Accountant Role, Dynamic Expense Splits & Receipts", () => {
     await expect(page.getByText("Split among 4 members")).toBeVisible();
 
     // In Member Balances table: each attendee's Fair Share is $15.00
+    // Switch to Campers tab if on mobile view
+    const campersTabBtn = page.getByRole("button", { name: /Campers/i });
+    if (await campersTabBtn.isVisible()) {
+      await campersTabBtn.click();
+    }
+
     const balanceTable = page.locator("table", { hasText: "Fair Share" });
     await expect(balanceTable).toBeVisible();
     await expect(balanceTable.getByText("$15.00", { exact: true })).toHaveCount(4);
@@ -473,6 +479,11 @@ test.describe("Accountant Role, Dynamic Expense Splits & Receipts", () => {
     // -------------------------------------------------------------------------
     // In ledger: Split among 5 members
     await expect(page.getByText("Split among 5 members")).toBeVisible();
+
+    // Switch to Campers tab if on mobile view
+    if (await campersTabBtn.isVisible()) {
+      await campersTabBtn.click();
+    }
 
     // In Member Balances table: each attendee's Fair Share is now $12.00
     const reloadedBalanceTable = page.locator("table", { hasText: "Fair Share" });
