@@ -3092,7 +3092,9 @@ export function TripFinancialsTab({
                       setSettlementEmailErrorMsg(`Email dispatch failed: ${res?.reason || "Check server email credentials."}`);
                     }
                   } catch (err: unknown) {
-                    setSettlementEmailErrorMsg((err as Error)?.message || "Failed to dispatch email.");
+                    const e = err as any;
+                    const detail = e?.code ? `[${e.code}] ${e.message || "Request failed"}` : (e?.message || "Failed to dispatch email.");
+                    setSettlementEmailErrorMsg(detail);
                   } finally {
                     setSettlementEmailSending(false);
                   }
