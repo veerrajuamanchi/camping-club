@@ -92,7 +92,7 @@ function monthName(monthKey: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
-function datePlusDays(date: string, days: number): string {
+export function datePlusDays(date: string, days: number): string {
   const result = new Date(`${date}T00:00:00Z`);
   result.setUTCDate(result.getUTCDate() + days);
   return result.toISOString().slice(0, 10);
@@ -154,7 +154,7 @@ function TripEditModal({
   const [perCabinCapacity, setPerCabinCapacity] = useState(trip?.perCabinCapacity?.toString() ?? "6");
   const [campingType, setCampingType] = useState<CampingType>(trip?.campingType ?? "cabin");
   const [eventStatus, setEventStatus] = useState<EventStatus>(trip?.eventStatus ?? "tentative");
-  const [siteId, setSiteId] = useState(trip?.selectedCampsiteId ?? "");
+  const [siteId, setSiteId] = useState(trip?.selectedCampsiteId || calendar?.campsites[0]?.campsiteId || "");
   const [bookingStatus, setBookingStatus] = useState<CabinBookingStatus | "">(
     trip?.cabinBookingStatus === "booked" ? "booked" : "pending"
   );
@@ -179,6 +179,15 @@ function TripEditModal({
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!siteId) { setMsg("Please select a campsite before saving."); return; }
+    if (!startsOn) { setMsg("Please select a trip start date."); return; }
+    if (!endsOn) { setMsg("Please select a trip end date."); return; }
+    if (endsOn < startsOn) { setMsg("Trip end date must be on or after trip start date."); return; }
+    const effectiveDeadline = deadline || (startsOn ? datePlusDays(startsOn, -(calendar?.clubConfiguration.defaultPollLeadDays ?? 35)) : "");
+    if (effectiveDeadline && effectiveDeadline >= startsOn) {
+      setMsg("Registration deadline date must be before trip start date.");
+      return;
+    }
     if (!bookingStatus) { setMsg("Select a Cabin Booking Status before saving."); return; }
     if (reopenPoll && !reopenReason.trim()) {
       setMsg("Please provide an audited reason for extending the registration deadline and reopening the poll.");
@@ -187,7 +196,6 @@ function TripEditModal({
     setBusy(true);
     setMsg(null);
     try {
-      const effectiveDeadline = deadline || (startsOn ? datePlusDays(startsOn, -(calendar?.clubConfiguration.defaultPollLeadDays ?? 35)) : "");
       const configRes = await api<{ version: number }>("admin_configure_trip", {
         tripId: trip.tripId,
         startsOn,
@@ -275,7 +283,7 @@ function TripEditModal({
               <input type="number" min="1" max="50" value={perCabinCapacity} onChange={(e) => setPerCabinCapacity(e.target.value)} />
             </label>
             <label>Registration deadline date
-              <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+              <input type="date" value={deadline} max={startsOn ? datePlusDays(startsOn, -1) : undefined} onChange={(e) => setDeadline(e.target.value)} />
             </label>
             <label>Deadline time
               <input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
