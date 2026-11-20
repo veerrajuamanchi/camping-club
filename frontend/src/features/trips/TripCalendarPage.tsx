@@ -436,26 +436,27 @@ function EventCard({
   const [showEditModal, setShowEditModal] = useState(false);
   const navigate = useNavigate();
   const isPast = isTripPast(trip);
+  const effectiveStatus = trip.tripStatus || trip.eventStatus;
 
   const eventStatusLabel = isPast
-    ? trip.eventStatus === "cancelled"
+    ? effectiveStatus === "cancelled"
       ? "Cancelled"
-      : trip.eventStatus === "financially_settled"
+      : effectiveStatus === "financially_settled"
         ? "Concluded & Settled"
-        : trip.eventStatus === "financially_finalized"
-          ? "Settlement In Progress"
+        : effectiveStatus === "financially_finalized"
+          ? "Locked • Settle Up"
           : "Completed • Reconciling Expenses"
-    : trip.eventStatus === "confirmed"
+    : effectiveStatus === "confirmed"
       ? "Confirmed"
-      : trip.eventStatus === "cancelled"
+      : effectiveStatus === "cancelled"
         ? "Cancelled"
-        : trip.eventStatus === "completed"
+        : effectiveStatus === "completed"
           ? "Completed"
-          : trip.eventStatus === "financially_finalized"
+          : effectiveStatus === "financially_finalized"
             ? "Finalized"
-            : trip.eventStatus === "financially_settled"
+            : effectiveStatus === "financially_settled"
               ? "Settled"
-              : trip.eventStatus === "tentative"
+              : effectiveStatus === "tentative"
                 ? "Tentative"
                 : (isDraft
                   ? "Pending"
@@ -533,7 +534,7 @@ function EventCard({
           <span className="badge-pill" style={{ fontSize: "0.78rem", background: "#f3f4f6", color: "#374151" }}>
             🏕️ {campingTypeLabel}
           </span>
-          <span className={`event-status-pill status-${isPast ? (trip.eventStatus === "cancelled" ? "closed" : trip.eventStatus === "financially_settled" ? "confirmed" : "upcoming") : (trip.eventStatus === "confirmed" ? "confirmed" : trip.eventStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : trip.pollStatus)}`}>
+          <span className={`event-status-pill status-${isPast ? (effectiveStatus === "cancelled" ? "closed" : effectiveStatus === "financially_settled" ? "confirmed" : "upcoming") : (effectiveStatus === "confirmed" ? "confirmed" : effectiveStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : trip.pollStatus)}`}>
             Event Status: {eventStatusLabel}
           </span>
         </div>
@@ -1298,51 +1299,63 @@ export function TripCalendarPage({ isAdmin, api = defaultApi }: Props) {
       )}
 
       {/* Unsettled Past Trips Alert Banner on Upcoming View */}
-      {activeTab === "upcoming" && unsettledPastTrips.length > 0 && (
-        <div
-          className="card"
-          data-testid="pending-settlement-banner"
-          style={{
-            background: "linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%)",
-            border: "1.5px solid #f59e0b",
-            color: "#92400e",
-            padding: "0.85rem 1rem",
-            marginBottom: "1rem",
-            borderRadius: "8px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "0.75rem",
-          }}
-        >
-          <div>
-            <strong style={{ fontSize: "0.95rem" }}>
-              ⚠️ {unsettledPastTrips.length === 1 ? (unsettledPastTrips[0].title || `${monthName(unsettledPastTrips[0].monthKey)} Camping`) : `${unsettledPastTrips.length} Past Trips`} — Financial Settlement Pending
-            </strong>
-            <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: "#78350f" }}>
-              Trip completed on {unsettledPastTrips[0].endsOn}. Financial settlement is pending review/reconciliation.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => navigate(`/trips/${unsettledPastTrips[0].tripId}?tab=financials`)}
+      {activeTab === "upcoming" && unsettledPastTrips.length > 0 && (() => {
+        const firstUnsettled = unsettledPastTrips[0];
+        const isFinalized = (firstUnsettled as any).tripStatus === "financially_finalized" || firstUnsettled.eventStatus === "financially_finalized";
+        const titleText = unsettledPastTrips.length === 1
+          ? (firstUnsettled.title || `${monthName(firstUnsettled.monthKey)} Camping`)
+          : `${unsettledPastTrips.length} Past Trips`;
+
+        return (
+          <div
+            className="card"
+            data-testid="pending-settlement-banner"
             style={{
-              background: "#b45309",
-              color: "#ffffff",
-              border: "none",
-              padding: "0.45rem 0.85rem",
-              borderRadius: "6px",
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              cursor: "pointer",
+              background: isFinalized
+                ? "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)"
+                : "linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%)",
+              border: isFinalized ? "1.5px solid #3b82f6" : "1.5px solid #f59e0b",
+              color: isFinalized ? "#1e40af" : "#92400e",
+              padding: "0.85rem 1rem",
+              marginBottom: "1rem",
+              borderRadius: "8px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.75rem",
             }}
           >
-            View Settlement ➔
-          </button>
-        </div>
-      )}
+            <div>
+              <strong style={{ fontSize: "0.95rem" }}>
+                {isFinalized ? "🔒" : "⚠️"} {titleText} — {isFinalized ? "Financials Locked • Ready for Settlement" : "Financial Settlement Pending"}
+              </strong>
+              <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", color: isFinalized ? "#1e3a8a" : "#78350f" }}>
+                {isFinalized
+                  ? "Financials are locked and peer transfers are active. Review your share and mark or confirm transfers."
+                  : `Trip completed on ${firstUnsettled.endsOn}. Financial settlement is pending review/reconciliation.`}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => navigate(`/trips/${firstUnsettled.tripId}?tab=financials`)}
+              style={{
+                background: isFinalized ? "#2563eb" : "#b45309",
+                color: "#ffffff",
+                border: "none",
+                padding: "0.45rem 0.85rem",
+                borderRadius: "6px",
+                fontWeight: 600,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+              }}
+            >
+              {isFinalized ? "View & Settle Transfers ➔" : "View Settlement ➔"}
+            </button>
+          </div>
+        );
+      })()}
 
       {loading && <p role="status">Loading camping calendar…</p>}
       {error && (

@@ -909,7 +909,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       : effectiveStatus === "financially_settled"
         ? "Concluded & Settled"
         : effectiveStatus === "financially_finalized"
-          ? "Settlement In Progress"
+          ? "Locked • Settle Up"
           : "Completed • Reconciling Expenses"
     : statusLabels[effectiveStatus] || (isDraft ? "Pending" : "RSVP Open");
 
