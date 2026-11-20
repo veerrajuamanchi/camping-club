@@ -12,9 +12,6 @@ import { formatCabinBookingStatus } from "./TripCalendarPage";
 import { TripLogisticsTab } from "./TripLogisticsTab";
 import { TripFinancialsTab } from "./TripFinancialsTab";
 import { TripActivitiesTab, ACTIVITY_CATEGORIES } from "./TripActivitiesTab";
-import { resolveActionsForCalendarTrip, type ActionItem } from "../../domain/actionResolution";
-import { evaluateTripHealth } from "../../domain/tripHealth";
-import { getTripLifecyclePhase } from "../../domain/lifecyclePhase";
 
 type TripDetails = {
   tripId: string;
@@ -139,16 +136,7 @@ type TripDetails = {
   version: number;
 };
 
-export type Tab = "overview" | "constitution" | "logistics" | "tasks" | "financials" | "activities" | "prepare" | "payments" | "packing";
-export type Destination = "overview" | "prepare" | "activities" | "financials";
-
-export function getDestinationForTab(t: Tab): Destination {
-  if (t === "tasks" || t === "logistics" || t === "prepare" || t === "packing") return "prepare";
-  if (t === "constitution" || t === "overview") return "overview";
-  if (t === "financials" || t === "payments") return "financials";
-  if (t === "activities") return "activities";
-  return "overview";
-}
+type Tab = "overview" | "constitution" | "logistics" | "tasks" | "financials" | "activities";
 export type TripApiType = <T = unknown>(action: string, input?: unknown) => Promise<T>;
 
 export type TripActivityParticipant = {
@@ -280,112 +268,6 @@ type Props = {
 };
 const defaultApi: TripApiType = (action, input) => invokeTripApi(action, input);
 
-function TripNextStepsBanner({
-  trip,
-  onNavigateTab,
-  onResolveAction,
-}: {
-  trip: Parameters<typeof resolveActionsForCalendarTrip>[0];
-  onNavigateTab: (tab: Tab) => void;
-  onResolveAction?: (action: ActionItem, targetTab: Tab) => void;
-}) {
-  const actions = resolveActionsForCalendarTrip(trip);
-
-  if (actions.length === 0) {
-    return (
-      <div
-        data-testid="trip-next-steps-complete"
-        style={{
-          background: "#f0fdf4",
-          border: "1.5px solid #86efac",
-          borderRadius: "10px",
-          padding: "0.85rem 1.25rem",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.6rem",
-          color: "#166534",
-          fontWeight: 600,
-          fontSize: "0.9rem",
-        }}
-      >
-        <span style={{ fontSize: "1.2rem" }}>✓</span>
-        <span>All Set! Your preparations for this trip are complete.</span>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      data-testid="trip-next-steps-banner"
-      style={{
-        background: "#fffbeb",
-        border: "1.5px solid #fde68a",
-        borderRadius: "10px",
-        padding: "1rem 1.25rem",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-        <span style={{ fontSize: "1.2rem" }}>🚨</span>
-        <h3 style={{ margin: 0, fontSize: "0.98rem", color: "#92400e", fontWeight: 700 }}>
-          Attention Required ({actions.length} pending task{actions.length > 1 ? "s" : ""})
-        </h3>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-        {actions.map((act) => {
-          const tabMatch = act.actionUrl.match(/tab=([a-z]+)/);
-          const targetTab = (tabMatch ? tabMatch[1] : "overview") as Tab;
-
-          return (
-            <div
-              key={act.id}
-              style={{
-                background: "#ffffff",
-                border: "1px solid #fef3c7",
-                borderRadius: "8px",
-                padding: "0.6rem 0.85rem",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "0.5rem",
-              }}
-            >
-              <div>
-                <strong style={{ color: "#1e293b", fontSize: "0.88rem" }}>{act.title}</strong>
-                <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: "0.8rem" }}>
-                  {act.explanationDetails || act.reason}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onNavigateTab(targetTab);
-                  if (onResolveAction) {
-                    onResolveAction(act, targetTab);
-                  }
-                }}
-                style={{
-                  padding: "0.35rem 0.85rem",
-                  background: act.priority === "critical" ? "#dc2626" : "#b45309",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "6px",
-                  fontSize: "0.78rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  minHeight: "36px",
-                }}
-              >
-                Resolve →
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, userRole }: Props) {
   const { tripId } = useParams<{ tripId: string }>();
   const navigate = useNavigate();
@@ -408,61 +290,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get("tab") as Tab | null;
-  const validTabs: Tab[] = ["overview", "constitution", "logistics", "tasks", "financials", "activities", "prepare", "payments", "packing"];
+  const validTabs: Tab[] = ["overview", "constitution", "logistics", "tasks", "financials", "activities"];
   const [tab, setTabState] = useState<Tab>(urlTab && validTabs.includes(urlTab) ? urlTab : "overview");
-  const [constitutionOpen, setConstitutionOpen] = useState<boolean>(() => urlTab === "constitution");
-  const [section1Open, setSection1Open] = useState<boolean>(true);
-  const [section2Open, setSection2Open] = useState<boolean>(true);
-  const [section3Open, setSection3Open] = useState<boolean>(true);
 
   useEffect(() => {
     const currentQueryTab = searchParams.get("tab") as Tab | null;
     if (currentQueryTab && validTabs.includes(currentQueryTab) && currentQueryTab !== tab) {
       setTabState(currentQueryTab);
-      if (currentQueryTab === "constitution") {
-        setConstitutionOpen(true);
-      } else if (currentQueryTab === "tasks") {
-        setSection1Open(true);
-      } else if (currentQueryTab === "logistics") {
-        setSection2Open(true);
-      } else if (currentQueryTab === "packing") {
-        setSection3Open(true);
-      }
-    }
-    if (searchParams.get("action") === "sign-constitution") {
-      setConstitutionOpen(true);
-      setTimeout(() => {
-        document.getElementById("constitution")?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    if (details && !searchParams.get("tab")) {
-      const currentLifecycle = getTripLifecyclePhase({
-        startsOn: details.startsOn,
-        endsOn: details.endsOn,
-        eventStatus: details.eventStatus,
-        tripStatus: details.tripStatus,
-        pollDeadlineAt: details.pollDeadlineAt,
-      });
-      if (currentLifecycle.defaultTab !== tab) {
-        setTabState(currentLifecycle.defaultTab);
-      }
-    }
-  }, [details]);
-
   const setTab = (newTab: Tab) => {
     setTabState(newTab);
-    if (newTab === "constitution") {
-      setConstitutionOpen(true);
-    } else if (newTab === "tasks") {
-      setSection1Open(true);
-    } else if (newTab === "logistics") {
-      setSection2Open(true);
-    } else if (newTab === "packing") {
-      setSection3Open(true);
-    }
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (newTab === "overview") {
@@ -473,36 +312,6 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       return next;
     }, { replace: true });
   };
-
-  const currentDestination = getDestinationForTab(tab);
-
-  const lifecycle = details
-    ? getTripLifecyclePhase({
-        startsOn: details.startsOn,
-        endsOn: details.endsOn,
-        eventStatus: details.eventStatus,
-        tripStatus: details.tripStatus,
-        pollDeadlineAt: details.pollDeadlineAt,
-      })
-    : null;
-
-  const tripHealth = details
-    ? evaluateTripHealth({
-        tripId: details.tripId,
-        title: details.title,
-        startsOn: details.startsOn,
-        endsOn: details.endsOn,
-        pollDeadlineAt: details.pollDeadlineAt,
-        contractualDeadlineAt: details.pollDeadlineAt,
-        effectiveStatus: details.eventStatus,
-        minParticipants: details.minimumParticipants,
-        confirmedAttendeeCount: details.comingCount ?? 0,
-        cabinBookingStatus: details.cabinBookingStatus,
-        unverifiedDepositCount: details.depositStatus === "submitted_by_member" ? 1 : 0,
-        vacantDutyCount: Math.max(0, (details.taskQuotaTarget ?? 2) - (details.myDutyCount ?? 0)),
-        criticalDutyVacant: false,
-      })
-    : null;
 
   const [rsvpChoice, setRsvpChoice] = useState<"coming" | "not_coming" | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -525,33 +334,18 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
   const [activityMsg, setActivityMsg] = useState<string | null>(null);
   const [isEditingActivityChoice, setIsEditingActivityChoice] = useState(false);
   const [activityImageError, setActivityImageError] = useState(false);
-  const [signAckChecked, setSignAckChecked] = useState(false);
-  const [signingAck, setSigningAck] = useState(false);
-  const [signAckMsg, setSignAckMsg] = useState<string | null>(null);
-
-  async function handleSignConstitution() {
-    if (!details?.currentRuleBundle) return;
-    setSigningAck(true);
-    setSignAckMsg(null);
-    try {
-      await api<{ waitlisted?: boolean; position?: number }>("submit_rsvp", {
-        tripId: details.tripId,
-        response: "coming",
-        expectedVersion: details.myRsvp?.version ?? 0,
-        bundleId: details.currentRuleBundle.id,
-        contentHash: details.currentRuleBundle.contentHash,
-      });
-      setSignAckMsg("Constitution acknowledged successfully!");
-      await refresh();
-    } catch {
-      setSignAckMsg("Could not save constitution acknowledgment. Please try again.");
-    } finally {
-      setSigningAck(false);
-    }
-  }
-
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailRecipientType, setEmailRecipientType] = useState<"admin" | "all">("admin");
+  const [emailSections, setEmailSections] = useState({
+    whosComing: true,
+    carpools: true,
+    activityPairings: true,
+    sharedGear: true,
+    individualGear: true,
+    dutiesByDay: true,
+    commitmentsTable: false,
+    activityVouchers: false,
+  });
   const [emailSending, setEmailSending] = useState(false);
   const [emailSuccessMsg, setEmailSuccessMsg] = useState<string | null>(null);
   const [emailErrorMsg, setEmailErrorMsg] = useState<string | null>(null);
@@ -1115,7 +909,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
       : effectiveStatus === "financially_settled"
         ? "Concluded & Settled"
         : effectiveStatus === "financially_finalized"
-          ? "Settlement In Progress"
+          ? "Locked • Settle Up"
           : "Completed • Reconciling Expenses"
     : statusLabels[effectiveStatus] || (isDraft ? "Pending" : "RSVP Open");
 
@@ -1169,25 +963,6 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             <span className={`event-status-pill status-${isPast ? (effectiveStatus === "cancelled" ? "closed" : effectiveStatus === "financially_settled" ? "confirmed" : "upcoming") : (effectiveStatus === "confirmed" ? "confirmed" : effectiveStatus === "cancelled" ? "closed" : isDraft ? "upcoming" : details.pollStatus)}`}>
               Event Status: {eventStatusLabel}
             </span>
-            {tripHealth && (
-              <span
-                data-testid="trip-health-hero-badge"
-                className={`badge ${tripHealth.badgeClass}`}
-                style={{ fontSize: "0.82rem", fontWeight: 700 }}
-                title={tripHealth.summary}
-              >
-                {tripHealth.status === "on_track" ? "✓" : tripHealth.status === "at_risk" ? "🚨" : "⚠️"} {tripHealth.label}
-              </span>
-            )}
-            {lifecycle?.badgeText && (
-              <span
-                data-testid="trip-lifecycle-hero-badge"
-                className="badge"
-                style={{ background: "#e0e7ff", color: "#3730a3", fontSize: "0.82rem", fontWeight: 600 }}
-              >
-                {lifecycle.badgeText}
-              </span>
-            )}
             <span className="badge-pill" style={{ fontSize: "0.82rem", background: "#f3f4f6", color: "#374151" }}>
               {isPast ? "Participation:" : "RSVP:"} {rsvpStatusLabel}
             </span>
@@ -1405,269 +1180,27 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         </div>
       </div>
 
-      {/* Camping Club 2.0 Responsive Destination Tabs (2x2 Grid on Mobile, Flex Tabs on Desktop) */}
-      <div className="event-tabs event-nav-grid-2x2" role="tablist" aria-label="Trip destinations">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={currentDestination === "overview" && tab === "overview"}
-          className={`nav-grid-btn ${currentDestination === "overview" && tab === "overview" ? "active" : ""}`}
-          onClick={() => setTab("overview")}
-        >
-          <span>📍</span>
-          <span>Overview <span className="desktop-only">&amp; attendees</span></span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={currentDestination === "prepare" && tab === "prepare"}
-          className={`nav-grid-btn ${currentDestination === "prepare" && tab === "prepare" ? "active" : ""}`}
-          onClick={() => setTab("prepare")}
-        >
-          <span>🎒</span>
-          <span>Prepare</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "tasks"}
-          className={`subtab-chip nav-grid-btn ${tab === "tasks" ? "active" : ""}`}
-          onClick={() => setTab("tasks")}
-        >
-          Tasks &amp; Meals
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "logistics"}
-          className={`subtab-chip nav-grid-btn ${tab === "logistics" ? "active" : ""}`}
-          onClick={() => setTab("logistics")}
-        >
-          Logistics &amp; Packing
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "constitution"}
-          className={`subtab-chip nav-grid-btn ${tab === "constitution" ? "active" : ""}`}
-          onClick={() => setTab("constitution")}
-        >
-          Camping Constitution
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={currentDestination === "activities"}
-          className={`nav-grid-btn ${currentDestination === "activities" ? "active" : ""}`}
-          onClick={() => setTab("activities")}
-        >
-          <span>🎯</span>
-          <span>Activities</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={currentDestination === "financials"}
-          className={`nav-grid-btn ${currentDestination === "financials" ? "active" : ""}`}
-          onClick={() => setTab("financials")}
-        >
-          <span>💵</span>
-          <span><span className="desktop-only">Financials</span><span className="mobile-only">Payments</span></span>
-        </button>
+      <div className="event-tabs" role="tablist" aria-label="Trip sections">
+        {(["overview", "constitution", "logistics", "tasks", "financials", "activities"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            className={tab === t ? "active" : ""}
+            onClick={() => setTab(t)}
+          >
+            {t === "overview" && "Overview & attendees"}
+            {t === "constitution" && "Camping Constitution"}
+            {t === "logistics" && "Logistics & Packing"}
+            {t === "tasks" && "Tasks & Meals"}
+            {t === "financials" && "Financials"}
+            {t === "activities" && "🎯 Activities"}
+          </button>
+        ))}
       </div>
 
-      {currentDestination === "overview" && (
+      {tab === "overview" && (
         <div className="stack">
-          {/* Camping Club 2.0 Deterministic Trip Health */}
-          {tripHealth && (
-            <details
-              className="trip-health-accordion card"
-              data-testid="trip-health-card"
-              style={{
-                padding: "0.85rem 1.15rem",
-                borderRadius: "8px",
-                background: tripHealth.status === "on_track" ? "#f0fdf4" : tripHealth.status === "at_risk" ? "#fef2f2" : "#fffbeb",
-                border: `1.5px solid ${tripHealth.status === "on_track" ? "#bbf7d0" : tripHealth.status === "at_risk" ? "#fecaca" : "#fed7aa"}`,
-              }}
-            >
-              <summary
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  cursor: "pointer",
-                  listStyle: "none",
-                  flexWrap: "wrap",
-                  gap: "0.5rem",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span
-                    className={`badge ${tripHealth.badgeClass}`}
-                    style={{ fontSize: "0.82rem", fontWeight: 700 }}
-                    data-testid="trip-health-status-badge"
-                  >
-                    {tripHealth.status === "on_track" ? "✓" : tripHealth.status === "at_risk" ? "🚨" : "⚠️"} {tripHealth.label}
-                  </span>
-                  <span style={{ fontSize: "0.85rem", color: "#1e293b", fontWeight: 500 }}>
-                    {tripHealth.summary}
-                  </span>
-                </div>
-                {tripHealth.reasons.length > 0 && (
-                  <span style={{ fontSize: "0.8rem", color: "#2563eb", fontWeight: 600 }}>
-                    Review {tripHealth.reasons.length} Exception{tripHealth.reasons.length > 1 ? "s" : ""} ▾
-                  </span>
-                )}
-              </summary>
-              {tripHealth.reasons.length > 0 && (
-                <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                  {tripHealth.reasons.map((r) => (
-                    <div
-                      key={r.conditionId}
-                      data-testid={`health-exception-${r.conditionId}`}
-                      style={{
-                        background: "#ffffff",
-                        padding: "0.5rem 0.75rem",
-                        borderRadius: "6px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <p style={{ margin: 0, fontWeight: 600, fontSize: "0.85rem", color: "#0f172a" }}>
-                          {r.message}
-                        </p>
-                        <span style={{ fontSize: "0.72rem", color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
-                          {r.category}
-                        </span>
-                      </div>
-                      <p style={{ margin: "0.2rem 0 0", fontSize: "0.8rem", color: "#b45309" }}>
-                        ⚡ <strong>Action:</strong> {r.actionRequired}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </details>
-          )}
-
-          {/* Active Camping On-Site Quick Access Banner */}
-          {lifecycle?.phase === "active_camping" && (
-            <div
-              className="card active-camping-banner"
-              data-testid="active-camping-banner"
-              style={{
-                background: "#ecfdf5",
-                border: "1.5px solid #6ee7b7",
-                borderRadius: "8px",
-                padding: "0.85rem 1.25rem",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-                <span style={{ fontSize: "1.3rem" }}>🏕️</span>
-                <strong style={{ fontSize: "1rem", color: "#065f46" }}>Currently Camping · On-Site Quick Access</strong>
-              </div>
-              <p style={{ margin: "0 0 0.5rem", fontSize: "0.85rem", color: "#047857" }}>
-                {lifecycle.focusCallout}
-              </p>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", fontSize: "0.82rem" }}>
-                {details.campsite?.directions && (
-                  <span style={{ background: "#ffffff", padding: "0.3rem 0.6rem", borderRadius: "4px", border: "1px solid #a7f3d0" }}>
-                    📍 <strong>Directions:</strong> {details.campsite.directions}
-                  </span>
-                )}
-                {details.campsite?.campHostName && (
-                  <span style={{ background: "#ffffff", padding: "0.3rem 0.6rem", borderRadius: "4px", border: "1px solid #a7f3d0" }}>
-                    📞 <strong>Camp Host:</strong> {details.campsite.campHostName} {details.campsite.campHostPhone ? `(${details.campsite.campHostPhone})` : ""}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Post-Trip Reconciliation Banner */}
-          {lifecycle?.phase === "post_trip" && (
-            <div
-              className="card post-trip-banner"
-              data-testid="post-trip-banner"
-              style={{
-                background: "#eff6ff",
-                border: "1.5px solid #93c5fd",
-                borderRadius: "8px",
-                padding: "0.85rem 1.25rem",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "0.75rem",
-              }}
-            >
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                  <span style={{ fontSize: "1.2rem" }}>⚖️</span>
-                  <strong style={{ fontSize: "0.98rem", color: "#1e40af" }}>Post-Trip Reconciliation Active</strong>
-                </div>
-                <p style={{ margin: 0, fontSize: "0.85rem", color: "#1d4ed8" }}>
-                  {lifecycle.focusCallout}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTab("financials")}
-                style={{
-                  padding: "0.4rem 0.85rem",
-                  background: "#2563eb",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "6px",
-                  fontWeight: 600,
-                  fontSize: "0.82rem",
-                  cursor: "pointer",
-                }}
-              >
-                View Settlements &amp; Transfers →
-              </button>
-            </div>
-          )}
-
-          {/* Camping Club 2.0 Contextual Next Steps Banner */}
-          {details.myRsvp?.response === "coming" && (
-            <TripNextStepsBanner
-              trip={{
-                tripId: details.tripId,
-                title: details.title,
-                monthKey: details.monthKey,
-                eventStatus: details.eventStatus === "cancelled" ? "cancelled" : details.eventStatus === "confirmed" ? "confirmed" : "tentative",
-                startsOn: details.startsOn,
-                endsOn: details.endsOn,
-                pollDeadlineAt: details.pollDeadlineAt ?? null,
-                depositStatus: details.depositStatus,
-                myDailyWorkload: details.myDailyWorkload,
-                myDutyCount: details.myDutyCount,
-                taskQuotaTarget: details.taskQuotaTarget,
-                myRsvp: details.myRsvp,
-                currentRuleBundle: details.currentRuleBundle,
-                additionalInformation: details.additionalInformation,
-              }}
-              onNavigateTab={(targetTab) => setTab(targetTab)}
-              onResolveAction={(act, targetTab) => {
-                setTab(targetTab);
-                if (act.actionUrl.includes("action=sign-constitution") || act.ruleId === "ACT-MEM-CONST") {
-                  setConstitutionOpen(true);
-                  setTimeout(() => {
-                    document.getElementById("constitution")?.scrollIntoView({ behavior: "smooth" });
-                  }, 50);
-                } else if (act.actionUrl.includes("section=duties") || act.ruleId === "ACT-MEM-RESP") {
-                  setSection1Open(true);
-                  setTimeout(() => {
-                    document.getElementById("prepare-responsibilities")?.scrollIntoView({ behavior: "smooth" });
-                  }, 50);
-                } else if (act.actionUrl.includes("action=submit-deposit") || act.ruleId === "ACT-MEM-DEP") {
-                  setTab("payments");
-                }
-              }}
-            />
-          )}
-
           {/* Section 1: ⚡ REQUIRED FROM YOU */}
           <div
             className="card"
@@ -2887,7 +2420,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </p>
             )}
 
-            {(details.participantEntries ?? []).length > 0 && (
+            {details.participantEntries.length > 0 && (
               <div style={{ marginTop: "1.25rem" }}>
                 <h3>Who's going ({details.comingCount})</h3>
                 {depositMsg && (
@@ -2896,7 +2429,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                   </p>
                 )}
                 <div className="attendees-chips-grid">
-                  {(details.participantEntries ?? []).map((e) => (
+                  {details.participantEntries.map((e) => (
                     <div
                       key={e.memberId}
                       className="attendee-chip"
@@ -3064,11 +2597,11 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </div>
             )}
 
-            {isAdmin && (details.waitlistEntries ?? []).length > 0 && (
+            {isAdmin && details.waitlistEntries.length > 0 && (
               <details style={{ marginTop: "1rem" }} open>
-                <summary style={{ fontWeight: 600, cursor: "pointer" }}>Waitlist ({(details.waitlistEntries ?? []).length})</summary>
+                <summary style={{ fontWeight: 600, cursor: "pointer" }}>Waitlist ({details.waitlistEntries.length})</summary>
                 <ol style={{ paddingLeft: "1.25rem", margin: "0.5rem 0" }}>
-                  {(details.waitlistEntries ?? []).map((w) => (
+                  {details.waitlistEntries.map((w) => (
                     <li key={w.memberId} style={{ marginBottom: "0.45rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                         <span>#{w.position} <strong>{w.displayName}</strong></span>
@@ -3098,228 +2631,97 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
             )}
           </div>
 
-          {/* Camping Club 2.0 Camping Constitution inside Overview */}
-          <details
-            className="card constitution-section"
-            id="constitution"
-            open={constitutionOpen}
-            onToggle={(e) => setConstitutionOpen(e.currentTarget.open)}
-            style={{ marginTop: "1rem" }}
-          >
-            <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "1.1rem", padding: "0.25rem 0" }}>
-              📜 Camping Constitution &amp; Rules
-            </summary>
-            <div style={{ marginTop: "1rem" }}>
-              {details.rulesMarkdown && (
-                <div className="card" style={{ marginBottom: "1rem" }}>
-                  <h2>📜 Camping Constitution &amp; Trip Notes</h2>
-                  <div
-                    style={{
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "8px",
-                      padding: "1rem",
-                      fontSize: "0.9rem",
-                      lineHeight: 1.6,
-                      whiteSpace: "pre-wrap",
-                      color: "#1e293b",
-                    }}
-                  >
-                    {details.rulesMarkdown}
-                  </div>
-                </div>
-              )}
-              <div className="card">
-                <h2>Camping Constitution</h2>
-                {!details.currentRuleBundle && <p>No constitution bundle available for this trip.</p>}
-                {details.currentRuleBundle && (
-                  <>
-                    <p className="eyebrow">Version {details.currentRuleBundle.version}</p>
-                    {groupedRules.map(
-                      (group) =>
-                        group.rules.length > 0 && (
-                          <details key={group.label} className="rule-history" open>
-                            <summary>{group.label}</summary>
-                            <div className="rules-list">
-                              {group.rules.map((rule) => (
-                                <article key={rule.stable_key}>
-                                  <h4>{rule.stable_key.replaceAll("-", " ")}</h4>
-                                  <p>{rule.text}</p>
-                                </article>
-                              ))}
-                            </div>
-                          </details>
-                        )
-                    )}
-                    {details.myRsvp?.response === "coming" && (
-                      <div
-                        data-testid="constitution-acknowledgment-box"
-                        style={{
-                          marginTop: "1.25rem",
-                          padding: "1rem 1.25rem",
-                          borderRadius: "8px",
-                          border: details.myRsvp.acknowledgmentId ? "1.5px solid #86efac" : "1.5px solid #f59e0b",
-                          background: details.myRsvp.acknowledgmentId ? "#f0fdf4" : "#fffbeb",
-                        }}
-                      >
-                        {details.myRsvp.acknowledgmentId ? (
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-                              <div>
-                                <span style={{ color: "#166534", fontWeight: 700, fontSize: "0.95rem" }}>
-                                  ✓ Signed Constitution (v{details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version})
-                                </span>
-                                <p className="eyebrow" style={{ margin: "4px 0 0" }}>You acknowledged version {details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version}.</p>
-                                {(details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version) < details.currentRuleBundle.version && (
-                                  <p style={{ margin: "4px 0 0", color: "#15803d", fontSize: "0.82rem" }}>
-                                    An updated version (v{details.currentRuleBundle.version}) is active. Re-acknowledgment is optional.
-                                  </p>
-                                )}
-                              </div>
-                              {(details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version) < details.currentRuleBundle.version && (
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  disabled={signingAck}
-                                  style={{ fontSize: "0.82rem", padding: "6px 12px" }}
-                                  onClick={handleSignConstitution}
-                                >
-                                  {signingAck ? "Signing…" : `Sign Latest (v${details.currentRuleBundle.version})`}
-                                </button>
-                              )}
-                            </div>
-                            {signAckMsg && <p style={{ margin: "8px 0 0", fontSize: "0.85rem", color: "#166534", fontWeight: 600 }}>{signAckMsg}</p>}
-                          </div>
-                        ) : (
-                          <div>
-                            <h4 style={{ margin: "0 0 6px", color: "#92400e", fontSize: "0.95rem" }}>
-                              ✍️ Acknowledge Camping Constitution (v{details.currentRuleBundle.version})
-                            </h4>
-                            <p style={{ margin: "0 0 10px", color: "#78350f", fontSize: "0.82rem" }}>
-                              Please confirm your agreement to the Camping Constitution rules listed above.
-                            </p>
-                            <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontWeight: 600, fontSize: "0.85rem", color: "#1e293b" }}>
-                              <input
-                                type="checkbox"
-                                checked={signAckChecked}
-                                onChange={(e) => setSignAckChecked(e.target.checked)}
-                              />
-                              <span>I have read and agree to the Camping Constitution (v{details.currentRuleBundle.version})</span>
-                            </label>
-                            <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "10px" }}>
-                              <button
-                                type="button"
-                                className="primary-button"
-                                disabled={!signAckChecked || signingAck}
-                                onClick={handleSignConstitution}
-                                style={{ fontSize: "0.85rem", padding: "6px 14px" }}
-                              >
-                                {signingAck ? "Saving…" : `Acknowledge Constitution (v${details.currentRuleBundle.version})`}
-                              </button>
-                              {signAckMsg && <span style={{ fontSize: "0.85rem", color: signAckMsg.includes("successfully") ? "#166534" : "#dc2626", fontWeight: 600 }}>{signAckMsg}</span>}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
+          {details.rulesMarkdown && (
+            <div className="card">
+              <h2 style={{ fontSize: "1.1rem" }}>📜 Camping Constitution &amp; Trip Notes</h2>
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  fontSize: "0.875rem",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-wrap",
+                  color: "#1e293b",
+                }}
+              >
+                {details.rulesMarkdown}
               </div>
             </div>
-          </details>
+          )}
         </div>
       )}
 
-      {currentDestination === "prepare" && (
-        <div className="stack" data-testid="prepare-destination">
-          {/* Section 1: Responsibilities & Meals */}
-          <details
-            className="card prepare-accordion"
-            id="prepare-responsibilities"
-            open={section1Open}
-            onToggle={(e) => setSection1Open(e.currentTarget.open)}
-          >
-            <summary className="prepare-accordion-summary">
-              <span style={{ fontSize: "1.1rem" }}>🍳 Responsibilities &amp; Meals</span>
-              <span className="badge" style={{ marginLeft: "auto", fontSize: "0.8rem" }}>Daily quotas &amp; cook headcounts</span>
-            </summary>
-            <div style={{ marginTop: "1rem" }}>
-              <TripTasksAndMealsTab
-                tripId={details.tripId}
-                refreshVersion={details.version}
-                isConfirmedAttendee={isComing}
-                isAdmin={isAdmin}
-                currentMemberId={authProfileMemberId}
-                api={api}
-                onDutyChanged={refresh}
-              />
+      {tab === "constitution" && (
+        <div className="stack">
+          {details.rulesMarkdown && (
+            <div className="card" style={{ marginBottom: "1rem" }}>
+              <h2>📜 Camping Constitution &amp; Trip Notes</h2>
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  fontSize: "0.9rem",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-wrap",
+                  color: "#1e293b",
+                }}
+              >
+                {details.rulesMarkdown}
+              </div>
             </div>
-          </details>
-
-          {/* Section 2: Transportation & Carpools */}
-          <details
-            className="card prepare-accordion"
-            id="prepare-transportation"
-            open={section2Open}
-            onToggle={(e) => setSection2Open(e.currentTarget.open)}
-          >
-            <summary className="prepare-accordion-summary">
-              <span style={{ fontSize: "1.1rem" }}>🚗 Transportation &amp; Carpools</span>
-              <span className="badge" style={{ marginLeft: "auto", fontSize: "0.8rem" }}>
-                Carpools &amp; mileage (${((details.tripMileageRateCents ?? 76) / 100).toFixed(2)}/mi)
-              </span>
-            </summary>
-            <div style={{ marginTop: "1rem" }}>
-              <TripLogisticsTab
-                tripId={details.tripId}
-                isConfirmedAttendee={isComing}
-                isAdmin={isAdmin}
-                currentMemberId={authProfileMemberId}
-                confirmedAttendees={confirmedAttendees}
-                tripNotes={details.additionalInformation}
-                reservationInstructions={details.campsite?.reservationInstructions}
-                drivingDirections={details.campsite?.directions}
-                api={api}
-                section="transportation"
-                tripMileageRateCents={details.tripMileageRateCents}
-                onEditLogistics={() => setShowEditLogistics(true)}
-                onOpenPackingChecklist={() => setShowPackingModal(true)}
-              />
-            </div>
-          </details>
-
-          {/* Section 3: Gear, Groceries & Packing */}
-          <details
-            className="card prepare-accordion"
-            id="prepare-gear"
-            open={section3Open}
-            onToggle={(e) => setSection3Open(e.currentTarget.open)}
-          >
-            <summary className="prepare-accordion-summary">
-              <span style={{ fontSize: "1.1rem" }}>🎒 Gear, Groceries &amp; Packing</span>
-              <span className="badge" style={{ marginLeft: "auto", fontSize: "0.8rem" }}>Shared volunteer &amp; packing items</span>
-            </summary>
-            <div style={{ marginTop: "1rem" }}>
-              <TripLogisticsTab
-                tripId={details.tripId}
-                isConfirmedAttendee={isComing}
-                isAdmin={isAdmin}
-                currentMemberId={authProfileMemberId}
-                confirmedAttendees={confirmedAttendees}
-                tripNotes={details.additionalInformation}
-                reservationInstructions={details.campsite?.reservationInstructions}
-                drivingDirections={details.campsite?.directions}
-                api={api}
-                section="gear"
-                onEditLogistics={() => setShowEditLogistics(true)}
-                onOpenPackingChecklist={() => setShowPackingModal(true)}
-              />
-            </div>
-          </details>
+          )}
+          <div className="card">
+            <h2>Camping Constitution</h2>
+            {!details.currentRuleBundle && <p>No constitution bundle available for this trip.</p>}
+            {details.currentRuleBundle && (
+              <>
+                <p className="eyebrow">Version {details.currentRuleBundle.version}</p>
+                {groupedRules.map(
+                  (group) =>
+                    group.rules.length > 0 && (
+                      <details key={group.label} className="rule-history" open>
+                        <summary>{group.label}</summary>
+                        <div className="rules-list">
+                          {group.rules.map((rule) => (
+                            <article key={rule.stable_key}>
+                              <h4>{rule.stable_key.replaceAll("-", " ")}</h4>
+                              <p>{rule.text}</p>
+                            </article>
+                          ))}
+                        </div>
+                      </details>
+                    )
+                )}
+                {details.myRsvp?.response === "coming" && details.myRsvp.acknowledgmentId && (
+                  <p className="eyebrow">You acknowledged version {details.myRsvp.acceptedRuleBundle?.version ?? details.currentRuleBundle.version}.</p>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
-      {currentDestination === "financials" && (
+      {tab === "logistics" && (
+        <TripLogisticsTab
+          tripId={details.tripId}
+          isConfirmedAttendee={isComing}
+          isAdmin={isAdmin}
+          currentMemberId={authProfileMemberId}
+          confirmedAttendees={confirmedAttendees}
+          tripNotes={details.additionalInformation}
+          reservationInstructions={details.campsite?.reservationInstructions}
+          drivingDirections={details.campsite?.directions}
+          api={api}
+          onEditLogistics={() => setShowEditLogistics(true)}
+          onOpenPackingChecklist={() => setShowPackingModal(true)}
+        />
+      )}
+
+      {tab === "financials" && (
         <TripFinancialsTab
           tripId={details.tripId}
           isAdmin={isAdmin}
@@ -3332,7 +2734,19 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
         />
       )}
 
-      {currentDestination === "activities" && (
+      {tab === "tasks" && (
+        <TripTasksAndMealsTab
+          tripId={details.tripId}
+          refreshVersion={details.version}
+          isConfirmedAttendee={isComing}
+          isAdmin={isAdmin}
+          currentMemberId={authProfileMemberId}
+          api={api}
+          onDutyChanged={refresh}
+        />
+      )}
+
+      {tab === "activities" && (
         <TripActivitiesTab
           tripId={details.tripId}
           isAdmin={isAdmin}
@@ -3409,14 +2823,125 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
               </div>
             </div>
 
-            <div style={{ fontSize: "0.85rem", color: "#334155", background: "#f1f5f9", padding: "0.75rem", borderRadius: "6px", marginBottom: "1.25rem" }}>
-              <strong>Included Sections:</strong>
-              <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.25rem" }}>
-                <li>👥 Confirmed Attendees Roster ({details.comingCount})</li>
-                <li>🚗 Carpools, Drivers &amp; Riders</li>
-                <li>🎟️ Activity Pools &amp; Vouchers</li>
-                <li>🎒 Trip Commitments (Gear &amp; Supplies)</li>
-              </ul>
+            <div style={{ background: "#f8fafc", border: "1.5px solid #cbd5e1", borderRadius: "8px", padding: "1rem", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.65rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                <label style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a", margin: 0 }}>
+                  📋 Select Sections to Include:
+                </label>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  <button
+                    type="button"
+                    style={{ fontSize: "0.75rem", padding: "2px 8px", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: "4px", cursor: "pointer", color: "#334155" }}
+                    onClick={() => setEmailSections({
+                      whosComing: true,
+                      carpools: true,
+                      activityPairings: true,
+                      sharedGear: true,
+                      individualGear: true,
+                      dutiesByDay: true,
+                      commitmentsTable: true,
+                      activityVouchers: true,
+                    })}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    style={{ fontSize: "0.75rem", padding: "2px 8px", background: "#e2e8f0", border: "1px solid #cbd5e1", borderRadius: "4px", cursor: "pointer", color: "#334155" }}
+                    onClick={() => setEmailSections({
+                      whosComing: true,
+                      carpools: true,
+                      activityPairings: true,
+                      sharedGear: true,
+                      individualGear: true,
+                      dutiesByDay: true,
+                      commitmentsTable: false,
+                      activityVouchers: false,
+                    })}
+                  >
+                    Reset Defaults
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.whosComing}
+                    onChange={(e) => setEmailSections({ ...emailSections, whosComing: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>👥 <strong>Who's Coming ({details.comingCount} Confirmed)</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Attendee roster &amp; contacts</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.carpools}
+                    onChange={(e) => setEmailSections({ ...emailSections, carpools: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>🚗 <strong>Carpools &amp; Transit</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Drivers, riders, vehicle seats, meeting time &amp; location</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.activityPairings}
+                    onChange={(e) => setEmailSections({ ...emailSections, activityPairings: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>🏎️ <strong>Activity Pool Vehicle Pairings</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Pairings per unit &amp; activity meeting location</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.sharedGear}
+                    onChange={(e) => setEmailSections({ ...emailSections, sharedGear: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>🎒 <strong>Shared Gear &amp; Supplies (By Camper)</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Items each camper needs to bring + unassigned items</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.individualGear}
+                    onChange={(e) => setEmailSections({ ...emailSections, individualGear: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>🎒 <strong>Individual Gear (What Each Camper Needs to Bring)</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Personal packing checklist items for all attendees</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.dutiesByDay}
+                    onChange={(e) => setEmailSections({ ...emailSections, dutiesByDay: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>📋 <strong>Duties &amp; Chores by Day</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Daily schedule with cooking, chores, and drivers</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.commitmentsTable}
+                    onChange={(e) => setEmailSections({ ...emailSections, commitmentsTable: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>📦 <strong>Full Itemized Gear Table</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Complete tabular list of all group supplies</span></span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", cursor: "pointer", fontSize: "0.88rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={emailSections.activityVouchers}
+                    onChange={(e) => setEmailSections({ ...emailSections, activityVouchers: e.target.checked })}
+                    style={{ marginTop: "3px" }}
+                  />
+                  <span>🎟️ <strong>Activity Pools &amp; Vouchers</strong> <span style={{ color: "#64748b", fontSize: "0.8rem" }}>— Purchaser receipts, voucher codes, &amp; order IDs</span></span>
+                </label>
+              </div>
+
+              <div style={{ marginTop: "0.65rem", paddingTop: "0.5rem", borderTop: "1px dashed #cbd5e1", fontSize: "0.8rem", color: "#475569" }}>
+                ✉️ <strong>{Object.values(emailSections).filter(Boolean).length}</strong> of {Object.values(emailSections).length} sections will be included.
+              </div>
             </div>
 
             {emailSuccessMsg && (
@@ -3453,6 +2978,7 @@ export function EventDetailsPage({ isAdmin, currentMemberId, api = defaultApi, u
                     const res = await api<{ sent: boolean; recipientCount: number; reason?: string }>("admin_send_trip_summary_email", {
                       tripId: details.tripId,
                       recipientType: emailRecipientType,
+                      sections: emailSections,
                     });
                     if (res?.sent) {
                       setEmailSuccessMsg(`✓ Briefing email successfully dispatched to ${res.recipientCount} recipient${res.recipientCount === 1 ? "" : "s"}!`);
@@ -3682,13 +3208,13 @@ function EditTripDetailsModal({
             Cabin Reservation Payer
             <select value={cabinPayerMemberId} onChange={(e) => setCabinPayerMemberId(e.target.value)}>
               <option value="">-- No Cabin Payer Assigned --</option>
-              {(details.participantEntries ?? []).map((p) => (
+              {details.participantEntries.map((p) => (
                 <option key={p.memberId} value={p.memberId}>
                   {p.displayName} (Confirmed Attendee)
                 </option>
               ))}
               {details.allMemberEntries
-                ?.filter((m) => !(details.participantEntries ?? []).some((p) => p.memberId === m.memberId))
+                ?.filter((m) => !details.participantEntries.some((p) => p.memberId === m.memberId))
                 .map((m) => (
                   <option key={m.memberId} value={m.memberId}>
                     {m.displayName}

@@ -647,7 +647,7 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
   const [configuration, campsiteResult, tripResult] = await Promise.all([
     service.from("club_configuration").select("club_timezone,default_poll_lead_days,default_poll_close_time,default_minimum_participants,next_month_to_generate,next_rotation_position,version").eq("singleton", true).single(),
     service.from("campsites").select("id,rotation_position,name,availability_url,location_description,directions,cabin_capacity,cabin_types,reservation_instructions,estimated_rate_cents,availability_status,availability_source_url,availability_verified_at,image_url,camp_host_name,camp_host_phone,camp_features,cabin_information,site_availability,peak_season_timeframe,peak_season_booking_requirement,active,version").eq("active", true).order("rotation_position"),
-    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,cabin_payer_member_id,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,camping_type,task_quota_target,daily_workload_target,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
+    service.from("camping_trips").select("id,month_key,rotation_position,suggested_campsite_id,selected_campsite_id,starts_on,ends_on,club_timezone_snapshot,poll_deadline_at,minimum_participants,minimum_basis,max_capacity,per_cabin_capacity,cabin_count,cabin_payer_member_id,poll_status,additional_information,cabin_booking_status,cabin_availability_status,title,event_status,trip_status,camping_type,task_quota_target,daily_workload_target,deleted_at,version").is("deleted_at", null).gte("month_key", month).order("month_key"),
   ]);
   checkError(configuration.error); checkError(campsiteResult.error); checkError(tripResult.error);
   const trips = tripResult.data ?? [];
@@ -799,7 +799,8 @@ async function getCalendar(member: Member): Promise<Record<string, unknown>> {
           : undefined,
         pollStatus: trip.poll_status,
         title: trip.title ?? null,
-        eventStatus: trip.event_status ?? "tentative",
+        eventStatus: (trip as any).trip_status ?? trip.event_status ?? "tentative",
+        tripStatus: (trip as any).trip_status ?? trip.event_status ?? "rsvp_open",
         campingType: trip.camping_type ?? "cabin",
         taskQuotaTarget: (trip as any).task_quota_target ?? 2,
         myDutyCount: dutyCountsByTrip.get(trip.id) ?? 0,
