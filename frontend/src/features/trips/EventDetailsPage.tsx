@@ -3072,7 +3072,11 @@ function EditTripDetailsModal({
   const [cabinCount, setCabinCount] = useState(details.cabinCount?.toString() ?? "");
   const [perCabinCapacity, setPerCabinCapacity] = useState(details.perCabinCapacity?.toString() ?? "6");
   const [campingType, setCampingType] = useState<"cabin" | "tent" | "rv" | "boat">(details.campingType ?? "cabin");
-  const [eventStatus, setEventStatus] = useState<string>(details.tripStatus || details.eventStatus || "rsvp_open");
+  const [eventStatus, setEventStatus] = useState<string>(
+    details.eventStatus === "cancelled" ? "cancelled"
+    : details.eventStatus === "confirmed" ? "confirmed"
+    : "tentative"
+  );
   const [bookingStatus, setBookingStatus] = useState<string>(
     details.cabinBookingStatus === "booked" ? "booked"
     : details.cabinBookingStatus === "no_vacancy" ? "no_vacancy"

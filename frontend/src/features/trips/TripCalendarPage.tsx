@@ -153,10 +153,17 @@ function TripEditModal({
   const [cabinCount, setCabinCount] = useState(trip?.cabinCount?.toString() ?? "");
   const [perCabinCapacity, setPerCabinCapacity] = useState(trip?.perCabinCapacity?.toString() ?? "6");
   const [campingType, setCampingType] = useState<CampingType>(trip?.campingType ?? "cabin");
-  const [eventStatus, setEventStatus] = useState<EventStatus>(trip?.eventStatus ?? "tentative");
+  const [eventStatus, setEventStatus] = useState<EventStatus>(
+    trip?.eventStatus === "cancelled" ? "cancelled"
+    : trip?.eventStatus === "confirmed" ? "confirmed"
+    : "tentative"
+  );
   const [siteId, setSiteId] = useState(trip?.selectedCampsiteId || calendar?.campsites[0]?.campsiteId || "");
   const [bookingStatus, setBookingStatus] = useState<CabinBookingStatus | "">(
-    trip?.cabinBookingStatus === "booked" ? "booked" : "pending"
+    trip?.cabinBookingStatus === "booked" ? "booked"
+    : trip?.cabinBookingStatus === "no_vacancy" ? "no_vacancy"
+    : trip?.cabinBookingStatus === "sites_available" ? "sites_available"
+    : "pending"
   );
   const [information, setInformation] = useState(trip?.additionalInformation ?? "");
   const [msg, setMsg] = useState<string | null>(null);
